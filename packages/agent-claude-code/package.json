@@ -1,0 +1,39 @@
+{
+  "name": "@agnos/agent-claude-code",
+  "version": "0.0.1",
+  "description": "Agnos strategy plugin for Claude Code",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "agnos": {
+    "type": "agent",
+    "id": "claude-code"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@agnos/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@agnos/core": "workspace:*",
+    "@types/node": "^22.10.5",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  }
+}
