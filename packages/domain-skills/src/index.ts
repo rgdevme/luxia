@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   DomainPlugin,
-  ResolveContext,
   ResolvedSkill,
   SkillDeclaration,
 } from "@agnos/core";
@@ -11,6 +10,10 @@ import { skillDeclarationSchema, buildPaths, readConfigOrDefault } from "@agnos/
 const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
   name: "skills",
   declarationSchema: skillDeclarationSchema,
+
+  async onInitialize(ctx) {
+    await fs.mkdir(buildPaths(ctx.projectRoot).skillsDir, { recursive: true });
+  },
 
   async resolve(decl, ctx) {
     const targetDir = path.join(buildPaths(ctx.projectRoot).skillsDir, decl.name);
@@ -39,7 +42,7 @@ const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
     const targetDir = path.join(buildPaths(ctx.projectRoot).skillsDir, name);
     await fs.mkdir(targetDir, { recursive: true });
     await ctx.fetcher.resolve(ref, targetDir);
-    return { name, source: ref };
+    return { name, absolutePath: targetDir };
   },
 
   async remove(name, ctx) {
@@ -58,7 +61,7 @@ const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
     return { name, absolutePath: targetDir };
   },
 
-  async list(ctx): Promise<ResolvedSkill[]> {
+  async list(ctx) {
     const skillsDir = buildPaths(ctx.projectRoot).skillsDir;
     let names: string[] = [];
     try {
@@ -70,10 +73,11 @@ const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
   },
 };
 
+export function deriveSkillNameFromRef(ref: string): string {
+  return deriveNameFromRef(ref);
+}
+
 function deriveNameFromRef(ref: string): string {
-  // github:owner/repo/path/to/skill -> last segment
-  // npm:@scope/pkg -> pkg
-  // file:./path/to/skill -> last segment
   const colonIdx = ref.indexOf(":");
   const after = colonIdx >= 0 ? ref.slice(colonIdx + 1) : ref;
   const noQuery = after.split(/[?#@]/)[0] ?? after;

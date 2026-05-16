@@ -12,32 +12,32 @@ const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
   name: "rules",
   declarationSchema: rulesDeclarationSchema,
 
+  async onInitialize(_ctx) {
+    // No work — `agnos init`'s rules step already ensures a starter file exists.
+  },
+
   async resolve(decl, ctx) {
     const abs = path.resolve(ctx.projectRoot, decl.source);
     await ensureFileExists(abs);
-    return {
-      absolutePath: abs,
-      relativeSource: decl.source,
-    };
+    return { absolutePath: abs, relativeSource: decl.source };
   },
 
-  async add() {
-    throw new Error("rules has no `add` — use `agnos rules` to set the path.");
+  async move(from, to, ctx) {
+    const oldAbs = path.resolve(ctx.projectRoot, from);
+    const newAbs = path.resolve(ctx.projectRoot, to);
+    if (path.resolve(oldAbs) === path.resolve(newAbs)) return;
+    const oldExists = await pathExists(oldAbs);
+    const newExists = await pathExists(newAbs);
+    if (oldExists && !newExists) {
+      await fs.mkdir(path.dirname(newAbs), { recursive: true });
+      await fs.rename(oldAbs, newAbs);
+    } else if (!oldExists && !newExists) {
+      await ensureFileExists(newAbs);
+    }
+    // both-exist case is handled by the CLI command (user-prompted)
   },
 
-  async remove() {
-    throw new Error("rules has no `remove` — use `agnos rules` to retarget.");
-  },
-
-  async update(_name, ctx) {
-    // No-op: the rules file is just a file path; nothing to refetch.
-    return {
-      absolutePath: path.resolve(ctx.projectRoot, "./AGENTS.md"),
-      relativeSource: "./AGENTS.md",
-    };
-  },
-
-  async list(ctx): Promise<ResolvedRule[]> {
+  async list(ctx) {
     const defaultPath = path.resolve(ctx.projectRoot, "./AGENTS.md");
     return [{ absolutePath: defaultPath, relativeSource: "./AGENTS.md" }];
   },
@@ -49,6 +49,15 @@ async function ensureFileExists(absPath: string): Promise<void> {
   } catch {
     await fs.mkdir(path.dirname(absPath), { recursive: true });
     await fs.writeFile(absPath, "# AGENTS.md\n", "utf8");
+  }
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
   }
 }
 

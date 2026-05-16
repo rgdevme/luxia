@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 
 export const CONFIG_FILE = "agnos.json";
+export const STATE_FILE = "state.json";
 export const AGNOS_DIR = ".agnos";
 export const DEFAULT_RULES_FILE = "AGENTS.md";
 
@@ -11,6 +12,7 @@ export interface ProjectPaths {
   agnosRoot: string;
   cacheDir: string;
   skillsDir: string;
+  statePath: string;
 }
 
 export function buildPaths(projectRoot: string): ProjectPaths {
@@ -21,6 +23,7 @@ export function buildPaths(projectRoot: string): ProjectPaths {
     agnosRoot,
     cacheDir: path.join(agnosRoot, "cache"),
     skillsDir: path.join(agnosRoot, "skills"),
+    statePath: path.join(agnosRoot, STATE_FILE),
   };
 }
 

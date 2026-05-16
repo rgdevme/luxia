@@ -2,21 +2,23 @@ import { input, select } from "@inquirer/prompts";
 import type {
   DomainPlugin,
   McpDeclaration,
-  ResolveContext,
   ResolvedMcp,
 } from "@agnos/core";
-import { mcpDeclarationSchema } from "@agnos/core";
-import { readConfigOrDefault } from "@agnos/core";
+import { mcpDeclarationSchema, readConfigOrDefault } from "@agnos/core";
 
 const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
   name: "mcp",
   declarationSchema: mcpDeclarationSchema,
 
+  async onInitialize(_ctx) {
+    // no per-domain bootstrap needed
+  },
+
   async resolve(decl) {
     return { ...decl };
   },
 
-  async add(ref, ctx) {
+  async add(ref) {
     const name = ref;
     const transport = await select<"stdio" | "sse" | "http">({
       message: `Transport for ${name}`,
@@ -33,7 +35,7 @@ const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
       const envRaw = await input({ message: "Env (KEY=value, comma-separated, leave empty if none):" });
       const args = argsRaw.trim() ? splitArgs(argsRaw) : undefined;
       const env = parseEnv(envRaw);
-      const decl: McpDeclaration = { name, command, transport: "stdio" };
+      const decl: ResolvedMcp = { name, command, transport: "stdio" };
       if (args && args.length > 0) decl.args = args;
       if (env && Object.keys(env).length > 0) decl.env = env;
       return decl;
@@ -43,7 +45,7 @@ const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
   },
 
   async remove(_name) {
-    // No persisted files to clean — agent plugins fully rewrite their MCP config each install.
+    // No persisted files to clean — agent plugins fully rewrite their MCP config each replay.
   },
 
   async update(name, ctx) {
@@ -53,7 +55,7 @@ const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
     return { ...existing };
   },
 
-  async list(ctx): Promise<ResolvedMcp[]> {
+  async list(ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
     return (config.mcp ?? []).map((m) => ({ ...m }));
   },

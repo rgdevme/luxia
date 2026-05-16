@@ -2,62 +2,147 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   AgentPlugin,
+  AgentReplayState,
   MaterializeContext,
   ResolvedMcp,
   ResolvedRule,
   ResolvedSkill,
 } from "@agnos/core";
-import { pruneAgentSkillDir } from "@agnos/core";
+import { readConfigOrDefault } from "@agnos/core";
 
 const CLAUDE_RULES = "CLAUDE.md";
 const CLAUDE_MCP = ".mcp.json";
-const CLAUDE_SKILLS = path.join(".claude", "skills");
+const CLAUDE_SKILLS_DIR = path.join(".claude", "skills");
 
 const claudeCode: AgentPlugin = {
   id: "claude-code",
   displayName: "Claude Code",
 
-  supports: {
-    async rules(items, ctx) {
-      const rule = items[0];
-      if (!rule) return;
-      const linkPath = path.join(ctx.projectRoot, CLAUDE_RULES);
-      if (path.resolve(linkPath) === path.resolve(rule.absolutePath)) return; // can't link to self
-      await ctx.linker.link(rule.absolutePath, linkPath, { fallback: "copy" });
-      ctx.logger.info(`  CLAUDE.md → ${rule.relativeSource}`);
-    },
-
-    async mcp(items, ctx) {
-      const out = {
-        mcpServers: Object.fromEntries(items.map((m) => [m.name, toClaudeServer(m)])),
-      };
-      const file = path.join(ctx.projectRoot, CLAUDE_MCP);
-      await fs.writeFile(file, JSON.stringify(out, null, 2) + "\n", "utf8");
-      ctx.logger.info(`  .mcp.json (${items.length} server${items.length === 1 ? "" : "s"})`);
-    },
-
-    async skills(items, ctx) {
-      const dir = path.join(ctx.projectRoot, CLAUDE_SKILLS);
-      await fs.mkdir(dir, { recursive: true });
-      const declared = new Set(items.map((s) => s.name));
-      for (const s of items) {
-        const linkPath = path.join(dir, s.name);
-        await ctx.linker.link(s.absolutePath, linkPath);
-      }
-      const removed = await pruneAgentSkillDir(dir, declared);
-      if (removed.length) ctx.logger.info(`  pruned skill link${removed.length === 1 ? "" : "s"}: ${removed.join(", ")}`);
-      ctx.logger.info(`  .claude/skills/ (${items.length} skill${items.length === 1 ? "" : "s"})`);
-    },
+  async onReplay(state, ctx) {
+    if (state.rules) {
+      await writeRulesLink(state.rules, ctx);
+    } else {
+      await removeRulesLink(ctx);
+    }
+    await writeMcpFile(state.mcp, ctx);
+    await materializeSkills(state.skills, ctx);
   },
 
-  async cleanup(ctx: MaterializeContext) {
-    await safeUnlink(path.join(ctx.projectRoot, CLAUDE_RULES), ctx);
-    await safeUnlink(path.join(ctx.projectRoot, CLAUDE_MCP), ctx);
-    await safeRm(path.join(ctx.projectRoot, ".claude", "skills"), ctx);
-    // Don't remove .claude itself — the user may have other things there.
-    ctx.logger.info("Claude Code artifacts removed");
+  async onDeactivated(ctx) {
+    await removeAllArtifacts(ctx);
+  },
+
+  async onUninstalled(ctx) {
+    // Same scope as deactivate — leave nothing behind.
+    await removeAllArtifacts(ctx);
+  },
+
+  handles: {
+    rules: {
+      async onAdded(decl, ctx) {
+        await writeRulesLink(decl, ctx);
+      },
+      async onMoved(_from, to, ctx) {
+        await writeRulesLink(to, ctx);
+      },
+      async onRemoved(_decl, ctx) {
+        await removeRulesLink(ctx);
+      },
+    },
+    mcp: {
+      async onAdded(_item, ctx) {
+        await rewriteMcpFromConfig(ctx);
+      },
+      async onUpdated(_item, ctx) {
+        await rewriteMcpFromConfig(ctx);
+      },
+      async onRemoved(_name, ctx) {
+        await rewriteMcpFromConfig(ctx);
+      },
+    },
+    skills: {
+      async onAdded(item, ctx) {
+        await ensureSkillLink(item, ctx);
+      },
+      async onUpdated(item, ctx) {
+        await ensureSkillLink(item, ctx);
+      },
+      async onRemoved(name, ctx) {
+        await removeSkillLink(name, ctx);
+      },
+    },
   },
 };
+
+// ---------- single-write helpers (shared by onReplay and per-event handlers) ----------
+
+async function writeRulesLink(rule: ResolvedRule, ctx: MaterializeContext): Promise<void> {
+  const linkPath = path.join(ctx.projectRoot, CLAUDE_RULES);
+  if (path.resolve(linkPath) === path.resolve(rule.absolutePath)) return;
+  await ctx.linker.link(rule.absolutePath, linkPath, { fallback: "copy" });
+  ctx.logger.info(`  CLAUDE.md → ${rule.relativeSource}`);
+}
+
+async function removeRulesLink(ctx: MaterializeContext): Promise<void> {
+  try {
+    await ctx.linker.unlink(path.join(ctx.projectRoot, CLAUDE_RULES));
+  } catch {
+    // ignore
+  }
+}
+
+async function writeMcpFile(servers: ResolvedMcp[], ctx: MaterializeContext): Promise<void> {
+  const out = {
+    mcpServers: Object.fromEntries(servers.map((m) => [m.name, toClaudeServer(m)])),
+  };
+  const file = path.join(ctx.projectRoot, CLAUDE_MCP);
+  await fs.writeFile(file, JSON.stringify(out, null, 2) + "\n", "utf8");
+  ctx.logger.info(`  .mcp.json (${servers.length} server${servers.length === 1 ? "" : "s"})`);
+}
+
+async function rewriteMcpFromConfig(ctx: MaterializeContext): Promise<void> {
+  const config = await readConfigOrDefault(ctx.configPath);
+  await writeMcpFile((config.mcp ?? []) as ResolvedMcp[], ctx);
+}
+
+async function materializeSkills(items: ResolvedSkill[], ctx: MaterializeContext): Promise<void> {
+  const dir = path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR);
+  await fs.mkdir(dir, { recursive: true });
+  for (const s of items) {
+    await ensureSkillLink(s, ctx);
+  }
+  ctx.logger.info(`  .claude/skills/ (${items.length} skill${items.length === 1 ? "" : "s"})`);
+}
+
+async function ensureSkillLink(item: ResolvedSkill, ctx: MaterializeContext): Promise<void> {
+  const dir = path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR);
+  await fs.mkdir(dir, { recursive: true });
+  await ctx.linker.link(item.absolutePath, path.join(dir, item.name));
+}
+
+async function removeSkillLink(name: string, ctx: MaterializeContext): Promise<void> {
+  const target = path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR, name);
+  try {
+    await ctx.linker.unlink(target);
+  } catch {
+    // try rm as a fallback (in case it ended up as a copy)
+    await fs.rm(target, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function removeAllArtifacts(ctx: MaterializeContext): Promise<void> {
+  await removeRulesLink(ctx);
+  try {
+    await ctx.linker.unlink(path.join(ctx.projectRoot, CLAUDE_MCP));
+  } catch {
+    // ignore
+  }
+  await fs.rm(path.join(ctx.projectRoot, ".claude", "skills"), {
+    recursive: true,
+    force: true,
+  }).catch(() => {});
+  ctx.logger.info("Claude Code artifacts removed");
+}
 
 function toClaudeServer(decl: ResolvedMcp): Record<string, unknown> {
   if (decl.transport && decl.transport !== "stdio") {
@@ -72,22 +157,6 @@ function toClaudeServer(decl: ResolvedMcp): Record<string, unknown> {
     ...(decl.args ? { args: decl.args } : {}),
     ...(decl.env ? { env: decl.env } : {}),
   };
-}
-
-async function safeUnlink(p: string, ctx: MaterializeContext): Promise<void> {
-  try {
-    await ctx.linker.unlink(p);
-  } catch {
-    // ignore
-  }
-}
-
-async function safeRm(p: string, ctx: MaterializeContext): Promise<void> {
-  try {
-    await fs.rm(p, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
 }
 
 export default claudeCode;

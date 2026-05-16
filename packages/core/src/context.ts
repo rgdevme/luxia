@@ -22,6 +22,7 @@ export async function buildResolveContext(opts: BuildContextOptions): Promise<Re
   return {
     projectRoot: opts.projectRoot,
     configPath: paths.configPath,
+    statePath: paths.statePath,
     agnosRoot: paths.agnosRoot,
     cacheDir: paths.cacheDir,
     logger,

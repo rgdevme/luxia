@@ -2,7 +2,7 @@ import { buildPaths } from "../paths.js";
 import { readConfig } from "../config.js";
 import { loadPlugins } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
-import { install } from "../orchestrator.js";
+import { reinstate } from "../orchestrator.js";
 import type { Logger } from "../types/public.js";
 
 export interface InstallCommandOptions {
@@ -17,7 +17,7 @@ export async function runInstallCommand(opts: InstallCommandOptions): Promise<vo
   const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
 
-  const result = await install(config, registry, ctx, {
+  const result = await reinstate(config, registry, ctx, {
     copyOnNoSymlink: opts.copyOnNoSymlink ?? false,
     interactive: true,
   });

@@ -4,7 +4,10 @@ import { input, select } from "@inquirer/prompts";
 import { buildPaths } from "../paths.js";
 import { readConfigOrDefault, writeConfig } from "../config.js";
 import { ensureStarterRules } from "./init.js";
-import { runInstallCommand } from "./install.js";
+import { buildResolveContext } from "../context.js";
+import { loadPlugins } from "../plugin-loader.js";
+import { resolveRule } from "../orchestrator.js";
+import { activeAgents, dispatchRulesAdded, dispatchRulesMoved } from "../events.js";
 import type { Logger } from "../types/public.js";
 
 export interface RulesOptions {
@@ -17,7 +20,8 @@ export interface RulesOptions {
 export async function runRules(opts: RulesOptions): Promise<void> {
   const paths = buildPaths(opts.cwd);
   const config = await readConfigOrDefault(paths.configPath);
-  const current = config.rules?.source ?? "./AGENTS.md";
+  const previousSource = config.rules?.source;
+  const current = previousSource ?? "./AGENTS.md";
 
   let target = opts.path ?? current;
   if (!opts.path && !opts.yes) {
@@ -30,14 +34,16 @@ export async function runRules(opts: RulesOptions): Promise<void> {
 
   const oldAbs = path.resolve(opts.cwd, current);
   const newAbs = path.resolve(opts.cwd, target);
+  const pathUnchanged = path.relative(oldAbs, newAbs) === "";
 
-  if (path.relative(oldAbs, newAbs) === "") {
-    // unchanged; just ensure the file exists
+  if (pathUnchanged) {
     const { created } = await ensureStarterRules(newAbs);
     if (created) opts.logger.success(`created ${target}`);
     if (!config.rules) {
+      // first-time set: persist + fire onAdded
       config.rules = { source: target };
       await writeConfig(paths.configPath, config);
+      await dispatchRulesIfActive(config, "added", { from: undefined, to: target }, opts);
     }
     return;
   }
@@ -77,7 +83,6 @@ export async function runRules(opts: RulesOptions): Promise<void> {
     const { created } = await ensureStarterRules(newAbs);
     if (created) opts.logger.success(`created starter ${target}`);
   } else {
-    // !oldExists && newExists -- file's already where we want it
     opts.logger.info(`using existing ${target}`);
   }
 
@@ -85,10 +90,32 @@ export async function runRules(opts: RulesOptions): Promise<void> {
   await writeConfig(paths.configPath, config);
   opts.logger.info(`agnos.json: rules.source = ${target}`);
 
-  // re-install for any agents already enabled
-  if (config.agents && config.agents.length > 0) {
-    await runInstallCommand({ cwd: opts.cwd, logger: opts.logger });
+  // Dispatch the right event: first-time set → onAdded; otherwise → onMoved.
+  if (previousSource === undefined) {
+    await dispatchRulesIfActive(config, "added", { from: undefined, to: target }, opts);
+  } else if (previousSource !== target) {
+    await dispatchRulesIfActive(config, "moved", { from: previousSource, to: target }, opts);
   }
+}
+
+async function dispatchRulesIfActive(
+  config: { agents?: unknown[] } & Record<string, unknown>,
+  event: "added" | "moved",
+  args: { from: string | undefined; to: string },
+  opts: RulesOptions,
+): Promise<void> {
+  if (!config.agents || (Array.isArray(config.agents) && config.agents.length === 0)) return;
+  const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
+  const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
+  const agents = activeAgents(config as unknown as import("../types/public.js").AgnosConfig, registry, ctx);
+  const toResolved = await resolveRule(args.to, ctx);
+  if (event === "added") {
+    await dispatchRulesAdded(toResolved, agents, ctx);
+    return;
+  }
+  if (args.from === undefined) return;
+  const fromResolved = await resolveRule(args.from, ctx);
+  await dispatchRulesMoved(fromResolved, toResolved, agents, ctx);
 }
 
 function normalizeRelPath(p: string): string {

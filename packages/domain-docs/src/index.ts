@@ -16,27 +16,6 @@ const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
     return decl;
   },
 
-  async add() {
-    throw new Error("docs has no `add` — use `agnos docs init`.");
-  },
-
-  async remove() {
-    throw new Error("docs has no `remove` — the directory persists across runs.");
-  },
-
-  async update(_name, ctx) {
-    const cfg = await readEffectiveDocsConfig(ctx);
-    return {
-      route: cfg.routeRelative,
-      index: cfg.indexName,
-      content: cfg.contentName,
-      docRules: cfg.docRulesName,
-      injectIndex: cfg.injectIndex,
-      injectRules: cfg.injectRules,
-      metadata: cfg.metadata,
-    };
-  },
-
   async list(ctx) {
     const raw = await readConfigOrDefault(ctx.configPath);
     const block = (raw as { docs?: unknown }).docs;
@@ -52,7 +31,7 @@ const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
     watch: watchCmd,
   },
 
-  async onInit(ctx: ResolveContext) {
+  async onInitialize(ctx: ResolveContext) {
     await runInit(ctx);
     const agnos = await readConfigOrDefault(ctx.configPath);
     if (agnos.rules?.source) {

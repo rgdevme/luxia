@@ -6,6 +6,7 @@ import { runRules } from "./rules.js";
 import { runAgents } from "./agents.js";
 import { loadPlugins } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
+import { reinstate } from "../orchestrator.js";
 import type { Logger } from "../types/public.js";
 
 const STARTER_RULES = `# AGENTS.md
@@ -53,7 +54,7 @@ export async function runInit(opts: InitOptions): Promise<void> {
   // 1) rules
   await runRules({ cwd: opts.cwd, yes: opts.yes, logger: opts.logger });
 
-  // 2) agents
+  // 2) agents — interactive (or default-empty in -y).
   if (opts.yes) {
     const config = await readConfigOrDefault(paths.configPath);
     if (!config.agents || config.agents.length === 0) {
@@ -63,22 +64,15 @@ export async function runInit(opts: InitOptions): Promise<void> {
     await runAgents({ cwd: opts.cwd, copyOnNoSymlink: opts.copyOnNoSymlink, logger: opts.logger, fromInit: true });
   }
 
-  // 3) onInit hooks contributed by domain plugins (docs, future user-developed plugins)
-  await runDomainOnInit(opts);
-}
-
-async function runDomainOnInit(opts: InitOptions): Promise<void> {
+  // 3) Drive the orchestrator: onInitialize for newly-detected domains, then
+  //    onInstalled / onActivated / onReplay for active agents. Reconcile pass.
+  const config = await readConfigOrDefault(paths.configPath);
   const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
-  for (const dom of registry.domains.values()) {
-    if (!dom.plugin.onInit) continue;
-    opts.logger.info(`-> ${dom.plugin.name}.onInit`);
-    try {
-      await dom.plugin.onInit(ctx);
-    } catch (err) {
-      opts.logger.error(`${dom.plugin.name}.onInit failed: ${(err as Error).message}`);
-    }
-  }
+  await reinstate(config, registry, ctx, {
+    copyOnNoSymlink: opts.copyOnNoSymlink,
+    interactive: !opts.yes,
+  });
 }
 
 async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {
@@ -89,11 +83,14 @@ async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
-  const line = ".agnos/cache/";
-  if (current.split(/\r?\n/).some((l) => l.trim() === line)) return;
-  const updated = (current.endsWith("\n") || current.length === 0 ? current : current + "\n") + `${line}\n`;
+  const requiredLines = [".agnos/cache/", ".agnos/state.json"];
+  const existingLines = current.split(/\r?\n/).map((l) => l.trim());
+  const missing = requiredLines.filter((line) => !existingLines.includes(line));
+  if (missing.length === 0) return;
+  const prefix = current.length === 0 || current.endsWith("\n") ? current : current + "\n";
+  const updated = prefix + missing.map((l) => `${l}\n`).join("");
   await fs.writeFile(giPath, updated, "utf8");
-  logger.info(`updated .gitignore (+ .agnos/cache/)`);
+  logger.info(`updated .gitignore (+ ${missing.join(", ")})`);
 }
 
 export async function ensureStarterRules(rulesPath: string): Promise<{ created: boolean }> {
