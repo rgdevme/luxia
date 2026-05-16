@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CliCommand, ResolveContext } from "@agnos/core";
+import type { AgnosConfig, CliCommand, ResolveContext } from "@agnos/core";
+import { readConfigOrDefault, writeConfig } from "@agnos/core";
 import { readEffectiveDocsConfig } from "../effective-config.js";
+import { DEFAULT_DOCS_METADATA } from "../schema.js";
 import { starterContent, starterDocRules, starterIndex } from "../starters.js";
 
 export const init: CliCommand = {
@@ -28,8 +30,33 @@ export async function runInit(ctx: ResolveContext): Promise<void> {
     }
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, body, "utf8");
-    ctx.logger.info(`  created ${path.relative(ctx.projectRoot, filePath)}`);
+    ctx.logger.info(`created ${path.relative(ctx.projectRoot, filePath)}`);
   }
+
+  await seedDefaultMetadata(ctx);
+}
+
+/**
+ * Write the default metadata schema into `agnos.json#docs.metadata` if the user
+ * hasn't set it. Makes the schema discoverable and editable from the config file.
+ * Idempotent: skips when `metadata` is already present.
+ */
+async function seedDefaultMetadata(ctx: ResolveContext): Promise<void> {
+  const config = (await readConfigOrDefault(ctx.configPath)) as AgnosConfig;
+  const docsBlock = (config.docs ?? {}) as Record<string, unknown>;
+  if (docsBlock["metadata"]) return;
+
+  if (ctx.dryRun) {
+    ctx.logger.info(`would: seed default docs.metadata into agnos.json`);
+    return;
+  }
+
+  const next: AgnosConfig = {
+    ...config,
+    docs: { ...docsBlock, metadata: DEFAULT_DOCS_METADATA },
+  };
+  await writeConfig(ctx.configPath, next);
+  ctx.logger.info(`seeded default docs.metadata into agnos.json`);
 }
 
 async function exists(p: string): Promise<boolean> {

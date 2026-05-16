@@ -58,4 +58,43 @@ describe("runInit", () => {
     await expect(fs.access(path.join(root, ".agnos", ".docs", "doc-rules.md"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(root, ".agnos", ".docs", "content.md"))).rejects.toThrow();
   });
+
+  it("seeds DEFAULT_DOCS_METADATA into agnos.json on first run", async () => {
+    await runInit(ctxFor(root));
+    const raw = await fs.readFile(path.join(root, "agnos.json"), "utf8");
+    const config = JSON.parse(raw) as { docs?: { metadata?: Record<string, { type: string }> } };
+    expect(config.docs?.metadata).toBeDefined();
+    expect(Object.keys(config.docs!.metadata!).sort()).toEqual([
+      "agent_cant",
+      "description",
+      "read_when",
+      "title",
+    ]);
+    expect(config.docs!.metadata!["agent_cant"]?.type).toBe("enum");
+    expect(config.docs!.metadata!["title"]?.type).toBe("string");
+  });
+
+  it("does not overwrite an existing docs.metadata block", async () => {
+    const custom = { title: { type: "string", description: "Custom title field" } };
+    await fs.writeFile(
+      path.join(root, "agnos.json"),
+      JSON.stringify({ docs: { metadata: custom } }),
+    );
+    await runInit(ctxFor(root));
+    const raw = await fs.readFile(path.join(root, "agnos.json"), "utf8");
+    const config = JSON.parse(raw) as { docs?: { metadata?: unknown } };
+    expect(config.docs?.metadata).toEqual(custom);
+  });
+
+  it("preserves other docs config keys while seeding metadata", async () => {
+    await fs.writeFile(
+      path.join(root, "agnos.json"),
+      JSON.stringify({ docs: { injectIndex: false } }),
+    );
+    await runInit(ctxFor(root));
+    const raw = await fs.readFile(path.join(root, "agnos.json"), "utf8");
+    const config = JSON.parse(raw) as { docs?: { metadata?: unknown; injectIndex?: boolean } };
+    expect(config.docs?.injectIndex).toBe(false);
+    expect(config.docs?.metadata).toBeDefined();
+  });
 });
