@@ -10,6 +10,7 @@ import { rulesDeclarationSchema } from "@agnos/core";
 
 const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
   name: "rules",
+  priority: 10,
   declarationSchema: rulesDeclarationSchema,
 
   async onInitialize(_ctx) {

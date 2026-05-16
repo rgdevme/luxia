@@ -8,6 +8,7 @@ import { mcpDeclarationSchema, readConfigOrDefault } from "@agnos/core";
 
 const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
   name: "mcp",
+  priority: 20,
   declarationSchema: mcpDeclarationSchema,
 
   async onInitialize(_ctx) {

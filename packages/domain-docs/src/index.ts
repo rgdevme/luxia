@@ -10,6 +10,7 @@ import { readEffectiveDocsConfig } from "./effective-config.js";
 
 const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
   name: "docs",
+  priority: 40,
   declarationSchema: docsConfigSchema,
 
   async resolve(decl) {

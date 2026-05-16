@@ -1,17 +1,21 @@
-import { checkbox } from "@inquirer/prompts";
+import { checkbox, confirm } from "@inquirer/prompts";
 import { spawn } from "node:child_process";
 import { buildPaths } from "../paths.js";
 import { readConfigOrDefault, writeConfig } from "../config.js";
 import { loadPlugins, refToId, resolveAgentByRef } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
-import { deactivateAgent, reinstate, uninstallAgent } from "../orchestrator.js";
-import type { AgentRef, Logger } from "../types/public.js";
+import {
+  activateAgent,
+  cleanupAgent,
+  reconcile as reconcileOrphans,
+  uninstallAgent,
+} from "../orchestrator.js";
+import type { AgentPlugin, AgentRef, Logger } from "../types/public.js";
 
 export interface AgentsOptions {
   cwd: string;
   copyOnNoSymlink?: boolean;
   logger: Logger;
-  fromInit?: boolean;
 }
 
 export async function runAgents(opts: AgentsOptions): Promise<void> {
@@ -29,7 +33,6 @@ export async function runAgents(opts: AgentsOptions): Promise<void> {
   }
 
   const currentIds = new Set((config.agents ?? []).map(refToId));
-
   const selectedIds = await checkbox<string>({
     message: "Pick the agents to enable in this project:",
     choices: available.map((a) => ({
@@ -40,28 +43,33 @@ export async function runAgents(opts: AgentsOptions): Promise<void> {
   });
 
   const removed = [...currentIds].filter((id) => !selectedIds.includes(id));
-  const newRefs: AgentRef[] = selectedIds.map((id) => id);
+  const added = selectedIds.filter((id) => !currentIds.has(id));
 
-  // Deactivate newly-removed agents (cleanup their artifacts) while their
-  // plugins are still loadable.
+  // 1) Deactivate removed agents (per-domain cleanup) while their plugins are loadable.
   for (const id of removed) {
     const reg = registry.agents.get(id);
     if (!reg) continue;
-    await deactivateAgent(reg.plugin, ctx);
+    await cleanupAgent(reg.plugin, registry, ctx);
   }
 
+  // 2) Persist new selection.
+  const newRefs: AgentRef[] = selectedIds.map((id) => id);
   config.agents = newRefs;
   await writeConfig(paths.configPath, config);
   opts.logger.success(`agnos.json updated (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`);
 
-  // Replay current state for the new selection (covers onInstalled gated by
-  // state.json, onActivated, onReplay, and reconcile).
-  if (selectedIds.length > 0) {
-    await reinstate(config, registry, ctx, {
-      copyOnNoSymlink: opts.copyOnNoSymlink ?? false,
-      interactive: true,
-    });
+  // 3) Activate newly-added agents (per-domain onInitialize).
+  for (const id of added) {
+    const reg = registry.agents.get(id);
+    if (!reg) continue;
+    await activateAgent(reg.plugin, config, registry, ctx);
   }
+
+  // 4) Reconcile orphans against the current active set.
+  const activeAgents = newRefs
+    .map((ref) => resolveAgentByRef(registry, ref)?.plugin)
+    .filter((p): p is AgentPlugin => Boolean(p));
+  await reconcileOrphans(config, activeAgents, ctx);
 }
 
 export interface AgentAddOptions {
@@ -69,6 +77,7 @@ export interface AgentAddOptions {
   target: string | undefined;
   noInstall: boolean;
   copyOnNoSymlink: boolean;
+  yes: boolean;
   logger: Logger;
 }
 
@@ -90,6 +99,14 @@ export async function runAgentAdd(opts: AgentAddOptions): Promise<void> {
     return;
   }
 
+  const shouldActivate = opts.yes
+    ? true
+    : await confirm({ message: `Activate ${byPkg.plugin.displayName}?`, default: true });
+  if (!shouldActivate) {
+    opts.logger.info(`installed but not activated. Run \`agnos agents\` to activate later.`);
+    return;
+  }
+
   const paths = buildPaths(opts.cwd);
   const config = await readConfigOrDefault(paths.configPath);
   const ids = new Set((config.agents ?? []).map(refToId));
@@ -103,7 +120,12 @@ export async function runAgentAdd(opts: AgentAddOptions): Promise<void> {
 
   if (!opts.noInstall) {
     const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
-    await reinstate(config, registry, ctx, { copyOnNoSymlink: opts.copyOnNoSymlink, interactive: true });
+    await activateAgent(byPkg.plugin, config, registry, ctx);
+    // Reconcile against the post-add active set.
+    const updatedActive = (config.agents ?? [])
+      .map((ref) => resolveAgentByRef(registry, ref)?.plugin)
+      .filter((p): p is AgentPlugin => Boolean(p));
+    await reconcileOrphans(config, updatedActive, ctx);
   }
 }
 
@@ -129,14 +151,22 @@ export async function runAgentRemove(opts: AgentRemoveOptions): Promise<void> {
     return;
   }
 
-  await deactivateAgent(reg.plugin, ctx);
-  await uninstallAgent(reg.plugin, ctx);
+  // 1) If active: clean up per-domain artifacts.
+  const isActive = (config.agents ?? []).some((a) => refToId(a) === reg.plugin.id);
+  if (isActive) {
+    await cleanupAgent(reg.plugin, registry, ctx);
+  }
 
+  // 2) Remove from agnos.json.agents.
   config.agents = (config.agents ?? []).filter(
     (a) => refToId(a) !== reg.plugin.id && (typeof a === "string" ? true : a.package !== reg.packageName),
   );
   await writeConfig(paths.configPath, config);
 
+  // 3) Top-level onUninstalled + mark uninstalled in state.
+  await uninstallAgent(reg.plugin, ctx);
+
+  // 4) pnpm remove the package.
   opts.logger.info(`uninstalling ${reg.packageName} ...`);
   await runPnpm(["remove", reg.packageName], opts.cwd);
   opts.logger.success(`removed agent: ${reg.plugin.id}`);

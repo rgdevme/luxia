@@ -10,31 +10,22 @@ import type {
 import { readConfigOrDefault } from "@agnos/core";
 
 const ROOT_AGENTS = "AGENTS.md";
-const CODEX_CONFIG = path.join(".codex", "config.toml");
+const CODEX_DIR = ".codex";
+const CODEX_CONFIG = path.join(CODEX_DIR, "config.toml");
 
 const codex: AgentPlugin = {
   id: "codex",
   displayName: "OpenAI Codex",
 
-  async onReplay(state, ctx) {
-    if (state.rules) {
-      await writeRulesLink(state.rules, ctx);
-    } else {
-      await removeRulesLinkIfManaged(ctx);
-    }
-    await writeCodexConfig(state.mcp, ctx);
-  },
-
-  async onDeactivated(ctx) {
-    await removeAllArtifacts(ctx);
-  },
-
-  async onUninstalled(ctx) {
-    await removeAllArtifacts(ctx);
-  },
-
   handles: {
     rules: {
+      async onInitialize(state, ctx) {
+        if (state) {
+          await writeRulesLink(state, ctx);
+        } else {
+          await removeRulesLinkIfManaged(ctx);
+        }
+      },
       async onAdded(decl, ctx) {
         await writeRulesLink(decl, ctx);
       },
@@ -44,8 +35,14 @@ const codex: AgentPlugin = {
       async onRemoved(_decl, ctx) {
         await removeRulesLinkIfManaged(ctx);
       },
+      async onCleanup(ctx) {
+        await removeRulesLinkIfManaged(ctx);
+      },
     },
     mcp: {
+      async onInitialize(state, ctx) {
+        await writeCodexConfig(state, ctx);
+      },
       async onAdded(_item, ctx) {
         await rewriteCodexFromConfig(ctx);
       },
@@ -55,16 +52,18 @@ const codex: AgentPlugin = {
       async onRemoved(_name, ctx) {
         await rewriteCodexFromConfig(ctx);
       },
+      async onCleanup(ctx) {
+        await fs
+          .rm(path.join(ctx.projectRoot, CODEX_DIR), { recursive: true, force: true })
+          .catch(() => {});
+        ctx.logger.info("Codex artifacts removed");
+      },
     },
   },
 };
 
 // ---------- helpers ----------
 
-/**
- * Codex reads `./AGENTS.md` natively. If the rules source is at that exact path,
- * we no-op. Otherwise we create ./AGENTS.md as a symlink to the source.
- */
 async function writeRulesLink(rule: ResolvedRule, ctx: MaterializeContext): Promise<void> {
   const rootAbs = path.resolve(ctx.projectRoot, ROOT_AGENTS);
   if (path.resolve(rule.absolutePath) === rootAbs) {
@@ -75,10 +74,6 @@ async function writeRulesLink(rule: ResolvedRule, ctx: MaterializeContext): Prom
   ctx.logger.info(`  AGENTS.md → ${rule.relativeSource}`);
 }
 
-/**
- * Only remove `./AGENTS.md` if it's a symlink we created — never delete the user's
- * real file.
- */
 async function removeRulesLinkIfManaged(ctx: MaterializeContext): Promise<void> {
   const rootAgents = path.join(ctx.projectRoot, ROOT_AGENTS);
   try {
@@ -105,12 +100,6 @@ async function writeCodexConfig(servers: ResolvedMcp[], ctx: MaterializeContext)
 async function rewriteCodexFromConfig(ctx: MaterializeContext): Promise<void> {
   const config = await readConfigOrDefault(ctx.configPath);
   await writeCodexConfig((config.mcp ?? []) as ResolvedMcp[], ctx);
-}
-
-async function removeAllArtifacts(ctx: MaterializeContext): Promise<void> {
-  await removeRulesLinkIfManaged(ctx);
-  await fs.rm(path.join(ctx.projectRoot, ".codex"), { recursive: true, force: true }).catch(() => {});
-  ctx.logger.info("Codex artifacts removed");
 }
 
 function toCodexServer(decl: ResolvedMcp): Record<string, unknown> {

@@ -1,7 +1,6 @@
 export type {
   AgentPlugin,
   AgentRef,
-  AgentReplayState,
   AgnosConfig,
   CliCommand,
   CliCommandArgs,
@@ -41,6 +40,7 @@ export {
   buildResolveContext,
   ensureSymlinkPrivileges,
   rebuildContextWithCopyFallback,
+  resetSymlinkDecisionCache,
   workspaceRelativePath,
 } from "./context.js";
 export { loadPlugins, refToId, resolveAgentByRef } from "./plugin-loader.js";
@@ -48,8 +48,10 @@ export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin
 export { createLinker, describeSymlinkFailure } from "./fs/link.js";
 export { createSourceResolver } from "./resolver.js";
 export {
-  buildAgentReplayState,
-  deactivateAgent,
+  activateAgent,
+  buildAgentDomainStates,
+  cleanupAgent,
+  orderedDomains,
   reconcile,
   reinstate,
   resolveRule,

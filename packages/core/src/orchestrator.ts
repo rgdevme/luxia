@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   AgentPlugin,
-  AgentReplayState,
   AgnosConfig,
+  DomainEventHandlers,
   MaterializeContext,
   ResolveContext,
   ResolvedMcp,
@@ -13,6 +13,7 @@ import type {
 import {
   type PluginRegistry,
   type RegisteredAgent,
+  type RegisteredDomain,
   refToId,
   resolveAgentByRef,
 } from "./plugin-loader.js";
@@ -26,7 +27,6 @@ import {
   readState,
   unmarkAgentInstalled,
   writeState,
-  type AgnosState,
 } from "./state.js";
 import { activeAgents } from "./events.js";
 
@@ -40,13 +40,12 @@ export interface InstallResult {
 }
 
 /**
- * The canonical state-reinstatement flow. Fired by `agnos init`, `agnos install`,
- * and (with a filter) by `agnos agents` for newly-selected agents.
- *
- * 1. Initialize newly-detected domains.
- * 2. Install newly-encountered agents.
- * 3. Activate + replay every agent in `targetAgents`.
- * 4. Reconcile orphans.
+ * State reinstatement. Fired by `agnos install` (and by other commands when a
+ * full rematerialization is needed). For each active agent, runs:
+ *   - onInstalled (gated by state.json, once per local environment)
+ *   - per-domain onInitialize, in domain priority order
+ * Also calls domain.onInitialize once per project (gated by state.json) for
+ * any newly-encountered domain.
  */
 export async function reinstate(
   config: AgnosConfig,
@@ -66,76 +65,24 @@ export async function reinstate(
 
   const agents = activeAgents(config, registry, ctx);
 
-  // Symlink privilege probe (fail-or-prompt before any agent attempts to write links).
-  const needsFile = computeFileSymlinkNeed(config, agents);
-  const needsDir = computeDirSymlinkNeed(config, agents);
-  const decision = await ensureSymlinkPrivileges(
-    ctx,
-    { fileSymlinks: needsFile, dirSymlinks: needsDir },
-    { interactive: opts.interactive ?? true, autoCopy: opts.copyOnNoSymlink ?? false },
-  );
-  if (!decision.proceed) return { ok: false };
-  let runCtx = decision.copyFallback ? rebuildContextWithCopyFallback(ctx) : ctx;
+  const runCtx = await ensurePrivileges(ctx, config, agents, opts);
+  if (!runCtx) return { ok: false };
 
-  let state = await readState(runCtx.statePath);
+  // 1) Domain onInitialize (once per project).
+  if (!(await initializeNewDomains(registry, runCtx))) return { ok: false };
 
-  // 1) Domain onInitialize — once per project (per state.json).
-  for (const dom of registry.domains.values()) {
-    if (isDomainInitialized(state, dom.plugin.name)) continue;
-    if (dom.plugin.onInitialize) {
-      runCtx.logger.info(`-> ${dom.plugin.name}.onInitialize`);
-      try {
-        await dom.plugin.onInitialize(runCtx);
-      } catch (err) {
-        runCtx.logger.error(`${dom.plugin.name}.onInitialize failed: ${(err as Error).message}`);
-        return { ok: false };
-      }
-    }
-    state = markDomainInitialized(state, dom.plugin.name);
-    await writeState(runCtx.statePath, state);
-  }
-
-  // 2) Agent onInstalled — once per agent (per state.json).
+  // 2) Per-agent onInstalled + per-domain onInitialize.
   for (const agent of agents) {
-    if (isAgentInstalled(state, agent.id)) continue;
-    if (agent.onInstalled) {
-      runCtx.logger.info(`-> ${agent.id}.onInstalled`);
-      try {
-        await agent.onInstalled(runCtx);
-      } catch (err) {
-        runCtx.logger.error(`${agent.id}.onInstalled failed: ${(err as Error).message}`);
-        return { ok: false };
-      }
-    }
-    state = markAgentInstalled(state, agent.id);
-    await writeState(runCtx.statePath, state);
-  }
-
-  // 3) Activate + replay each agent.
-  const replayState = await buildAgentReplayState(config, runCtx);
-  for (const agent of agents) {
-    const mctx: MaterializeContext = { ...runCtx, agentId: agent.id };
-    if (agent.onActivated) {
-      runCtx.logger.info(`-> ${agent.id}.onActivated`);
-      try {
-        await agent.onActivated(mctx);
-      } catch (err) {
-        runCtx.logger.error(`${agent.id}.onActivated failed: ${(err as Error).message}`);
-        return { ok: false };
-      }
-    }
-    if (agent.onReplay) {
-      runCtx.logger.info(`-> ${agent.id}.onReplay`);
-      try {
-        await agent.onReplay(replayState, mctx);
-      } catch (err) {
-        runCtx.logger.error(`${agent.id}.onReplay failed: ${(err as Error).message}`);
-        return { ok: false };
-      }
+    if (!(await ensureAgentInstalled(agent, runCtx))) return { ok: false };
+    try {
+      await materializeAgent(agent, config, registry, runCtx);
+    } catch (err) {
+      runCtx.logger.error(`${agent.id} materialize failed: ${(err as Error).message}`);
+      return { ok: false };
     }
   }
 
-  // 4) Reconcile orphans on disk.
+  // 3) Reconcile orphans.
   await reconcile(config, agents, runCtx);
 
   runCtx.logger.success("install complete");
@@ -143,18 +90,45 @@ export async function reinstate(
 }
 
 /**
- * Deactivate one agent: fire onDeactivated. The agent's own handler is
- * responsible for removing the files it created. Caller decides whether to
- * also fire onUninstalled (for `agnos agent remove`) or leave it installed.
+ * Activate one agent (no full reinstate). Runs onInstalled if needed, then
+ * per-domain onInitialize in priority order. Used by `agnos agents` and
+ * `agnos agent add`.
  */
-export async function deactivateAgent(agent: AgentPlugin, ctx: ResolveContext): Promise<void> {
-  if (!agent.onDeactivated) return;
-  const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
-  ctx.logger.info(`-> ${agent.id}.onDeactivated`);
-  await agent.onDeactivated(mctx);
+export async function activateAgent(
+  agent: AgentPlugin,
+  config: AgnosConfig,
+  registry: PluginRegistry,
+  ctx: ResolveContext,
+): Promise<void> {
+  if (!(await ensureAgentInstalled(agent, ctx))) {
+    throw new Error(`onInstalled failed for ${agent.id}`);
+  }
+  await materializeAgent(agent, config, registry, ctx);
 }
 
-/** Fire onUninstalled and remove the agent from state.installedAgents. */
+/**
+ * Run per-domain onCleanup for an agent (in reverse priority order). Does
+ * NOT modify agnos.json or state.json.
+ */
+export async function cleanupAgent(
+  agent: AgentPlugin,
+  registry: PluginRegistry,
+  ctx: ResolveContext,
+): Promise<void> {
+  const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
+  for (const dom of orderedDomains(registry).reverse()) {
+    const handlers = handlersFor(agent, dom.plugin.name);
+    const fn = handlers?.onCleanup;
+    if (!fn) continue;
+    ctx.logger.info(`-> ${agent.id}.${dom.plugin.name}.onCleanup`);
+    await fn(mctx);
+  }
+}
+
+/**
+ * Mark an agent uninstalled in state.json and fire onUninstalled (top-level).
+ * Caller is responsible for calling cleanupAgent first if the agent was active.
+ */
 export async function uninstallAgent(agent: AgentPlugin, ctx: ResolveContext): Promise<void> {
   if (agent.onUninstalled) {
     const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
@@ -165,26 +139,122 @@ export async function uninstallAgent(agent: AgentPlugin, ctx: ResolveContext): P
   await writeState(ctx.statePath, unmarkAgentInstalled(state, agent.id));
 }
 
+// ---------- helpers ----------
+
+export function orderedDomains(registry: PluginRegistry): RegisteredDomain[] {
+  return [...registry.domains.values()].sort((a, b) => {
+    const ap = Number.isFinite(a.plugin.priority) ? a.plugin.priority : Number.POSITIVE_INFINITY;
+    const bp = Number.isFinite(b.plugin.priority) ? b.plugin.priority : Number.POSITIVE_INFINITY;
+    return ap - bp;
+  });
+}
+
 /**
- * Resolve the project's current state into a structure the agent's onReplay
- * can consume.
+ * Resolve the per-domain state slices an agent's `handles.<domain>.onInitialize`
+ * needs. The map is keyed by domain name so third-party domains can hook in.
  */
-export async function buildAgentReplayState(
+export async function buildAgentDomainStates(
   config: AgnosConfig,
   ctx: ResolveContext,
-): Promise<AgentReplayState> {
-  const out: AgentReplayState = { mcp: [], skills: [] };
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+
   if (config.rules) {
-    out.rules = await resolveRule(config.rules.source, ctx);
+    out["rules"] = await resolveRule(config.rules.source, ctx);
+  } else {
+    out["rules"] = undefined;
   }
-  for (const mcp of config.mcp ?? []) {
-    out.mcp.push({ ...mcp });
-  }
-  for (const s of config.skills ?? []) {
-    const dir = path.join(buildPaths(ctx.projectRoot).skillsDir, s.name);
-    out.skills.push({ name: s.name, absolutePath: dir });
-  }
+
+  out["mcp"] = (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[];
+
+  const skillsDir = buildPaths(ctx.projectRoot).skillsDir;
+  out["skills"] = (config.skills ?? []).map((s) => ({
+    name: s.name,
+    absolutePath: path.join(skillsDir, s.name),
+  })) as ResolvedSkill[];
+
   return out;
+}
+
+export async function materializeAgent(
+  agent: AgentPlugin,
+  config: AgnosConfig,
+  registry: PluginRegistry,
+  ctx: ResolveContext,
+): Promise<void> {
+  const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
+  const state = await buildAgentDomainStates(config, ctx);
+  ctx.logger.info(`-> ${agent.id}`);
+  for (const dom of orderedDomains(registry)) {
+    const handlers = handlersFor(agent, dom.plugin.name);
+    const fn = handlers?.onInitialize as ((s: unknown, c: MaterializeContext) => Promise<void>) | undefined;
+    if (!fn) continue;
+    ctx.logger.info(`  ${dom.plugin.name}.onInitialize`);
+    await fn(state[dom.plugin.name], mctx);
+  }
+}
+
+interface AnyDomainHandlers {
+  onInitialize?: (state: unknown, ctx: MaterializeContext) => Promise<void>;
+  onCleanup?: (ctx: MaterializeContext) => Promise<void>;
+}
+
+function handlersFor(agent: AgentPlugin, domainName: string): AnyDomainHandlers | undefined {
+  const handles = agent.handles as DomainEventHandlers | undefined;
+  if (!handles) return undefined;
+  return (handles as unknown as Record<string, AnyDomainHandlers | undefined>)[domainName];
+}
+
+async function initializeNewDomains(registry: PluginRegistry, ctx: ResolveContext): Promise<boolean> {
+  let state = await readState(ctx.statePath);
+  for (const dom of orderedDomains(registry)) {
+    if (isDomainInitialized(state, dom.plugin.name)) continue;
+    if (dom.plugin.onInitialize) {
+      ctx.logger.info(`-> ${dom.plugin.name}.onInitialize`);
+      try {
+        await dom.plugin.onInitialize(ctx);
+      } catch (err) {
+        ctx.logger.error(`${dom.plugin.name}.onInitialize failed: ${(err as Error).message}`);
+        return false;
+      }
+    }
+    state = markDomainInitialized(state, dom.plugin.name);
+    await writeState(ctx.statePath, state);
+  }
+  return true;
+}
+
+async function ensureAgentInstalled(agent: AgentPlugin, ctx: ResolveContext): Promise<boolean> {
+  const state = await readState(ctx.statePath);
+  if (isAgentInstalled(state, agent.id)) return true;
+  if (agent.onInstalled) {
+    ctx.logger.info(`-> ${agent.id}.onInstalled`);
+    try {
+      await agent.onInstalled(ctx);
+    } catch (err) {
+      ctx.logger.error(`${agent.id}.onInstalled failed: ${(err as Error).message}`);
+      return false;
+    }
+  }
+  await writeState(ctx.statePath, markAgentInstalled(state, agent.id));
+  return true;
+}
+
+async function ensurePrivileges(
+  ctx: ResolveContext,
+  config: AgnosConfig,
+  agents: AgentPlugin[],
+  opts: InstallOptions,
+): Promise<ResolveContext | null> {
+  const needsFile = computeFileSymlinkNeed(config, agents);
+  const needsDir = computeDirSymlinkNeed(config, agents);
+  const decision = await ensureSymlinkPrivileges(
+    ctx,
+    { fileSymlinks: needsFile, dirSymlinks: needsDir },
+    { interactive: opts.interactive ?? true, autoCopy: opts.copyOnNoSymlink ?? false },
+  );
+  if (!decision.proceed) return null;
+  return decision.copyFallback ? rebuildContextWithCopyFallback(ctx) : ctx;
 }
 
 export async function resolveRule(source: string, ctx: ResolveContext): Promise<ResolvedRule> {
@@ -202,9 +272,7 @@ export async function resolveSkill(name: string, ctx: ResolveContext): Promise<R
 }
 
 /**
- * Orphan cleanup. Runs after install / agent operations. Does NOT dispatch
- * events — it acts directly on the filesystem so we don't re-fire events
- * during cleanup.
+ * Orphan cleanup. Acts directly on the filesystem; does not dispatch events.
  */
 export async function reconcile(
   config: AgnosConfig,
@@ -214,18 +282,12 @@ export async function reconcile(
   const paths = buildPaths(ctx.projectRoot);
   const declaredSkills = new Set((config.skills ?? []).map((s) => s.name));
 
-  // 1) .agnos/skills/<x> not declared → delete.
   await pruneSkillsDir(paths.skillsDir, declaredSkills, ctx);
-
-  // 2) For each active agent: prune any per-agent skill dir entries not declared.
   for (const agent of agents) {
     const dir = agentSkillDir(agent.id, ctx.projectRoot);
     if (!dir) continue;
     await pruneSkillsDir(dir, declaredSkills, ctx, /* skipMissingDir */ true);
   }
-  // Rules link reconciliation is left to the per-event handlers — `onReplay`
-  // is invoked elsewhere and rewrites the link from current state. MCP files
-  // are entirely rewritten by `onReplay`, so no separate pass is needed.
 }
 
 async function pruneSkillsDir(
@@ -250,11 +312,6 @@ async function pruneSkillsDir(
   }
 }
 
-/**
- * Returns the agent's skill directory, or undefined if the agent doesn't
- * surface skills as a directory of links. Currently hardcoded; could become
- * a method on AgentPlugin if more agents support skills.
- */
 function agentSkillDir(agentId: string, projectRoot: string): string | undefined {
   if (agentId === "claude-code") return path.join(projectRoot, ".claude", "skills");
   return undefined;
@@ -281,6 +338,5 @@ function normalize(p: string): string {
   return trimmed.startsWith("./") ? trimmed : `./${trimmed}`;
 }
 
-// Re-export for command modules
 export { resolveAgentByRef, refToId };
 export type { RegisteredAgent };

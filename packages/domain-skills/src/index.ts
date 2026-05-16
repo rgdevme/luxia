@@ -9,6 +9,7 @@ import { skillDeclarationSchema, buildPaths, readConfigOrDefault } from "@agnos/
 
 const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
   name: "skills",
+  priority: 30,
   declarationSchema: skillDeclarationSchema,
 
   async onInitialize(ctx) {

@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { checkbox } from "@inquirer/prompts";
 import { buildPaths, ensureDir } from "../paths.js";
 import { configExists, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../config.js";
 import { runRules } from "./rules.js";
-import { runAgents } from "./agents.js";
-import { loadPlugins } from "../plugin-loader.js";
+import { loadPlugins, refToId } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
 import { reinstate } from "../orchestrator.js";
-import type { Logger } from "../types/public.js";
+import type { AgentRef, Logger } from "../types/public.js";
 
 const STARTER_RULES = `# AGENTS.md
 
@@ -51,21 +51,15 @@ export async function runInit(opts: InitOptions): Promise<void> {
   await ensureDir(paths.cacheDir);
   await ensureGitIgnore(opts.cwd, opts.logger);
 
-  // 1) rules
+  // 1) Rules-source path (interactive unless -y).
   await runRules({ cwd: opts.cwd, yes: opts.yes, logger: opts.logger });
 
-  // 2) agents — interactive (or default-empty in -y).
-  if (opts.yes) {
-    const config = await readConfigOrDefault(paths.configPath);
-    if (!config.agents || config.agents.length === 0) {
-      opts.logger.info("no agents enabled (run `agnos agents` to pick later)");
-    }
-  } else {
-    await runAgents({ cwd: opts.cwd, copyOnNoSymlink: opts.copyOnNoSymlink, logger: opts.logger, fromInit: true });
-  }
+  // 2) Pick agents (inline; do NOT call runAgents — it does its own reinstate).
+  await promptAndPersistAgents(opts);
 
-  // 3) Drive the orchestrator: onInitialize for newly-detected domains, then
-  //    onInstalled / onActivated / onReplay for active agents. Reconcile pass.
+  // 3) Single materialization pass: domain.onInitialize for each domain not yet
+  //    initialized, then per active agent: onInstalled (state-gated) + per-domain
+  //    onInitialize in priority order. Reconciles orphans at the end.
   const config = await readConfigOrDefault(paths.configPath);
   const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
@@ -73,6 +67,42 @@ export async function runInit(opts: InitOptions): Promise<void> {
     copyOnNoSymlink: opts.copyOnNoSymlink,
     interactive: !opts.yes,
   });
+}
+
+async function promptAndPersistAgents(opts: InitOptions): Promise<void> {
+  const paths = buildPaths(opts.cwd);
+  const config = await readConfigOrDefault(paths.configPath);
+
+  if (opts.yes) {
+    if (!config.agents || config.agents.length === 0) {
+      opts.logger.info("no agents enabled (run `agnos agents` to pick later)");
+    }
+    return;
+  }
+
+  const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
+  const available = [...registry.agents.values()];
+  if (available.length === 0) {
+    opts.logger.warn(
+      "no agent plugins installed. Install one with `agnos agent add <id>` or `pnpm add @agnos/agent-claude-code`.",
+    );
+    return;
+  }
+
+  const currentIds = new Set((config.agents ?? []).map(refToId));
+  const selectedIds = await checkbox<string>({
+    message: "Pick the agents to enable in this project:",
+    choices: available.map((a) => ({
+      name: `${a.plugin.displayName} (${a.plugin.id}) — ${a.packageName}`,
+      value: a.plugin.id,
+      checked: currentIds.has(a.plugin.id),
+    })),
+  });
+
+  const newRefs: AgentRef[] = selectedIds.map((id) => id);
+  config.agents = newRefs;
+  await writeConfig(paths.configPath, config);
+  opts.logger.success(`agnos.json updated (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`);
 }
 
 async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {

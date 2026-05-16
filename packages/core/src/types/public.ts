@@ -89,7 +89,6 @@ export interface CliCommand {
   run(args: CliCommandArgs, ctx: ResolveContext): Promise<void>;
 }
 
-// Built-in command names a domain plugin cannot shadow via its `cli` map.
 export const RESERVED_CLI_IDS = [
   "init",
   "rules",
@@ -107,95 +106,75 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
   declarationSchema: z.ZodType<TDecl>;
 
   /**
-   * Called the first time a project encounters this domain (i.e., when the
-   * domain id is not yet recorded in `.agnos/state.json#initializedDomains`).
-   * Idempotent; allowed to no-op.
+   * Position in the lifecycle order. Lower numbers run first. The orchestrator
+   * iterates domains by ascending priority for activation/initialization;
+   * cleanup runs in descending order. Built-ins: rules=10, mcp=20, skills=30,
+   * docs=40. Ties broken by plugin registration order.
    */
+  priority: number;
+
+  /** First-time project encounter; runs once per project (gated by state.json). */
   onInitialize?(ctx: ResolveContext): Promise<void>;
 
-  /**
-   * Resolve a declaration into a concrete item (with absolute paths, etc.).
-   * Used by the orchestrator when computing replay state.
-   */
+  /** Resolve a declaration into a concrete item. */
   resolve?(decl: TDecl, ctx: ResolveContext): Promise<TItem>;
 
-  // CLI-facing state mutators. Each mutates `.agnos/` + `agnos.json` and
-  // returns the changed item. The orchestrator dispatches matching events
-  // after these complete.
+  /** CLI-facing state mutators. Each mutates `.agnos/` + `agnos.json`. */
   add?(input: string, ctx: ResolveContext): Promise<TItem>;
   update?(name: string, ctx: ResolveContext): Promise<TItem>;
   remove?(name: string, ctx: ResolveContext): Promise<void>;
-  /** Rules-specific: move source path (called when `rules.source` changes). */
+  /** Rules-specific. */
   move?(from: string, to: string, ctx: ResolveContext): Promise<void>;
   list?(ctx: ResolveContext): Promise<TItem[]>;
 
-  /**
-   * Optional CLI subcommands exposed under `agnos <domain-id> <subcommand>`.
-   * The special key `"default"` is invoked when no subcommand is supplied.
-   */
+  /** Optional CLI subcommands exposed under `agnos <domain-id> <subcommand>`. */
   cli?: Record<string, CliCommand>;
 }
 
-// ---------- Agent plugin ----------
+// ---------- Agent plugin: per-domain event handlers ----------
 
 export interface RulesEventHandlers {
+  /** Bring this agent up to date with the rules domain. Undefined when no rules set. */
+  onInitialize?(state: ResolvedRule | undefined, ctx: MaterializeContext): Promise<void>;
   onAdded?(decl: ResolvedRule, ctx: MaterializeContext): Promise<void>;
   onMoved?(from: ResolvedRule, to: ResolvedRule, ctx: MaterializeContext): Promise<void>;
   onRemoved?(decl: ResolvedRule, ctx: MaterializeContext): Promise<void>;
+  /** Strip this agent's rules-domain artifacts. Runs on deactivation. */
+  onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
 export interface McpEventHandlers {
+  onInitialize?(state: ResolvedMcp[], ctx: MaterializeContext): Promise<void>;
   onAdded?(item: ResolvedMcp, ctx: MaterializeContext): Promise<void>;
   onUpdated?(item: ResolvedMcp, ctx: MaterializeContext): Promise<void>;
   onRemoved?(name: string, ctx: MaterializeContext): Promise<void>;
+  onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
 export interface SkillsEventHandlers {
+  onInitialize?(state: ResolvedSkill[], ctx: MaterializeContext): Promise<void>;
   onAdded?(item: ResolvedSkill, ctx: MaterializeContext): Promise<void>;
   onUpdated?(item: ResolvedSkill, ctx: MaterializeContext): Promise<void>;
   onRemoved?(name: string, ctx: MaterializeContext): Promise<void>;
+  onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
 export interface DomainEventHandlers {
   rules?: RulesEventHandlers;
   mcp?: McpEventHandlers;
   skills?: SkillsEventHandlers;
-}
-
-/**
- * Snapshot of the project state passed to `agent.onReplay`.
- * `rules` may be undefined if no rules source is set yet.
- */
-export interface AgentReplayState {
-  rules?: ResolvedRule;
-  mcp: ResolvedMcp[];
-  skills: ResolvedSkill[];
+  // Third-party domains can extend via the index signature below.
 }
 
 export interface AgentPlugin {
   id: string;
   displayName: string;
 
-  /** First time this agent id appears in `.agnos/state.json#installedAgents`. */
+  /** Top-level lifecycle for non-domain-specific work. */
   onInstalled?(ctx: ResolveContext): Promise<void>;
-  /** Joined `agnos.json.agents`. */
-  onActivated?(ctx: ResolveContext): Promise<void>;
-  /** Left `agnos.json.agents`. Cleanup runs here. */
-  onDeactivated?(ctx: MaterializeContext): Promise<void>;
-  /** Before `pnpm remove`. Removes anything `onDeactivated` left behind. */
   onUninstalled?(ctx: MaterializeContext): Promise<void>;
 
-  /**
-   * Bring this agent up to date with the full current state. Called:
-   *  - after `onActivated` for newly-selected agents,
-   *  - on every `agnos install` for each active agent,
-   *  - after `agnos agent add`.
-   * Idempotent. The single-write outputs (`CLAUDE.md`, `.mcp.json`,
-   * `.codex/config.toml`) are produced here.
-   */
-  onReplay?(state: AgentReplayState, ctx: MaterializeContext): Promise<void>;
-
-  /** Per-event handlers fired in response to CLI mutations on a domain. */
+  /** Per-domain handlers — see DomainEventHandlers. */
   handles?: DomainEventHandlers;
 }
 

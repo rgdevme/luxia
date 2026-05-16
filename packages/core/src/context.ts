@@ -31,20 +31,35 @@ export async function buildResolveContext(opts: BuildContextOptions): Promise<Re
   };
 }
 
+let cachedDecision: { proceed: boolean; copyFallback: boolean } | undefined;
+
+export function resetSymlinkDecisionCache(): void {
+  cachedDecision = undefined;
+}
+
 export async function ensureSymlinkPrivileges(
   ctx: ResolveContext,
   plan: { fileSymlinks: boolean; dirSymlinks: boolean },
   opts: { interactive: boolean; autoCopy?: boolean } = { interactive: true },
 ): Promise<{ proceed: boolean; copyFallback: boolean }> {
+  if (cachedDecision) return cachedDecision;
+
   const needsFile = await predictRequiresFileSymlinks(plan);
-  if (!needsFile) return { proceed: true, copyFallback: false };
+  if (!needsFile) {
+    cachedDecision = { proceed: true, copyFallback: false };
+    return cachedDecision;
+  }
 
   const ok = await ctx.linker.canSymlinkFiles();
-  if (ok) return { proceed: true, copyFallback: false };
+  if (ok) {
+    cachedDecision = { proceed: true, copyFallback: false };
+    return cachedDecision;
+  }
 
   if (opts.autoCopy) {
     ctx.logger.warn("file symlinks unavailable — falling back to copy (changes won't propagate across agents)");
-    return { proceed: true, copyFallback: true };
+    cachedDecision = { proceed: true, copyFallback: true };
+    return cachedDecision;
   }
 
   if (!opts.interactive) {
@@ -63,7 +78,8 @@ export async function ensureSymlinkPrivileges(
     ctx.logger.info("Aborting. Re-run from an elevated shell or enable Developer Mode (Windows).");
     return { proceed: false, copyFallback: false };
   }
-  return { proceed: true, copyFallback: true };
+  cachedDecision = { proceed: true, copyFallback: true };
+  return cachedDecision;
 }
 
 export function rebuildContextWithCopyFallback(ctx: ResolveContext): ResolveContext {

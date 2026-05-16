@@ -67,7 +67,14 @@ async function main(): Promise<void> {
         return;
       case "agent":
         if (sub === "add") {
-          await runAgentAdd({ cwd, target: rest[0], noInstall: Boolean(argv["no-install"]), copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]), logger });
+          await runAgentAdd({
+            cwd,
+            target: rest[0],
+            noInstall: Boolean(argv["no-install"]),
+            copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
+            yes: Boolean(argv["yes"]),
+            logger,
+          });
           return;
         }
         if (sub === "remove") {
