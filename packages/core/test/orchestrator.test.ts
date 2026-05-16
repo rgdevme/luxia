@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   buildAgentDomainStates,
   cleanupAgent,
+  initializeAgentsInterleaved,
   materializeAgent,
   orderedDomains,
 } from "../src/orchestrator.js";
@@ -22,6 +23,17 @@ function noopDomain(name: string, priority: number): DomainPlugin {
     name,
     priority,
     declarationSchema: z.any(),
+  };
+}
+
+function spyDomain(name: string, priority: number, calls: string[]): DomainPlugin {
+  return {
+    name,
+    priority,
+    declarationSchema: z.any(),
+    async onInitialize() {
+      calls.push(`domain:${name}`);
+    },
   };
 }
 
@@ -133,6 +145,77 @@ describe("materializeAgent + cleanupAgent ordering", () => {
       "cleanup:mcp",
       "cleanup:rules",
     ]);
+  });
+
+  it("interleaves domain-then-agents across multiple agents (domain-outer order)", async () => {
+    const calls: string[] = [];
+    const makeAgent = (id: string): AgentPlugin => ({
+      id,
+      displayName: id,
+      handles: {
+        rules: {
+          async onInitialize() {
+            calls.push(`${id}:rules`);
+          },
+        },
+        mcp: {
+          async onInitialize() {
+            calls.push(`${id}:mcp`);
+          },
+        },
+        skills: {
+          async onInitialize() {
+            calls.push(`${id}:skills`);
+          },
+        },
+      },
+    });
+    const a = makeAgent("a");
+    const b = makeAgent("b");
+    const r = registry(
+      [
+        spyDomain("rules", 10, calls),
+        spyDomain("mcp", 20, calls),
+        spyDomain("skills", 30, calls),
+      ],
+      [a, b],
+    );
+    const ctx = stubCtx(dir);
+    const config: AgnosConfig = { agents: ["a", "b"], rules: { source: "./AGENTS.md" }, mcp: [], skills: [] };
+    await initializeAgentsInterleaved([a, b], config, r, ctx);
+    expect(calls).toEqual([
+      "domain:rules",
+      "a:rules",
+      "b:rules",
+      "domain:mcp",
+      "a:mcp",
+      "b:mcp",
+      "domain:skills",
+      "a:skills",
+      "b:skills",
+    ]);
+  });
+
+  it("domain.onInitialize fires only once per project (state-gated)", async () => {
+    const calls: string[] = [];
+    const a: AgentPlugin = {
+      id: "a",
+      displayName: "A",
+      handles: {
+        rules: {
+          async onInitialize() {
+            calls.push("a:rules");
+          },
+        },
+      },
+    };
+    const r = registry([spyDomain("rules", 10, calls)], [a]);
+    const ctx = stubCtx(dir);
+    const config: AgnosConfig = { agents: ["a"], rules: { source: "./AGENTS.md" } };
+    await initializeAgentsInterleaved([a], config, r, ctx);
+    await initializeAgentsInterleaved([a], config, r, ctx);
+    // domain hook fires once, per-agent handler fires twice
+    expect(calls).toEqual(["domain:rules", "a:rules", "a:rules"]);
   });
 
   it("skips domains the agent doesn't handle", async () => {

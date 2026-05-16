@@ -68,18 +68,18 @@ export async function reinstate(
   const runCtx = await ensurePrivileges(ctx, config, agents, opts);
   if (!runCtx) return { ok: false };
 
-  // 1) Domain onInitialize (once per project).
-  if (!(await initializeNewDomains(registry, runCtx))) return { ok: false };
-
-  // 2) Per-agent onInstalled + per-domain onInitialize.
+  // 1) onInstalled (once per agent per local env). Silent if no top-level hook.
   for (const agent of agents) {
     if (!(await ensureAgentInstalled(agent, runCtx))) return { ok: false };
-    try {
-      await materializeAgent(agent, config, registry, runCtx);
-    } catch (err) {
-      runCtx.logger.error(`${agent.id} materialize failed: ${(err as Error).message}`);
-      return { ok: false };
-    }
+  }
+
+  // 2) Domain-outer interleaved fan-out: each domain's onInitialize, then each
+  //    agent's per-domain onInitialize in priority order.
+  try {
+    await initializeAgentsInterleaved(agents, config, registry, runCtx);
+  } catch (err) {
+    runCtx.logger.error(`initialize failed: ${(err as Error).message}`);
+    return { ok: false };
   }
 
   // 3) Reconcile orphans.
@@ -176,22 +176,61 @@ export async function buildAgentDomainStates(
   return out;
 }
 
+/**
+ * Domain-outer interleaved initialization. For each domain in priority order:
+ *   1. Log the section header `-> <domain>.onInitialize`.
+ *   2. Run the domain's own `onInitialize` once per project (state-gated).
+ *   3. For each agent that handles the domain, fire its `onInitialize` with
+ *      the per-domain state slice.
+ *
+ * Used by `reinstate` for the multi-agent case and by `materializeAgent` for
+ * the single-agent case (which is just a one-element list).
+ */
+export async function initializeAgentsInterleaved(
+  agents: AgentPlugin[],
+  config: AgnosConfig,
+  registry: PluginRegistry,
+  ctx: ResolveContext,
+): Promise<void> {
+  const state = await buildAgentDomainStates(config, ctx);
+  let projectState = await readState(ctx.statePath);
+
+  for (const dom of orderedDomains(registry)) {
+    ctx.logger.info(`-> ${dom.plugin.name}.onInitialize`);
+
+    if (!isDomainInitialized(projectState, dom.plugin.name)) {
+      if (dom.plugin.onInitialize) {
+        await dom.plugin.onInitialize(ctx);
+      }
+      projectState = markDomainInitialized(projectState, dom.plugin.name);
+      await writeState(ctx.statePath, projectState);
+    }
+
+    for (const agent of agents) {
+      const handlers = handlersFor(agent, dom.plugin.name);
+      const fn = handlers?.onInitialize as
+        | ((s: unknown, c: MaterializeContext) => Promise<void>)
+        | undefined;
+      if (!fn) continue;
+      const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
+      ctx.logger.info(`  -> ${agent.id}`);
+      ctx.logger.info(`    ${dom.plugin.name}.onInitialize`);
+      await fn(state[dom.plugin.name], mctx);
+    }
+  }
+}
+
+/**
+ * Single-agent activation: delegates to the interleaved helper with a
+ * one-element list so the log layout matches multi-agent flows.
+ */
 export async function materializeAgent(
   agent: AgentPlugin,
   config: AgnosConfig,
   registry: PluginRegistry,
   ctx: ResolveContext,
 ): Promise<void> {
-  const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
-  const state = await buildAgentDomainStates(config, ctx);
-  ctx.logger.info(`-> ${agent.id}`);
-  for (const dom of orderedDomains(registry)) {
-    const handlers = handlersFor(agent, dom.plugin.name);
-    const fn = handlers?.onInitialize as ((s: unknown, c: MaterializeContext) => Promise<void>) | undefined;
-    if (!fn) continue;
-    ctx.logger.info(`  ${dom.plugin.name}.onInitialize`);
-    await fn(state[dom.plugin.name], mctx);
-  }
+  await initializeAgentsInterleaved([agent], config, registry, ctx);
 }
 
 interface AnyDomainHandlers {
@@ -203,25 +242,6 @@ function handlersFor(agent: AgentPlugin, domainName: string): AnyDomainHandlers 
   const handles = agent.handles as DomainEventHandlers | undefined;
   if (!handles) return undefined;
   return (handles as unknown as Record<string, AnyDomainHandlers | undefined>)[domainName];
-}
-
-async function initializeNewDomains(registry: PluginRegistry, ctx: ResolveContext): Promise<boolean> {
-  let state = await readState(ctx.statePath);
-  for (const dom of orderedDomains(registry)) {
-    if (isDomainInitialized(state, dom.plugin.name)) continue;
-    if (dom.plugin.onInitialize) {
-      ctx.logger.info(`-> ${dom.plugin.name}.onInitialize`);
-      try {
-        await dom.plugin.onInitialize(ctx);
-      } catch (err) {
-        ctx.logger.error(`${dom.plugin.name}.onInitialize failed: ${(err as Error).message}`);
-        return false;
-      }
-    }
-    state = markDomainInitialized(state, dom.plugin.name);
-    await writeState(ctx.statePath, state);
-  }
-  return true;
 }
 
 async function ensureAgentInstalled(agent: AgentPlugin, ctx: ResolveContext): Promise<boolean> {

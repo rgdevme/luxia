@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 
 export interface AgnosState {
   version: 1;
@@ -24,6 +25,7 @@ export async function readState(statePath: string): Promise<AgnosState> {
 }
 
 export async function writeState(statePath: string, state: AgnosState): Promise<void> {
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
   const json = JSON.stringify(state, null, 2) + "\n";
   await fs.writeFile(statePath, json, "utf8");
 }

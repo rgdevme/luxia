@@ -51,6 +51,8 @@ export {
   activateAgent,
   buildAgentDomainStates,
   cleanupAgent,
+  initializeAgentsInterleaved,
+  materializeAgent,
   orderedDomains,
   reconcile,
   reinstate,
