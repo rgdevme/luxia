@@ -29,16 +29,14 @@ async function runOnce(
 ): Promise<void> {
   const cfg = await readEffectiveDocsConfig(ctx);
   const v = await runValidate(cfg, ctx);
-  let validateFailed = false;
   if (v.issues.length > 0) {
     process.stderr.write(formatErrorBlock(cfg, v.issues, ctx) + "\n");
-    validateFailed = true;
+    ctx.logger.warn("docs: validation failed — skipping generate/inject");
+    if (opts.exitOnValidateFailure) process.exitCode = 1;
+    return;
   }
   await runGenerate(cfg, ctx);
   await runInject(cfg, ctx);
-  if (validateFailed && opts.exitOnValidateFailure) {
-    process.exitCode = 1;
-  }
 }
 
 async function runWatch(ctx: ResolveContext): Promise<void> {
@@ -91,6 +89,8 @@ async function initialPass(state: WatchState): Promise<void> {
   const v = await runValidate(cfg, ctx);
   if (v.issues.length > 0) {
     process.stderr.write(formatErrorBlock(cfg, v.issues, ctx) + "\n");
+    ctx.logger.warn("docs: validation failed — waiting for changes (no generate/inject)");
+    return;
   }
   await runGenerate(cfg, ctx);
   await runInject(cfg, ctx);
@@ -122,10 +122,12 @@ async function openDownstreamWatchers(state: WatchState): Promise<void> {
 async function onDocsChange(state: WatchState): Promise<void> {
   const { ctx, cfg } = state;
   await debounce(DEBOUNCE_MS);
-  ctx.logger.info("docs: change detected → validate + generate");
+  ctx.logger.info("docs: change detected → validate");
   const v = await runValidate(cfg, ctx);
   if (v.issues.length > 0) {
     process.stderr.write(formatErrorBlock(cfg, v.issues, ctx) + "\n");
+    ctx.logger.warn("docs: validation failed — waiting for changes (no generate/inject)");
+    return;
   }
   await runGenerate(cfg, ctx);
 }
