@@ -4,13 +4,11 @@ export const metadataFieldSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("string"),
     description: z.string(),
-    required: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("enum"),
     values: z.array(z.string()).min(1),
     description: z.string(),
-    required: z.boolean().optional(),
   }),
 ]);
 
@@ -29,19 +27,13 @@ export const docsConfigSchema = z.object({
 export type DocsConfig = z.infer<typeof docsConfigSchema>;
 
 export const DEFAULT_DOCS_METADATA: Record<string, MetadataFieldSchema> = {
-  title: { type: "string", description: "Title", required: true },
-  description: {
-    type: "string",
-    description: "Brief description of the document.",
-    required: true,
-  },
-  read_when: { type: "string", description: "When you need to...", required: true },
+  title: { type: "string", description: "Title" },
+  description: { type: "string", description: "Brief description of the document." },
+  read_when: { type: "string", description: "When you need to..." },
   agent_cant: {
     type: "enum",
     values: ["read", "write", "delete"],
-    description:
-      "Limit (in natural language) what the agent cannot do with this file.",
-    required: true,
+    description: "Limit (in natural language) what the agent cannot do with this file.",
   },
 };
 

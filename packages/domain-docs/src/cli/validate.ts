@@ -56,7 +56,6 @@ async function checkFile(abs: string, cfg: EffectiveDocsConfig, ctx: ResolveCont
   const missing: string[] = [];
   const invalid: { key: string; reason: string }[] = [];
   for (const [key, schema] of Object.entries(cfg.metadata)) {
-    if (schema.required === false) continue;
     if (!(key in data) || data[key] === undefined || data[key] === null || data[key] === "") {
       missing.push(key);
       continue;
@@ -110,8 +109,7 @@ function describe(v: unknown): string {
 }
 
 function formatErrorBlock(cfg: EffectiveDocsConfig, issues: FileIssue[], _ctx: ResolveContext): string {
-  const required = Object.entries(cfg.metadata).filter(([, s]) => s.required !== false);
-  const patternLines = required.map(([key, schema]) => {
+  const patternLines = Object.entries(cfg.metadata).map(([key, schema]) => {
     const valHint = schema.type === "enum" ? schema.values.join("|") : "<string>";
     return `${key}: ${valHint}    # ${schema.description}`;
   });

@@ -27,13 +27,11 @@ export const metadataFieldSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("string"),
     description: z.string(),
-    required: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("enum"),
     values: z.array(z.string()).min(1),
     description: z.string(),
-    required: z.boolean().optional(),
   }),
 ]);
 
