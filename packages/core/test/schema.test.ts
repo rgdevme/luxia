@@ -8,12 +8,10 @@ import {
 } from "../src/schema.js";
 
 describe("schemas", () => {
-  it("agentRefSchema accepts string and {id,package} forms", () => {
+  it("agentRefSchema accepts string ids and rejects objects", () => {
     expect(agentRefSchema.parse("claude-code")).toBe("claude-code");
-    expect(agentRefSchema.parse({ id: "zed", package: "@me/agnos-agent-zed" })).toEqual({
-      id: "zed",
-      package: "@me/agnos-agent-zed",
-    });
+    expect(agentRefSchema.parse("@me/agnos-agent-zed")).toBe("@me/agnos-agent-zed");
+    expect(() => agentRefSchema.parse({ id: "zed", package: "@me/agnos-agent-zed" })).toThrow();
   });
 
   it("rulesDeclarationSchema requires a source", () => {

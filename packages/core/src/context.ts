@@ -9,13 +9,16 @@ import type { Logger, ResolveContext } from "./types/public.js";
 export interface BuildContextOptions {
   projectRoot: string;
   copyFallback?: boolean;
+  dryRun?: boolean;
   logger?: Logger;
 }
 
 export async function buildResolveContext(opts: BuildContextOptions): Promise<ResolveContext> {
   const paths = buildPaths(opts.projectRoot);
-  await ensureDir(paths.agnosRoot);
-  await ensureDir(paths.cacheDir);
+  if (!opts.dryRun) {
+    await ensureDir(paths.agnosRoot);
+    await ensureDir(paths.cacheDir);
+  }
   const logger = opts.logger ?? createLogger();
   const linker = createLinker({ cacheDir: paths.cacheDir, logger, copyFallback: opts.copyFallback });
   const fetcher = createSourceResolver({ projectRoot: opts.projectRoot, cacheDir: paths.cacheDir });
@@ -28,6 +31,7 @@ export async function buildResolveContext(opts: BuildContextOptions): Promise<Re
     logger,
     fetcher,
     linker,
+    dryRun: opts.dryRun ?? false,
   };
 }
 

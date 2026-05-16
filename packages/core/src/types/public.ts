@@ -1,6 +1,11 @@
 import type { z } from "zod";
 
-export type AgentRef = string | { id: string; package: string };
+/**
+ * An entry in `agnos.json.agents`. Either an agent id (e.g. "claude-code") or
+ * a full npm package name (e.g. "@me/agnos-agent-zed") — used when two
+ * installed plugins claim the same id and need disambiguation.
+ */
+export type AgentRef = string;
 
 export interface AgnosConfig {
   $schema?: string;
@@ -73,10 +78,15 @@ export interface ResolveContext {
   logger: Logger;
   fetcher: SourceResolver;
   linker: Linker;
+  /** When true, mutation paths log "would: …" lines and skip side effects. */
+  dryRun?: boolean;
+  /** Prepended to every line a wrapped logger emits inside agent hooks. */
+  indent?: string;
 }
 
 export interface MaterializeContext extends ResolveContext {
   agentId: string;
+  indent: string;
 }
 
 export interface CliCommandArgs {
@@ -159,11 +169,32 @@ export interface SkillsEventHandlers {
   onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
+/**
+ * Agents register per-domain handlers here. Built-in domains have typed keys
+ * (`rules`, `mcp`, `skills`). Third-party domain plugins can add their own
+ * typed keys via TS declaration merging:
+ *
+ * ```ts
+ * // in `@user/agnos-domain-prompts`
+ * declare module '@agnos/core' {
+ *   interface DomainEventHandlers {
+ *     prompts?: {
+ *       onInitialize?(state: ResolvedPrompt[], ctx: MaterializeContext): Promise<void>;
+ *       onAdded?(item: ResolvedPrompt, ctx: MaterializeContext): Promise<void>;
+ *       // …
+ *     };
+ *   }
+ * }
+ * ```
+ *
+ * The orchestrator looks up handlers by string key, so even without
+ * augmentation an agent can write `handles: { prompts: { onAdded: … } }` —
+ * augmentation just gives you type-checking on the handler signatures.
+ */
 export interface DomainEventHandlers {
   rules?: RulesEventHandlers;
   mcp?: McpEventHandlers;
   skills?: SkillsEventHandlers;
-  // Third-party domains can extend via the index signature below.
 }
 
 export interface AgentPlugin {

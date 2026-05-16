@@ -79,8 +79,9 @@ describe("events dispatch", () => {
       },
     };
 
-    await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a, b], ctx);
-    await dispatchMcpAdded({ name: "github", command: "npx" }, [a, b], ctx);
+    const emptyConfig: AgnosConfig = { skills: [], mcp: [] };
+    await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a, b], emptyConfig, ctx);
+    await dispatchMcpAdded({ name: "github", command: "npx" }, [a, b], emptyConfig, ctx);
 
     expect(calls).toEqual([
       "a:skills.onAdded:pdf",
@@ -106,9 +107,54 @@ describe("events dispatch", () => {
       { absolutePath: "/x/old.md", relativeSource: "./old.md" },
       { absolutePath: "/x/new.md", relativeSource: "./new.md" },
       [a],
+      {},
       ctx,
     );
     expect(seen).toEqual([{ from: "./old.md", to: "./new.md" }]);
+  });
+
+  it("falls back to onInitialize when per-event handler is missing", async () => {
+    const calls: string[] = [];
+    const a: AgentPlugin = {
+      id: "a",
+      displayName: "A",
+      handles: {
+        mcp: {
+          async onInitialize(state) {
+            calls.push(`a:mcp.onInitialize:n=${(state as Array<unknown>).length}`);
+          },
+        },
+      },
+    };
+    const config: AgnosConfig = {
+      mcp: [
+        { name: "github", command: "npx" },
+        { name: "postgres", command: "npx" },
+      ],
+    };
+    await dispatchMcpAdded({ name: "postgres", command: "npx" }, [a], config, ctx);
+    expect(calls).toEqual(["a:mcp.onInitialize:n=2"]);
+  });
+
+  it("dry-run skips invocation but logs", async () => {
+    const calls: string[] = [];
+    const messages: string[] = [];
+    const logger = { ...createLogger(), info: (m: string) => messages.push(m) } as ReturnType<typeof createLogger>;
+    const dryCtx: ResolveContext = { ...ctx, logger, dryRun: true };
+    const a: AgentPlugin = {
+      id: "a",
+      displayName: "A",
+      handles: {
+        skills: {
+          async onAdded() {
+            calls.push("a:skills.onAdded");
+          },
+        },
+      },
+    };
+    await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a], { skills: [] }, dryCtx);
+    expect(calls).toEqual([]);
+    expect(messages.some((m) => m.includes("would:"))).toBe(true);
   });
 
   it("activeAgents resolves declared agent refs and warns on missing plugins", () => {

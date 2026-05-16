@@ -170,16 +170,21 @@ function resolveModuleEntry(
   }
 }
 
-export function resolveAgentByRef(
-  registry: PluginRegistry,
-  ref: string | { id: string; package: string },
-): RegisteredAgent | undefined {
-  if (typeof ref === "string") {
-    return registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
-  }
-  return registry.agentsByPackage.get(ref.package) ?? registry.agents.get(ref.id);
+/**
+ * Look up an agent by `agnos.json.agents` entry. Tries id first, then package
+ * name. (Used when a plugin id collision forces the user to write the full
+ * package name as the agent ref.)
+ */
+export function resolveAgentByRef(registry: PluginRegistry, ref: string): RegisteredAgent | undefined {
+  return registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
 }
 
-export function refToId(ref: string | { id: string; package: string }): string {
-  return typeof ref === "string" ? ref : ref.id;
+/**
+ * Resolve the canonical agent id for a ref. If the ref is a package name,
+ * returns the plugin's declared id. Falls back to the ref itself when not
+ * found (caller will discover this is a missing plugin later).
+ */
+export function refToId(registry: PluginRegistry, ref: string): string {
+  const reg = registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
+  return reg ? reg.plugin.id : ref;
 }

@@ -31,6 +31,7 @@ export interface InitOptions {
   cwd: string;
   yes: boolean;
   copyOnNoSymlink: boolean;
+  dryRun?: boolean;
   logger: Logger;
 }
 
@@ -41,27 +42,35 @@ export async function runInit(opts: InitOptions): Promise<void> {
   if (!existed) {
     const initial = structuredClone(DEFAULT_CONFIG);
     initial.agents = [];
-    await writeConfig(paths.configPath, initial);
-    opts.logger.success(`created ${path.relative(opts.cwd, paths.configPath)}`);
+    if (opts.dryRun) {
+      opts.logger.info(`would: create ${path.relative(opts.cwd, paths.configPath)}`);
+    } else {
+      await writeConfig(paths.configPath, initial);
+      opts.logger.success(`created ${path.relative(opts.cwd, paths.configPath)}`);
+    }
   } else {
     opts.logger.info(`${path.relative(opts.cwd, paths.configPath)} already exists`);
   }
 
-  await ensureDir(paths.agnosRoot);
-  await ensureDir(paths.cacheDir);
-  await ensureGitIgnore(opts.cwd, opts.logger);
+  if (!opts.dryRun) {
+    await ensureDir(paths.agnosRoot);
+    await ensureDir(paths.cacheDir);
+    await ensureGitIgnore(opts.cwd, opts.logger);
+  }
 
   // 1) Rules-source path (interactive unless -y).
-  await runRules({ cwd: opts.cwd, yes: opts.yes, logger: opts.logger });
+  await runRules({ cwd: opts.cwd, yes: opts.yes, dryRun: opts.dryRun ?? false, logger: opts.logger });
 
   // 2) Pick agents (inline; do NOT call runAgents — it does its own reinstate).
   await promptAndPersistAgents(opts);
 
-  // 3) Single materialization pass: domain.onInitialize for each domain not yet
-  //    initialized, then per active agent: onInstalled (state-gated) + per-domain
-  //    onInitialize in priority order. Reconciles orphans at the end.
+  // 3) Single materialization pass.
   const config = await readConfigOrDefault(paths.configPath);
-  const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
+  const ctx = await buildResolveContext({
+    projectRoot: opts.cwd,
+    logger: opts.logger,
+    dryRun: opts.dryRun ?? false,
+  });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
   await reinstate(config, registry, ctx, {
     copyOnNoSymlink: opts.copyOnNoSymlink,
@@ -89,7 +98,7 @@ async function promptAndPersistAgents(opts: InitOptions): Promise<void> {
     return;
   }
 
-  const currentIds = new Set((config.agents ?? []).map(refToId));
+  const currentIds = new Set((config.agents ?? []).map((ref) => refToId(registry, ref)));
   const selectedIds = await checkbox<string>({
     message: "Pick the agents to enable in this project:",
     choices: available.map((a) => ({
@@ -101,8 +110,12 @@ async function promptAndPersistAgents(opts: InitOptions): Promise<void> {
 
   const newRefs: AgentRef[] = selectedIds.map((id) => id);
   config.agents = newRefs;
-  await writeConfig(paths.configPath, config);
-  opts.logger.success(`agnos.json updated (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`);
+  if (opts.dryRun) {
+    opts.logger.info(`would: write agnos.json with ${selectedIds.length} agent(s)`);
+  } else {
+    await writeConfig(paths.configPath, config);
+    opts.logger.success(`agnos.json updated (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`);
+  }
 }
 
 async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {

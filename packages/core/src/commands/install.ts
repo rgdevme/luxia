@@ -8,13 +8,18 @@ import type { Logger } from "../types/public.js";
 export interface InstallCommandOptions {
   cwd: string;
   copyOnNoSymlink?: boolean;
+  dryRun?: boolean;
   logger: Logger;
 }
 
 export async function runInstallCommand(opts: InstallCommandOptions): Promise<void> {
   const paths = buildPaths(opts.cwd);
   const config = await readConfig(paths.configPath);
-  const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
+  const ctx = await buildResolveContext({
+    projectRoot: opts.cwd,
+    logger: opts.logger,
+    dryRun: opts.dryRun ?? false,
+  });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
 
   const result = await reinstate(config, registry, ctx, {

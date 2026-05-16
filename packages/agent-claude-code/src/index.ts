@@ -7,7 +7,6 @@ import type {
   ResolvedRule,
   ResolvedSkill,
 } from "@agnos/core";
-import { readConfigOrDefault } from "@agnos/core";
 
 const CLAUDE_RULES = "CLAUDE.md";
 const CLAUDE_MCP = ".mcp.json";
@@ -19,6 +18,8 @@ const claudeCode: AgentPlugin = {
 
   handles: {
     rules: {
+      // onInitialize handles all add/move/remove via fallback in events.ts —
+      // the output is a single file (CLAUDE.md) so we just write/relink each time.
       async onInitialize(state, ctx) {
         if (state) {
           await writeRulesLink(state, ctx);
@@ -26,37 +27,22 @@ const claudeCode: AgentPlugin = {
           await removeRulesLink(ctx);
         }
       },
-      async onAdded(decl, ctx) {
-        await writeRulesLink(decl, ctx);
-      },
-      async onMoved(_from, to, ctx) {
-        await writeRulesLink(to, ctx);
-      },
-      async onRemoved(_decl, ctx) {
-        await removeRulesLink(ctx);
-      },
       async onCleanup(ctx) {
         await removeRulesLink(ctx);
       },
     },
     mcp: {
+      // Same single-file regeneration story; onAdded/onUpdated/onRemoved fall
+      // back to onInitialize with the full mcp[] state.
       async onInitialize(state, ctx) {
         await writeMcpFile(state, ctx);
-      },
-      async onAdded(_item, ctx) {
-        await rewriteMcpFromConfig(ctx);
-      },
-      async onUpdated(_item, ctx) {
-        await rewriteMcpFromConfig(ctx);
-      },
-      async onRemoved(_name, ctx) {
-        await rewriteMcpFromConfig(ctx);
       },
       async onCleanup(ctx) {
         await removeMcpFile(ctx);
       },
     },
     skills: {
+      // Per-skill incremental; each skill is its own junction.
       async onInitialize(state, ctx) {
         await materializeSkills(state, ctx);
       },
@@ -84,7 +70,7 @@ async function writeRulesLink(rule: ResolvedRule, ctx: MaterializeContext): Prom
   const linkPath = path.join(ctx.projectRoot, CLAUDE_RULES);
   if (path.resolve(linkPath) === path.resolve(rule.absolutePath)) return;
   await ctx.linker.link(rule.absolutePath, linkPath, { fallback: "copy" });
-  ctx.logger.info(`  CLAUDE.md → ${rule.relativeSource}`);
+  ctx.logger.info(`CLAUDE.md → ${rule.relativeSource}`);
 }
 
 async function removeRulesLink(ctx: MaterializeContext): Promise<void> {
@@ -101,12 +87,7 @@ async function writeMcpFile(servers: ResolvedMcp[], ctx: MaterializeContext): Pr
   };
   const file = path.join(ctx.projectRoot, CLAUDE_MCP);
   await fs.writeFile(file, JSON.stringify(out, null, 2) + "\n", "utf8");
-  ctx.logger.info(`  .mcp.json (${servers.length} server${servers.length === 1 ? "" : "s"})`);
-}
-
-async function rewriteMcpFromConfig(ctx: MaterializeContext): Promise<void> {
-  const config = await readConfigOrDefault(ctx.configPath);
-  await writeMcpFile((config.mcp ?? []) as ResolvedMcp[], ctx);
+  ctx.logger.info(`.mcp.json (${servers.length} server${servers.length === 1 ? "" : "s"})`);
 }
 
 async function removeMcpFile(ctx: MaterializeContext): Promise<void> {
@@ -123,7 +104,7 @@ async function materializeSkills(items: ResolvedSkill[], ctx: MaterializeContext
   for (const s of items) {
     await ensureSkillLink(s, ctx);
   }
-  ctx.logger.info(`  .claude/skills/ (${items.length} skill${items.length === 1 ? "" : "s"})`);
+  ctx.logger.info(`.claude/skills/ (${items.length} skill${items.length === 1 ? "" : "s"})`);
 }
 
 async function ensureSkillLink(item: ResolvedSkill, ctx: MaterializeContext): Promise<void> {

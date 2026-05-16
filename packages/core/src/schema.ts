@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-export const agentRefSchema = z.union([
-  z.string().min(1),
-  z.object({ id: z.string().min(1), package: z.string().min(1) }),
-]);
+export const agentRefSchema = z.string().min(1);
 
 export const rulesDeclarationSchema = z.object({
   source: z.string().min(1),

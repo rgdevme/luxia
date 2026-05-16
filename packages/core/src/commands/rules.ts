@@ -14,6 +14,7 @@ export interface RulesOptions {
   cwd: string;
   path?: string | undefined;
   yes: boolean;
+  dryRun?: boolean;
   logger: Logger;
 }
 
@@ -105,17 +106,22 @@ async function dispatchRulesIfActive(
   opts: RulesOptions,
 ): Promise<void> {
   if (!config.agents || (Array.isArray(config.agents) && config.agents.length === 0)) return;
-  const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
+  const ctx = await buildResolveContext({
+    projectRoot: opts.cwd,
+    logger: opts.logger,
+    dryRun: opts.dryRun ?? false,
+  });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
-  const agents = activeAgents(config as unknown as import("../types/public.js").AgnosConfig, registry, ctx);
+  const agnosCfg = config as unknown as import("../types/public.js").AgnosConfig;
+  const agents = activeAgents(agnosCfg, registry, ctx);
   const toResolved = await resolveRule(args.to, ctx);
   if (event === "added") {
-    await dispatchRulesAdded(toResolved, agents, ctx);
+    await dispatchRulesAdded(toResolved, agents, agnosCfg, ctx);
     return;
   }
   if (args.from === undefined) return;
   const fromResolved = await resolveRule(args.from, ctx);
-  await dispatchRulesMoved(fromResolved, toResolved, agents, ctx);
+  await dispatchRulesMoved(fromResolved, toResolved, agents, agnosCfg, ctx);
 }
 
 function normalizeRelPath(p: string): string {

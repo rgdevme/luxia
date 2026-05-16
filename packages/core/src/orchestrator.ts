@@ -28,7 +28,9 @@ import {
   unmarkAgentInstalled,
   writeState,
 } from "./state.js";
-import { activeAgents } from "./events.js";
+import { activeAgents, dispatchSkillRemoved } from "./events.js";
+import { indentedLogger } from "./logger.js";
+import { runHook } from "./hooks.js";
 
 export interface InstallOptions {
   copyOnNoSymlink?: boolean;
@@ -57,7 +59,7 @@ export async function reinstate(
     for (const c of registry.collisions) {
       ctx.logger.error(
         `${c.type} id "${c.id}" is declared by multiple packages: ${c.packages.join(", ")}. ` +
-          `Disambiguate in agnos.json.agents via { id, package }.`,
+          `Disambiguate in agnos.json.agents by replacing the colliding id with the full package name.`,
       );
     }
     return { ok: false };
@@ -115,13 +117,15 @@ export async function cleanupAgent(
   registry: PluginRegistry,
   ctx: ResolveContext,
 ): Promise<void> {
-  const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
+  const mctx = buildMaterializeCtx(ctx, agent.id, "  ");
+  const verb = ctx.dryRun ? "would: " : "-> ";
   for (const dom of orderedDomains(registry).reverse()) {
     const handlers = handlersFor(agent, dom.plugin.name);
     const fn = handlers?.onCleanup;
     if (!fn) continue;
-    ctx.logger.info(`-> ${agent.id}.${dom.plugin.name}.onCleanup`);
-    await fn(mctx);
+    ctx.logger.info(`${verb}${agent.id}.${dom.plugin.name}.onCleanup`);
+    if (ctx.dryRun) continue;
+    await runHook(`${agent.id}.${dom.plugin.name}.onCleanup`, () => fn(mctx));
   }
 }
 
@@ -130,10 +134,17 @@ export async function cleanupAgent(
  * Caller is responsible for calling cleanupAgent first if the agent was active.
  */
 export async function uninstallAgent(agent: AgentPlugin, ctx: ResolveContext): Promise<void> {
+  const verb = ctx.dryRun ? "would: " : "-> ";
   if (agent.onUninstalled) {
-    const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
-    ctx.logger.info(`-> ${agent.id}.onUninstalled`);
-    await agent.onUninstalled(mctx);
+    const mctx = buildMaterializeCtx(ctx, agent.id, "  ");
+    ctx.logger.info(`${verb}${agent.id}.onUninstalled`);
+    if (!ctx.dryRun) {
+      await runHook(`${agent.id}.onUninstalled`, () => agent.onUninstalled!(mctx));
+    }
+  }
+  if (ctx.dryRun) {
+    ctx.logger.info(`would: unmark ${agent.id} in state.json`);
+    return;
   }
   const state = await readState(ctx.statePath);
   await writeState(ctx.statePath, unmarkAgentInstalled(state, agent.id));
@@ -196,14 +207,17 @@ export async function initializeAgentsInterleaved(
   let projectState = await readState(ctx.statePath);
 
   for (const dom of orderedDomains(registry)) {
-    ctx.logger.info(`-> ${dom.plugin.name}.onInitialize`);
+    const verb = ctx.dryRun ? "would: " : "-> ";
+    ctx.logger.info(`${verb}${dom.plugin.name}.onInitialize`);
 
     if (!isDomainInitialized(projectState, dom.plugin.name)) {
-      if (dom.plugin.onInitialize) {
-        await dom.plugin.onInitialize(ctx);
+      if (dom.plugin.onInitialize && !ctx.dryRun) {
+        await runHook(`${dom.plugin.name}.onInitialize`, () => dom.plugin.onInitialize!(ctx));
       }
-      projectState = markDomainInitialized(projectState, dom.plugin.name);
-      await writeState(ctx.statePath, projectState);
+      if (!ctx.dryRun) {
+        projectState = markDomainInitialized(projectState, dom.plugin.name);
+        await writeState(ctx.statePath, projectState);
+      }
     }
 
     for (const agent of agents) {
@@ -212,10 +226,11 @@ export async function initializeAgentsInterleaved(
         | ((s: unknown, c: MaterializeContext) => Promise<void>)
         | undefined;
       if (!fn) continue;
-      const mctx: MaterializeContext = { ...ctx, agentId: agent.id };
-      ctx.logger.info(`  -> ${agent.id}`);
+      const mctx = buildMaterializeCtx(ctx, agent.id, "    ");
+      ctx.logger.info(`  ${verb}${agent.id}`);
       ctx.logger.info(`    ${dom.plugin.name}.onInitialize`);
-      await fn(state[dom.plugin.name], mctx);
+      if (ctx.dryRun) continue;
+      await runHook(`${agent.id}.${dom.plugin.name}.onInitialize`, () => fn(state[dom.plugin.name], mctx));
     }
   }
 }
@@ -244,19 +259,28 @@ function handlersFor(agent: AgentPlugin, domainName: string): AnyDomainHandlers 
   return (handles as unknown as Record<string, AnyDomainHandlers | undefined>)[domainName];
 }
 
+function buildMaterializeCtx(ctx: ResolveContext, agentId: string, indent: string): MaterializeContext {
+  return { ...ctx, agentId, indent, logger: indentedLogger(ctx.logger, indent) };
+}
+
 async function ensureAgentInstalled(agent: AgentPlugin, ctx: ResolveContext): Promise<boolean> {
   const state = await readState(ctx.statePath);
   if (isAgentInstalled(state, agent.id)) return true;
   if (agent.onInstalled) {
-    ctx.logger.info(`-> ${agent.id}.onInstalled`);
-    try {
-      await agent.onInstalled(ctx);
-    } catch (err) {
-      ctx.logger.error(`${agent.id}.onInstalled failed: ${(err as Error).message}`);
-      return false;
+    const verb = ctx.dryRun ? "would: " : "-> ";
+    ctx.logger.info(`${verb}${agent.id}.onInstalled`);
+    if (!ctx.dryRun) {
+      try {
+        await runHook(`${agent.id}.onInstalled`, () => agent.onInstalled!(ctx));
+      } catch (err) {
+        ctx.logger.error((err as Error).message);
+        return false;
+      }
     }
   }
-  await writeState(ctx.statePath, markAgentInstalled(state, agent.id));
+  if (!ctx.dryRun) {
+    await writeState(ctx.statePath, markAgentInstalled(state, agent.id));
+  }
   return true;
 }
 
@@ -292,7 +316,11 @@ export async function resolveSkill(name: string, ctx: ResolveContext): Promise<R
 }
 
 /**
- * Orphan cleanup. Acts directly on the filesystem; does not dispatch events.
+ * Orphan cleanup. Dispatches `handles.skills.onRemoved` to active agents before
+ * deleting any orphans from `.agnos/skills/`, so per-agent artifacts (e.g.,
+ * `.claude/skills/<name>`) are removed through the standard event path. Errors
+ * inside an agent's removal handler are logged but don't block the canonical
+ * delete (otherwise we'd get stuck).
  */
 export async function reconcile(
   config: AgnosConfig,
@@ -302,34 +330,36 @@ export async function reconcile(
   const paths = buildPaths(ctx.projectRoot);
   const declaredSkills = new Set((config.skills ?? []).map((s) => s.name));
 
-  await pruneSkillsDir(paths.skillsDir, declaredSkills, ctx);
-  for (const agent of agents) {
-    const dir = agentSkillDir(agent.id, ctx.projectRoot);
-    if (!dir) continue;
-    await pruneSkillsDir(dir, declaredSkills, ctx, /* skipMissingDir */ true);
+  const orphans = await findOrphans(paths.skillsDir, declaredSkills);
+  for (const name of orphans) {
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: reconcile orphan skill ${name}`);
+      continue;
+    }
+    // Notify active agents BEFORE the canonical delete so they can clean their
+    // per-agent artifacts (junctions, copies) cleanly.
+    try {
+      await dispatchSkillRemoved(name, agents, config, ctx);
+    } catch (err) {
+      ctx.logger.warn(
+        `reconcile: ${(err as Error).message}; continuing with filesystem cleanup`,
+      );
+    }
+    const full = path.join(paths.skillsDir, name);
+    await fs.rm(full, { recursive: true, force: true });
+    ctx.logger.info(`reconcile: removed orphan ${path.relative(ctx.projectRoot, full)}`);
   }
 }
 
-async function pruneSkillsDir(
-  dir: string,
-  declared: ReadonlySet<string>,
-  ctx: ResolveContext,
-  skipMissingDir = false,
-): Promise<void> {
+async function findOrphans(dir: string, declared: ReadonlySet<string>): Promise<string[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch (err) {
-    if (skipMissingDir && (err as NodeJS.ErrnoException).code === "ENOENT") return;
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  for (const name of entries) {
-    if (declared.has(name)) continue;
-    const full = path.join(dir, name);
-    await fs.rm(full, { recursive: true, force: true });
-    ctx.logger.info(`reconcile: removed orphan ${path.relative(ctx.projectRoot, full)}`);
-  }
+  return entries.filter((name) => !declared.has(name));
 }
 
 function agentSkillDir(agentId: string, projectRoot: string): string | undefined {

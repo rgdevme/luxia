@@ -15,8 +15,8 @@ Usage:
   agnos init [-y]                       Initialize agnos (= agnos rules + agnos agents)
   agnos rules [path]                    Set the rules-source path (default ./AGENTS.md)
   agnos agents                          Pick which agent plugins to enable
-  agnos agent add <id|pkg>              Install + register an agent plugin
-  agnos agent remove <id>               Uninstall + clean up an agent plugin
+  agnos agent add <id|pkg>              Install + activate an agent plugin
+  agnos agent remove <id>               Deactivate + uninstall an agent plugin
   agnos skill add <ref>                 Add a skill (e.g. github:owner/repo/path)
   agnos skill remove <name>             Remove a skill
   agnos skill update <name>             Re-fetch a skill from its source
@@ -27,17 +27,29 @@ Usage:
 
 Common flags:
   -y, --yes                             Skip prompts (non-interactive defaults)
-  --no-install                          For add/remove/update: skip the trailing install
-  --copy-on-no-symlink                  Auto-copy when symlinks aren't available
-  --cwd <dir>                           Run as if invoked from <dir>
-  --debug                               Verbose diagnostics
+      --no-install                      For add/remove/update: skip the trailing install
+      --no-activate                     For \`agent add\`: install but don't activate
+      --copy-on-no-symlink              Auto-copy when symlinks aren't available
+      --dry-run                         Log planned actions without invoking them
+  -q, --quiet                           Suppress info/success/debug output (errors still print)
+      --cwd <dir>                       Run as if invoked from <dir>
+      --debug                           Verbose diagnostics
   -h, --help                            Show this help
 `;
 
 async function main(): Promise<void> {
   const argv = minimist(process.argv.slice(2), {
-    boolean: ["yes", "help", "debug", "no-install", "copy-on-no-symlink"],
-    alias: { y: "yes", h: "help" },
+    boolean: [
+      "yes",
+      "help",
+      "debug",
+      "no-install",
+      "no-activate",
+      "copy-on-no-symlink",
+      "dry-run",
+      "quiet",
+    ],
+    alias: { y: "yes", h: "help", q: "quiet" },
     string: ["cwd"],
   });
 
@@ -47,7 +59,14 @@ async function main(): Promise<void> {
   }
 
   const cwd = typeof argv["cwd"] === "string" ? argv["cwd"] : process.cwd();
-  const logger = createLogger({ debug: Boolean(argv["debug"]) });
+  const dryRun = Boolean(argv["dry-run"]);
+  const quiet = Boolean(argv["quiet"]);
+  const logger = createLogger({ debug: Boolean(argv["debug"]), quiet });
+
+  if (dryRun && quiet) {
+    logger.warn("`--dry-run --quiet` together produces no output; dropping --quiet.");
+  }
+  const effectiveLogger = dryRun && quiet ? createLogger({ debug: Boolean(argv["debug"]) }) : logger;
 
   const [command, sub, ...rest] = argv._;
 
@@ -57,13 +76,30 @@ async function main(): Promise<void> {
         process.stdout.write(USAGE);
         return;
       case "init":
-        await runInit({ cwd, yes: Boolean(argv["yes"]), copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]), logger });
+        await runInit({
+          cwd,
+          yes: Boolean(argv["yes"]),
+          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
+          dryRun,
+          logger: effectiveLogger,
+        });
         return;
       case "rules":
-        await runRules({ cwd, path: sub, yes: Boolean(argv["yes"]), logger });
+        await runRules({
+          cwd,
+          path: sub,
+          yes: Boolean(argv["yes"]),
+          dryRun,
+          logger: effectiveLogger,
+        });
         return;
       case "agents":
-        await runAgents({ cwd, copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]), logger });
+        await runAgents({
+          cwd,
+          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
+          dryRun,
+          logger: effectiveLogger,
+        });
         return;
       case "agent":
         if (sub === "add") {
@@ -71,26 +107,48 @@ async function main(): Promise<void> {
             cwd,
             target: rest[0],
             noInstall: Boolean(argv["no-install"]),
+            noActivate: Boolean(argv["no-activate"]),
             copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-            yes: Boolean(argv["yes"]),
-            logger,
+            dryRun,
+            logger: effectiveLogger,
           });
           return;
         }
         if (sub === "remove") {
-          await runAgentRemove({ cwd, id: rest[0], logger });
+          await runAgentRemove({ cwd, id: rest[0], dryRun, logger: effectiveLogger });
           return;
         }
         fail(`Unknown agent subcommand: ${sub ?? "(none)"}`);
         return;
       case "skill":
-        await runSkill({ cwd, sub, args: rest, noInstall: Boolean(argv["no-install"]), copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]), logger });
+        await runSkill({
+          cwd,
+          sub,
+          args: rest,
+          noInstall: Boolean(argv["no-install"]),
+          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
+          dryRun,
+          logger: effectiveLogger,
+        });
         return;
       case "mcp":
-        await runMcp({ cwd, sub, args: rest, noInstall: Boolean(argv["no-install"]), copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]), logger });
+        await runMcp({
+          cwd,
+          sub,
+          args: rest,
+          noInstall: Boolean(argv["no-install"]),
+          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
+          dryRun,
+          logger: effectiveLogger,
+        });
         return;
       case "install":
-        await runInstallCommand({ cwd, copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]), logger });
+        await runInstallCommand({
+          cwd,
+          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
+          dryRun,
+          logger: effectiveLogger,
+        });
         return;
       default: {
         if (RESERVED_CLI_IDS.includes(command as typeof RESERVED_CLI_IDS[number])) {
@@ -104,15 +162,25 @@ async function main(): Promise<void> {
           sub,
           positional,
           flags,
-          logger,
+          logger: effectiveLogger,
         });
         if (!handled) fail(`Unknown command: ${command}`);
         return;
       }
     }
   } catch (err) {
-    logger.error((err as Error).message);
-    if (argv["debug"]) console.error((err as Error).stack);
+    const e = err as Error & { cause?: unknown };
+    effectiveLogger.error(e.message);
+    if (argv["debug"]) {
+      console.error(e.stack);
+      let cause: unknown = e.cause;
+      while (cause) {
+        const c = cause as Error & { cause?: unknown };
+        console.error(`  caused by: ${c.message ?? c}`);
+        if (c.stack) console.error(c.stack);
+        cause = c.cause;
+      }
+    }
     process.exitCode = 1;
   }
 }
