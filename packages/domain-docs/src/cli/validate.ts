@@ -2,13 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
 import type { CliCommand, ResolveContext } from "@agnos/core";
-import type { MetadataFieldSchema } from "../schema.js";
 import { readEffectiveDocsConfig, initFiles, type EffectiveDocsConfig } from "../effective-config.js";
 
 interface FileIssue {
   file: string;
   missing: string[];
-  invalid: { key: string; reason: string }[];
 }
 
 export const validate: CliCommand = {
@@ -54,28 +52,13 @@ async function checkFile(abs: string, cfg: EffectiveDocsConfig, ctx: ResolveCont
   const parsed = matter(raw);
   const data = (parsed.data ?? {}) as Record<string, unknown>;
   const missing: string[] = [];
-  const invalid: { key: string; reason: string }[] = [];
-  for (const [key, schema] of Object.entries(cfg.metadata)) {
+  for (const key of Object.keys(cfg.metadata)) {
     if (!(key in data) || data[key] === undefined || data[key] === null || data[key] === "") {
       missing.push(key);
-      continue;
-    }
-    const value = data[key];
-    if (schema.type === "string") {
-      if (typeof value !== "string") {
-        invalid.push({ key, reason: "expected string, got " + describe(value) });
-      }
-    } else if (schema.type === "enum") {
-      if (typeof value !== "string" || !schema.values.includes(value)) {
-        invalid.push({
-          key,
-          reason: `expected one of ${schema.values.map((v) => `"${v}"`).join("|")}, got ${describe(value)}`,
-        });
-      }
     }
   }
-  if (missing.length === 0 && invalid.length === 0) return null;
-  return { file: path.relative(ctx.projectRoot, abs), missing, invalid };
+  if (missing.length === 0) return null;
+  return { file: path.relative(ctx.projectRoot, abs), missing };
 }
 
 export async function listUserDocs(cfg: EffectiveDocsConfig): Promise<string[]> {
@@ -102,17 +85,10 @@ async function walk(dir: string, excluded: ReadonlySet<string>, acc: string[]): 
   }
 }
 
-function describe(v: unknown): string {
-  if (v === null) return "null";
-  if (Array.isArray(v)) return "array";
-  return typeof v === "string" ? `"${v}"` : typeof v;
-}
-
 function formatErrorBlock(cfg: EffectiveDocsConfig, issues: FileIssue[], _ctx: ResolveContext): string {
-  const patternLines = Object.entries(cfg.metadata).map(([key, schema]) => {
-    const valHint = schema.type === "enum" ? schema.values.join("|") : "<string>";
-    return `${key}: ${valHint}    # ${schema.description}`;
-  });
+  const patternLines = Object.entries(cfg.metadata).map(
+    ([key, description]) => `${key}: <value>    # ${description}`,
+  );
   const lines: string[] = [];
   lines.push("The following files do not adhere to the documentation metadata standard.");
   lines.push("They should adhere to the following pattern:");
@@ -125,7 +101,6 @@ function formatErrorBlock(cfg: EffectiveDocsConfig, issues: FileIssue[], _ctx: R
   for (const issue of issues) {
     lines.push(`  - ${issue.file}`);
     if (issue.missing.length) lines.push(`      missing: ${issue.missing.join(", ")}`);
-    for (const inv of issue.invalid) lines.push(`      invalid: ${inv.key} (${inv.reason})`);
   }
   return lines.join("\n");
 }

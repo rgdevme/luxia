@@ -62,7 +62,7 @@ describe("runInit", () => {
   it("seeds DEFAULT_DOCS_METADATA into agnos.json on first run", async () => {
     await runInit(ctxFor(root));
     const raw = await fs.readFile(path.join(root, "agnos.json"), "utf8");
-    const config = JSON.parse(raw) as { docs?: { metadata?: Record<string, { type: string }> } };
+    const config = JSON.parse(raw) as { docs?: { metadata?: Record<string, string> } };
     expect(config.docs?.metadata).toBeDefined();
     expect(Object.keys(config.docs!.metadata!).sort()).toEqual([
       "agent_cant",
@@ -70,12 +70,12 @@ describe("runInit", () => {
       "read_when",
       "title",
     ]);
-    expect(config.docs!.metadata!["agent_cant"]?.type).toBe("enum");
-    expect(config.docs!.metadata!["title"]?.type).toBe("string");
+    expect(typeof config.docs!.metadata!["title"]).toBe("string");
+    expect(typeof config.docs!.metadata!["agent_cant"]).toBe("string");
   });
 
   it("does not overwrite an existing docs.metadata block", async () => {
-    const custom = { title: { type: "string", description: "Custom title field" } };
+    const custom = { title: "Custom title field description" };
     await fs.writeFile(
       path.join(root, "agnos.json"),
       JSON.stringify({ docs: { metadata: custom } }),

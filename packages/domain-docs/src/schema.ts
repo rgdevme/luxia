@@ -1,22 +1,17 @@
 import { z } from "zod";
 
-export const metadataFieldSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("string"),
-    description: z.string(),
-  }),
-  z.object({
-    type: z.literal("enum"),
-    values: z.array(z.string()).min(1),
-    description: z.string(),
-  }),
-]);
-
-export type MetadataFieldSchema = z.infer<typeof metadataFieldSchema>;
+/**
+ * A metadata schema is a flat map of frontmatter key → natural-language
+ * description. The description tells the LLM how to populate the value
+ * (allowed shapes, constraints, etc.). Validation only checks presence —
+ * the prose constraint is the LLM's responsibility.
+ */
+export const metadataSchema = z.record(z.string(), z.string());
+export type MetadataSchema = z.infer<typeof metadataSchema>;
 
 export const docsConfigSchema = z.object({
   route: z.string().optional(),
-  metadata: z.record(z.string(), metadataFieldSchema).optional(),
+  metadata: metadataSchema.optional(),
   index: z.string().optional(),
   content: z.union([z.string(), z.literal(false)]).optional(),
   docRules: z.string().optional(),
@@ -26,15 +21,13 @@ export const docsConfigSchema = z.object({
 
 export type DocsConfig = z.infer<typeof docsConfigSchema>;
 
-export const DEFAULT_DOCS_METADATA: Record<string, MetadataFieldSchema> = {
-  title: { type: "string", description: "Title" },
-  description: { type: "string", description: "Brief description of the document." },
-  read_when: { type: "string", description: "When you need to..." },
-  agent_cant: {
-    type: "enum",
-    values: ["read", "write", "delete"],
-    description: "Limit (in natural language) what the agent cannot do with this file.",
-  },
+export const DEFAULT_DOCS_METADATA: MetadataSchema = {
+  title: "Short, human-readable title of the document.",
+  description: "One- or two-sentence summary of what the document covers.",
+  read_when:
+    "Natural-language description of when an agent should read this document (e.g., 'when implementing authentication').",
+  agent_cant:
+    "What the agent must not do with this file. One of: read, write, delete (or a natural-language combination).",
 };
 
 export const DEFAULTS = {

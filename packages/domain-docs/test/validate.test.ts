@@ -61,19 +61,16 @@ describe("runValidate", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("flags missing required keys and bad enums", async () => {
+  it("flags missing metadata keys (presence-only)", async () => {
     const cfg = await makeCfg(root);
     const file = path.join(cfg.route, "bad.md");
-    await fs.writeFile(
-      file,
-      "---\ntitle: Bad\nagent_cant: modify\n---\nbody\n",
-    );
+    await fs.writeFile(file, "---\ntitle: Bad\nagent_cant: modify\n---\nbody\n");
     const result = await runValidate(cfg, ctxFor(root));
     expect(result.issues.length).toBe(1);
     const issue = result.issues[0]!;
     expect(issue.missing.sort()).toEqual(["description", "read_when"]);
-    expect(issue.invalid.length).toBe(1);
-    expect(issue.invalid[0]!.key).toBe("agent_cant");
+    // Note: `agent_cant: modify` is NOT flagged. The LLM enforces the prose
+    // constraint described in the schema; the validator only checks presence.
   });
 
   it("excludes the three init files even when they have no frontmatter", async () => {

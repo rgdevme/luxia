@@ -1,7 +1,7 @@
 import path from "node:path";
 import { readConfigOrDefault } from "@agnos/core";
 import type { ResolveContext } from "@agnos/core";
-import { DEFAULTS, DEFAULT_DOCS_METADATA, docsConfigSchema, type DocsConfig, type MetadataFieldSchema } from "./schema.js";
+import { DEFAULTS, DEFAULT_DOCS_METADATA, docsConfigSchema, type DocsConfig, type MetadataSchema } from "./schema.js";
 
 export interface EffectiveDocsConfig {
   route: string;
@@ -11,7 +11,7 @@ export interface EffectiveDocsConfig {
   docRulesName: string;
   injectIndex: boolean;
   injectRules: boolean;
-  metadata: Record<string, MetadataFieldSchema>;
+  metadata: MetadataSchema;
   indexFile: string;
   contentFile: string | null;
   docRulesFile: string;

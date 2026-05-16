@@ -23,21 +23,11 @@ export const mcpDeclarationSchema = z.object({
   transport: z.enum(["stdio", "sse", "http"]).optional(),
 });
 
-export const metadataFieldSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("string"),
-    description: z.string(),
-  }),
-  z.object({
-    type: z.literal("enum"),
-    values: z.array(z.string()).min(1),
-    description: z.string(),
-  }),
-]);
+export const metadataSchema = z.record(z.string(), z.string());
 
 export const docsConfigSchema = z.object({
   route: z.string().optional(),
-  metadata: z.record(z.string(), metadataFieldSchema).optional(),
+  metadata: metadataSchema.optional(),
   index: z.string().optional(),
   content: z.union([z.string(), z.literal(false)]).optional(),
   docRules: z.string().optional(),
