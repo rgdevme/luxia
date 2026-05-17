@@ -1,7 +1,13 @@
 import path from "node:path";
-import { readConfigOrDefault } from "@agnos/core";
-import type { ResolveContext } from "@agnos/core";
-import { DEFAULTS, DEFAULT_DOCS_METADATA, docsConfigSchema, type DocsConfig, type MetadataSchema } from "./schema.js";
+import { readConfigOrDefault } from "@luxia/core";
+import type { ResolveContext } from "@luxia/core";
+import {
+  DEFAULTS,
+  DEFAULT_DOCS_METADATA,
+  docsConfigSchema,
+  type DocsConfig,
+  type MetadataSchema,
+} from "./schema.js";
 
 export interface EffectiveDocsConfig {
   route: string;
@@ -25,7 +31,7 @@ export async function readEffectiveDocsConfig(ctx: ResolveContext): Promise<Effe
   const route = path.resolve(ctx.projectRoot, routeRelative);
   const indexName = parsed.index ?? DEFAULTS.indexName;
   const contentName: string | false =
-    parsed.content === false ? false : parsed.content ?? DEFAULTS.contentName;
+    parsed.content === false ? false : (parsed.content ?? DEFAULTS.contentName);
   const docRulesName = parsed.docRules ?? DEFAULTS.docRulesName;
 
   return {

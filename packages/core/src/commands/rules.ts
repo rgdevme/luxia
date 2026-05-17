@@ -8,7 +8,7 @@ import { buildResolveContext } from "../context.js";
 import { loadPlugins } from "../plugin-loader.js";
 import { resolveRule } from "../orchestrator.js";
 import { activeAgents, dispatchRulesAdded, dispatchRulesMoved } from "../events.js";
-import type { Logger } from "../types/public.js";
+import type { AgnosConfig, Logger } from "../types/public.js";
 
 export interface RulesOptions {
   cwd: string;
@@ -112,7 +112,7 @@ async function dispatchRulesIfActive(
     dryRun: opts.dryRun ?? false,
   });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
-  const agnosCfg = config as unknown as import("../types/public.js").AgnosConfig;
+  const agnosCfg = config as unknown as AgnosConfig;
   const agents = activeAgents(agnosCfg, registry, ctx);
   const toResolved = await resolveRule(args.to, ctx);
   if (event === "added") {

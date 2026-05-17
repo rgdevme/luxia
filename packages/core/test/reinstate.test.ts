@@ -56,11 +56,16 @@ function spyAgent(id: string, calls: string[]): AgentPlugin {
 
 function registry(domains: DomainPlugin[], agents: AgentPlugin[]): PluginRegistry {
   const ds = new Map<string, RegisteredDomain>();
-  for (const d of domains) ds.set(d.name, { plugin: d, packageName: `@test/domain-${d.name}` });
+  for (const d of domains)
+    ds.set(d.name, { plugin: d, packageName: `@test/domain-${d.name}`, source: "project" });
   const as = new Map<string, RegisteredAgent>();
   const aByPkg = new Map<string, RegisteredAgent>();
   for (const a of agents) {
-    const reg: RegisteredAgent = { plugin: a, packageName: `@test/agent-${a.id}` };
+    const reg: RegisteredAgent = {
+      plugin: a,
+      packageName: `@test/agent-${a.id}`,
+      source: "project",
+    };
     as.set(a.id, reg);
     aByPkg.set(reg.packageName, reg);
   }
@@ -108,11 +113,7 @@ describe("reinstate end-to-end", () => {
     };
     await writeConfig(path.join(dir, "agnos.json"), config);
     const r = registry(
-      [
-        spyDomain("rules", 10, calls),
-        spyDomain("mcp", 20, calls),
-        spyDomain("skills", 30, calls),
-      ],
+      [spyDomain("rules", 10, calls), spyDomain("mcp", 20, calls), spyDomain("skills", 30, calls)],
       [spyAgent("a", calls), spyAgent("b", calls)],
     );
     const ctx = ctxFor(dir);
@@ -141,7 +142,12 @@ describe("reinstate end-to-end", () => {
 
   it("second run: onInstalled and domain.onInitialize don't re-fire; per-agent init does", async () => {
     const calls1: string[] = [];
-    const config: AgnosConfig = { agents: ["a"], rules: { source: "./AGENTS.md" }, mcp: [], skills: [] };
+    const config: AgnosConfig = {
+      agents: ["a"],
+      rules: { source: "./AGENTS.md" },
+      mcp: [],
+      skills: [],
+    };
     await writeConfig(path.join(dir, "agnos.json"), config);
     const r1 = registry([spyDomain("rules", 10, calls1)], [spyAgent("a", calls1)]);
     await reinstate(config, r1, ctxFor(dir), { interactive: false });

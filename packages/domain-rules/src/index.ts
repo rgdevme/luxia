@@ -1,12 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import type {
-  DomainPlugin,
-  ResolveContext,
-  ResolvedRule,
-  RulesDeclaration,
-} from "@agnos/core";
-import { rulesDeclarationSchema } from "@agnos/core";
+import type { DomainPlugin, ResolvedRule, RulesDeclaration } from "@luxia/core";
+import { rulesDeclarationSchema } from "@luxia/core";
 
 const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
   name: "rules",

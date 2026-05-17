@@ -2,7 +2,12 @@ import { buildPaths } from "../paths.js";
 import { readConfig, writeConfig } from "../config.js";
 import { loadPlugins } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
-import { activeAgents, dispatchMcpAdded, dispatchMcpRemoved, dispatchMcpUpdated } from "../events.js";
+import {
+  activeAgents,
+  dispatchMcpAdded,
+  dispatchMcpRemoved,
+  dispatchMcpUpdated,
+} from "../events.js";
 import type { Logger, McpDeclaration, ResolvedMcp } from "../types/public.js";
 
 export interface McpOptions {
@@ -27,7 +32,7 @@ export async function runMcp(opts: McpOptions): Promise<void> {
 
   const domain = registry.domains.get("mcp");
   if (!domain) {
-    throw new Error("no mcp domain plugin installed. Run `pnpm add @agnos/domain-mcp`.");
+    throw new Error("no mcp domain plugin installed. Run `pnpm add @luxia/domain-mcp`.");
   }
 
   const agents = activeAgents(config, registry, ctx);

@@ -35,7 +35,13 @@ export {
   DEFAULT_RULES_FILE,
   STATE_FILE,
 } from "./paths.js";
-export { readConfig, readConfigOrDefault, writeConfig, configExists, DEFAULT_CONFIG } from "./config.js";
+export {
+  readConfig,
+  readConfigOrDefault,
+  writeConfig,
+  configExists,
+  DEFAULT_CONFIG,
+} from "./config.js";
 export {
   buildResolveContext,
   ensureSymlinkPrivileges,

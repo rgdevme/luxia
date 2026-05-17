@@ -20,7 +20,11 @@ export async function buildResolveContext(opts: BuildContextOptions): Promise<Re
     await ensureDir(paths.cacheDir);
   }
   const logger = opts.logger ?? createLogger();
-  const linker = createLinker({ cacheDir: paths.cacheDir, logger, copyFallback: opts.copyFallback });
+  const linker = createLinker({
+    cacheDir: paths.cacheDir,
+    logger,
+    copyFallback: opts.copyFallback,
+  });
   const fetcher = createSourceResolver({ projectRoot: opts.projectRoot, cacheDir: paths.cacheDir });
   return {
     projectRoot: opts.projectRoot,
@@ -61,7 +65,9 @@ export async function ensureSymlinkPrivileges(
   }
 
   if (opts.autoCopy) {
-    ctx.logger.warn("file symlinks unavailable — falling back to copy (changes won't propagate across agents)");
+    ctx.logger.warn(
+      "file symlinks unavailable — falling back to copy (changes won't propagate across agents)",
+    );
     cachedDecision = { proceed: true, copyFallback: true };
     return cachedDecision;
   }

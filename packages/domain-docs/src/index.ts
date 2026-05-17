@@ -1,5 +1,5 @@
-import type { DomainPlugin, ResolveContext } from "@agnos/core";
-import { readConfigOrDefault } from "@agnos/core";
+import type { DomainPlugin, ResolveContext } from "@luxia/core";
+import { readConfigOrDefault } from "@luxia/core";
 import { docsConfigSchema, type DocsConfig } from "./schema.js";
 import { init, runInit } from "./cli/init.js";
 import { validate } from "./cli/validate.js";

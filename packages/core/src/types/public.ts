@@ -176,7 +176,7 @@ export interface SkillsEventHandlers {
  *
  * ```ts
  * // in `@user/agnos-domain-prompts`
- * declare module '@agnos/core' {
+ * declare module '@luxia/core' {
  *   interface DomainEventHandlers {
  *     prompts?: {
  *       onInitialize?(state: ResolvedPrompt[], ctx: MaterializeContext): Promise<void>;

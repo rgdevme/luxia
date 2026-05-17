@@ -21,14 +21,9 @@ describe("replaceBetweenMarkers", () => {
   });
 
   it("replaces content between existing markers without removing them", () => {
-    const text = [
-      "Preamble",
-      RULES_START,
-      "old line 1",
-      "old line 2",
-      RULES_END,
-      "Trailer",
-    ].join("\n");
+    const text = ["Preamble", RULES_START, "old line 1", "old line 2", RULES_END, "Trailer"].join(
+      "\n",
+    );
     const result = replaceBetweenMarkers(text, RULES_START, RULES_END, "new body");
     expect(result.appended).toBe(false);
     expect(result.changed).toBe(true);

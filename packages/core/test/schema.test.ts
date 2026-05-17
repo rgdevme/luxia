@@ -16,11 +16,15 @@ describe("schemas", () => {
 
   it("rulesDeclarationSchema requires a source", () => {
     expect(() => rulesDeclarationSchema.parse({})).toThrow();
-    expect(rulesDeclarationSchema.parse({ source: "./AGENTS.md" })).toEqual({ source: "./AGENTS.md" });
+    expect(rulesDeclarationSchema.parse({ source: "./AGENTS.md" })).toEqual({
+      source: "./AGENTS.md",
+    });
   });
 
   it("skillDeclarationSchema enforces a name pattern", () => {
-    expect(skillDeclarationSchema.parse({ name: "pdf", source: "github:foo/bar/pdf" })).toBeDefined();
+    expect(
+      skillDeclarationSchema.parse({ name: "pdf", source: "github:foo/bar/pdf" }),
+    ).toBeDefined();
     expect(() => skillDeclarationSchema.parse({ name: " bad name ", source: "x" })).toThrow();
   });
 

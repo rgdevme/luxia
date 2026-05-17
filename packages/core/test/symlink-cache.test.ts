@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import path from "node:path";
 import os from "node:os";
-import {
-  ensureSymlinkPrivileges,
-  resetSymlinkDecisionCache,
-} from "../src/context.js";
+import { ensureSymlinkPrivileges, resetSymlinkDecisionCache } from "../src/context.js";
 import type { Linker, ResolveContext } from "../src/types/public.js";
 import { createLogger } from "../src/logger.js";
 
@@ -74,9 +71,17 @@ describe("ensureSymlinkPrivileges cache", () => {
       async unlink() {},
     };
     const ctx = ctxWithLinker(linker);
-    await ensureSymlinkPrivileges(ctx, { fileSymlinks: true, dirSymlinks: true }, { interactive: false, autoCopy: true });
+    await ensureSymlinkPrivileges(
+      ctx,
+      { fileSymlinks: true, dirSymlinks: true },
+      { interactive: false, autoCopy: true },
+    );
     resetSymlinkDecisionCache();
-    await ensureSymlinkPrivileges(ctx, { fileSymlinks: true, dirSymlinks: true }, { interactive: false, autoCopy: true });
+    await ensureSymlinkPrivileges(
+      ctx,
+      { fileSymlinks: true, dirSymlinks: true },
+      { interactive: false, autoCopy: true },
+    );
     expect(probes).toBe(2);
   });
 
@@ -96,7 +101,11 @@ describe("ensureSymlinkPrivileges cache", () => {
       async unlink() {},
     };
     const ctx = ctxWithLinker(linker);
-    const r = await ensureSymlinkPrivileges(ctx, { fileSymlinks: false, dirSymlinks: true }, { interactive: false });
+    const r = await ensureSymlinkPrivileges(
+      ctx,
+      { fileSymlinks: false, dirSymlinks: true },
+      { interactive: false },
+    );
     expect(probes).toBe(0);
     expect(r).toEqual({ proceed: true, copyFallback: false });
   });

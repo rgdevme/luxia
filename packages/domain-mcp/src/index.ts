@@ -1,10 +1,6 @@
 import { input, select } from "@inquirer/prompts";
-import type {
-  DomainPlugin,
-  McpDeclaration,
-  ResolvedMcp,
-} from "@agnos/core";
-import { mcpDeclarationSchema, readConfigOrDefault } from "@agnos/core";
+import type { DomainPlugin, McpDeclaration, ResolvedMcp } from "@luxia/core";
+import { mcpDeclarationSchema, readConfigOrDefault } from "@luxia/core";
 
 const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
   name: "mcp",
@@ -33,7 +29,9 @@ const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
     if (transport === "stdio") {
       const command = await input({ message: "Command (e.g. npx):", default: "npx" });
       const argsRaw = await input({ message: "Args (space-separated, leave empty if none):" });
-      const envRaw = await input({ message: "Env (KEY=value, comma-separated, leave empty if none):" });
+      const envRaw = await input({
+        message: "Env (KEY=value, comma-separated, leave empty if none):",
+      });
       const args = argsRaw.trim() ? splitArgs(argsRaw) : undefined;
       const env = parseEnv(envRaw);
       const decl: ResolvedMcp = { name, command, transport: "stdio" };

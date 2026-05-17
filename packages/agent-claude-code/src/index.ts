@@ -6,7 +6,7 @@ import type {
   ResolvedMcp,
   ResolvedRule,
   ResolvedSkill,
-} from "@agnos/core";
+} from "@luxia/core";
 
 const CLAUDE_RULES = "CLAUDE.md";
 const CLAUDE_MCP = ".mcp.json";

@@ -56,7 +56,11 @@ export function markDomainInitialized(state: AgnosState, name: string): AgnosSta
 function normalize(parsed: Partial<AgnosState>): AgnosState {
   return {
     version: 1,
-    installedAgents: Array.isArray(parsed.installedAgents) ? parsed.installedAgents.filter((x): x is string => typeof x === "string") : [],
-    initializedDomains: Array.isArray(parsed.initializedDomains) ? parsed.initializedDomains.filter((x): x is string => typeof x === "string") : [],
+    installedAgents: Array.isArray(parsed.installedAgents)
+      ? parsed.installedAgents.filter((x): x is string => typeof x === "string")
+      : [],
+    initializedDomains: Array.isArray(parsed.initializedDomains)
+      ? parsed.initializedDomains.filter((x): x is string => typeof x === "string")
+      : [],
   };
 }

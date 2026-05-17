@@ -8,11 +8,14 @@ import { runMcp } from "./commands/mcp.js";
 import { runInstallCommand } from "./commands/install.js";
 import { runDomainCli } from "./commands/domain-cli.js";
 import { RESERVED_CLI_IDS } from "./types/public.js";
+import type { PackageManager } from "./pkg-manager.js";
 
 const USAGE = `agnos - agent-agnostic project configuration manager
 
 Usage:
-  agnos init [-y]                       Initialize agnos (= agnos rules + agnos agents)
+  agnos init [-y] [--install|--no-install]
+                                        Initialize agnos (= install bundled plugins
+                                        locally + agnos rules + agnos agents)
   agnos rules [path]                    Set the rules-source path (default ./AGENTS.md)
   agnos agents                          Pick which agent plugins to enable
   agnos agent add <id|pkg>              Install + activate an agent plugin
@@ -43,6 +46,7 @@ async function main(): Promise<void> {
       "yes",
       "help",
       "debug",
+      "install",
       "no-install",
       "no-activate",
       "copy-on-no-symlink",
@@ -50,7 +54,7 @@ async function main(): Promise<void> {
       "quiet",
     ],
     alias: { y: "yes", h: "help", q: "quiet" },
-    string: ["cwd"],
+    string: ["cwd", "package-manager"],
   });
 
   if (argv["help"] && argv._.length === 0) {
@@ -66,7 +70,8 @@ async function main(): Promise<void> {
   if (dryRun && quiet) {
     logger.warn("`--dry-run --quiet` together produces no output; dropping --quiet.");
   }
-  const effectiveLogger = dryRun && quiet ? createLogger({ debug: Boolean(argv["debug"]) }) : logger;
+  const effectiveLogger =
+    dryRun && quiet ? createLogger({ debug: Boolean(argv["debug"]) }) : logger;
 
   const [command, sub, ...rest] = argv._;
 
@@ -75,15 +80,26 @@ async function main(): Promise<void> {
       case undefined:
         process.stdout.write(USAGE);
         return;
-      case "init":
+      case "init": {
+        let install: boolean | undefined;
+        if (argv["no-install"]) install = false;
+        else if (argv["install"]) install = true;
+        const pmRaw = argv["package-manager"];
+        const packageManager =
+          typeof pmRaw === "string" && ["npm", "pnpm", "yarn", "bun"].includes(pmRaw)
+            ? (pmRaw as PackageManager)
+            : undefined;
         await runInit({
           cwd,
           yes: Boolean(argv["yes"]),
           copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
           dryRun,
+          install,
+          packageManager,
           logger: effectiveLogger,
         });
         return;
+      }
       case "rules":
         await runRules({
           cwd,
@@ -151,7 +167,7 @@ async function main(): Promise<void> {
         });
         return;
       default: {
-        if (RESERVED_CLI_IDS.includes(command as typeof RESERVED_CLI_IDS[number])) {
+        if (RESERVED_CLI_IDS.includes(command as (typeof RESERVED_CLI_IDS)[number])) {
           fail(`Unknown command: ${command}`);
         }
         const positional = sub === undefined ? [] : [sub, ...rest];

@@ -19,7 +19,11 @@ function materializeCtx(ctx: ResolveContext, agentId: string): MaterializeContex
  * Returns the activated agent plugins in declaration order, skipping any that
  * aren't installed (with a warning).
  */
-export function activeAgents(config: AgnosConfig, registry: PluginRegistry, ctx: ResolveContext): AgentPlugin[] {
+export function activeAgents(
+  config: AgnosConfig,
+  registry: PluginRegistry,
+  ctx: ResolveContext,
+): AgentPlugin[] {
   const out: AgentPlugin[] = [];
   for (const ref of config.agents ?? []) {
     const reg = resolveAgentByRef(registry, ref);
@@ -77,9 +81,14 @@ export async function dispatchSkillAdded(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "skills");
     if (!handlers) continue;
-    const fn = (handlers as { onAdded?: (item: ResolvedSkill, ctx: MaterializeContext) => Promise<void> }).onAdded;
+    const fn = (
+      handlers as { onAdded?: (item: ResolvedSkill, ctx: MaterializeContext) => Promise<void> }
+    ).onAdded;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.skills.onAdded`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.skills.onAdded`);
+        continue;
+      }
       await runHook(`${agent.id}.skills.onAdded`, () => fn(item, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -97,9 +106,14 @@ export async function dispatchSkillUpdated(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "skills");
     if (!handlers) continue;
-    const fn = (handlers as { onUpdated?: (item: ResolvedSkill, ctx: MaterializeContext) => Promise<void> }).onUpdated;
+    const fn = (
+      handlers as { onUpdated?: (item: ResolvedSkill, ctx: MaterializeContext) => Promise<void> }
+    ).onUpdated;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.skills.onUpdated`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.skills.onUpdated`);
+        continue;
+      }
       await runHook(`${agent.id}.skills.onUpdated`, () => fn(item, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -117,9 +131,14 @@ export async function dispatchSkillRemoved(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "skills");
     if (!handlers) continue;
-    const fn = (handlers as { onRemoved?: (name: string, ctx: MaterializeContext) => Promise<void> }).onRemoved;
+    const fn = (
+      handlers as { onRemoved?: (name: string, ctx: MaterializeContext) => Promise<void> }
+    ).onRemoved;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.skills.onRemoved`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.skills.onRemoved`);
+        continue;
+      }
       await runHook(`${agent.id}.skills.onRemoved`, () => fn(name, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -137,9 +156,14 @@ export async function dispatchMcpAdded(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "mcp");
     if (!handlers) continue;
-    const fn = (handlers as { onAdded?: (item: ResolvedMcp, ctx: MaterializeContext) => Promise<void> }).onAdded;
+    const fn = (
+      handlers as { onAdded?: (item: ResolvedMcp, ctx: MaterializeContext) => Promise<void> }
+    ).onAdded;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.mcp.onAdded`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.mcp.onAdded`);
+        continue;
+      }
       await runHook(`${agent.id}.mcp.onAdded`, () => fn(item, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -157,9 +181,14 @@ export async function dispatchMcpUpdated(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "mcp");
     if (!handlers) continue;
-    const fn = (handlers as { onUpdated?: (item: ResolvedMcp, ctx: MaterializeContext) => Promise<void> }).onUpdated;
+    const fn = (
+      handlers as { onUpdated?: (item: ResolvedMcp, ctx: MaterializeContext) => Promise<void> }
+    ).onUpdated;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.mcp.onUpdated`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.mcp.onUpdated`);
+        continue;
+      }
       await runHook(`${agent.id}.mcp.onUpdated`, () => fn(item, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -177,9 +206,14 @@ export async function dispatchMcpRemoved(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "mcp");
     if (!handlers) continue;
-    const fn = (handlers as { onRemoved?: (name: string, ctx: MaterializeContext) => Promise<void> }).onRemoved;
+    const fn = (
+      handlers as { onRemoved?: (name: string, ctx: MaterializeContext) => Promise<void> }
+    ).onRemoved;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.mcp.onRemoved`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.mcp.onRemoved`);
+        continue;
+      }
       await runHook(`${agent.id}.mcp.onRemoved`, () => fn(name, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -197,9 +231,14 @@ export async function dispatchRulesAdded(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "rules");
     if (!handlers) continue;
-    const fn = (handlers as { onAdded?: (decl: ResolvedRule, ctx: MaterializeContext) => Promise<void> }).onAdded;
+    const fn = (
+      handlers as { onAdded?: (decl: ResolvedRule, ctx: MaterializeContext) => Promise<void> }
+    ).onAdded;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.rules.onAdded`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.rules.onAdded`);
+        continue;
+      }
       await runHook(`${agent.id}.rules.onAdded`, () => fn(decl, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -218,11 +257,16 @@ export async function dispatchRulesMoved(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "rules");
     if (!handlers) continue;
-    const fn = (handlers as {
-      onMoved?: (from: ResolvedRule, to: ResolvedRule, ctx: MaterializeContext) => Promise<void>;
-    }).onMoved;
+    const fn = (
+      handlers as {
+        onMoved?: (from: ResolvedRule, to: ResolvedRule, ctx: MaterializeContext) => Promise<void>;
+      }
+    ).onMoved;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.rules.onMoved`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.rules.onMoved`);
+        continue;
+      }
       await runHook(`${agent.id}.rules.onMoved`, () => fn(from, to, materializeCtx(ctx, agent.id)));
       continue;
     }
@@ -240,9 +284,14 @@ export async function dispatchRulesRemoved(
   for (const agent of agents) {
     const handlers = handlersFor(agent, "rules");
     if (!handlers) continue;
-    const fn = (handlers as { onRemoved?: (prev: ResolvedRule, ctx: MaterializeContext) => Promise<void> }).onRemoved;
+    const fn = (
+      handlers as { onRemoved?: (prev: ResolvedRule, ctx: MaterializeContext) => Promise<void> }
+    ).onRemoved;
     if (fn) {
-      if (ctx.dryRun) { ctx.logger.info(`would: ${agent.id}.rules.onRemoved`); continue; }
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: ${agent.id}.rules.onRemoved`);
+        continue;
+      }
       await runHook(`${agent.id}.rules.onRemoved`, () => fn(prev, materializeCtx(ctx, agent.id)));
       continue;
     }

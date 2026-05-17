@@ -1,8 +1,13 @@
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
-import type { CliCommand, ResolveContext } from "@agnos/core";
-import { readEffectiveDocsConfig, initFiles, type EffectiveDocsConfig } from "../effective-config.js";
+import type { CliCommand, ResolveContext } from "@luxia/core";
+import {
+  readEffectiveDocsConfig,
+  initFiles,
+  type EffectiveDocsConfig,
+} from "../effective-config.js";
 
 interface FileIssue {
   file: string;
@@ -42,7 +47,11 @@ export async function runValidate(
   return { checked: files.length, issues };
 }
 
-async function checkFile(abs: string, cfg: EffectiveDocsConfig, ctx: ResolveContext): Promise<FileIssue | null> {
+async function checkFile(
+  abs: string,
+  cfg: EffectiveDocsConfig,
+  ctx: ResolveContext,
+): Promise<FileIssue | null> {
   let raw: string;
   try {
     raw = await fs.readFile(abs, "utf8");
@@ -69,7 +78,7 @@ export async function listUserDocs(cfg: EffectiveDocsConfig): Promise<string[]> 
 }
 
 async function walk(dir: string, excluded: ReadonlySet<string>, acc: string[]): Promise<void> {
-  let entries: import("node:fs").Dirent[];
+  let entries: Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch {
@@ -85,7 +94,11 @@ async function walk(dir: string, excluded: ReadonlySet<string>, acc: string[]): 
   }
 }
 
-function formatErrorBlock(cfg: EffectiveDocsConfig, issues: FileIssue[], _ctx: ResolveContext): string {
+function formatErrorBlock(
+  cfg: EffectiveDocsConfig,
+  issues: FileIssue[],
+  _ctx: ResolveContext,
+): string {
   const patternLines = Object.entries(cfg.metadata).map(
     ([key, description]) => `${key}: <value>    # ${description}`,
   );

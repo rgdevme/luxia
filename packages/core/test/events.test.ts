@@ -34,7 +34,7 @@ function registryWith(...plugins: AgentPlugin[]): PluginRegistry {
   const agents = new Map<string, RegisteredAgent>();
   const agentsByPackage = new Map<string, RegisteredAgent>();
   for (const p of plugins) {
-    const reg: RegisteredAgent = { plugin: p, packageName: `@test/${p.id}` };
+    const reg: RegisteredAgent = { plugin: p, packageName: `@test/${p.id}`, source: "project" };
     agents.set(p.id, reg);
     agentsByPackage.set(reg.packageName, reg);
   }
@@ -83,15 +83,11 @@ describe("events dispatch", () => {
     await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a, b], emptyConfig, ctx);
     await dispatchMcpAdded({ name: "github", command: "npx" }, [a, b], emptyConfig, ctx);
 
-    expect(calls).toEqual([
-      "a:skills.onAdded:pdf",
-      "a:mcp.onAdded:github",
-      "b:mcp.onAdded:github",
-    ]);
+    expect(calls).toEqual(["a:skills.onAdded:pdf", "a:mcp.onAdded:github", "b:mcp.onAdded:github"]);
   });
 
   it("dispatchRulesMoved passes both from and to", async () => {
-    const seen: Array<{ from: string; to: string }> = [];
+    const seen: { from: string; to: string }[] = [];
     const a: AgentPlugin = {
       id: "a",
       displayName: "A",
@@ -121,7 +117,7 @@ describe("events dispatch", () => {
       handles: {
         mcp: {
           async onInitialize(state) {
-            calls.push(`a:mcp.onInitialize:n=${(state as Array<unknown>).length}`);
+            calls.push(`a:mcp.onInitialize:n=${(state as unknown[]).length}`);
           },
         },
       },
@@ -139,7 +135,9 @@ describe("events dispatch", () => {
   it("dry-run skips invocation but logs", async () => {
     const calls: string[] = [];
     const messages: string[] = [];
-    const logger = { ...createLogger(), info: (m: string) => messages.push(m) } as ReturnType<typeof createLogger>;
+    const logger = { ...createLogger(), info: (m: string) => messages.push(m) } as ReturnType<
+      typeof createLogger
+    >;
     const dryCtx: ResolveContext = { ...ctx, logger, dryRun: true };
     const a: AgentPlugin = {
       id: "a",

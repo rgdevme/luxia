@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLogger } from "@agnos/core";
+import { createLogger } from "@luxia/core";
 import { runValidate } from "../src/cli/validate.js";
 import type { EffectiveDocsConfig } from "../src/effective-config.js";
 import { DEFAULT_DOCS_METADATA } from "../src/schema.js";
@@ -34,7 +34,12 @@ function ctxFor(projectRoot: string) {
     logger: createLogger(),
     // resolver/linker not exercised by validate
     fetcher: { resolve: async () => ({ path: "" }) },
-    linker: { canSymlinkFiles: async () => true, canSymlinkDirs: async () => true, link: async () => ({ kind: "symlink" as const }), unlink: async () => {} },
+    linker: {
+      canSymlinkFiles: async () => true,
+      canSymlinkDirs: async () => true,
+      link: async () => ({ kind: "symlink" as const }),
+      unlink: async () => {},
+    },
   };
 }
 

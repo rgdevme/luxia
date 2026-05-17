@@ -41,7 +41,9 @@ export function createLinker({ cacheDir, logger, copyFallback }: LinkerOptions):
     async link(target, linkPath, opts) {
       await fs.mkdir(path.dirname(linkPath), { recursive: true });
       await removeIfExists(linkPath);
-      const absoluteTarget = path.isAbsolute(target) ? target : path.resolve(path.dirname(linkPath), target);
+      const absoluteTarget = path.isAbsolute(target)
+        ? target
+        : path.resolve(path.dirname(linkPath), target);
       const stat = await statOrNull(absoluteTarget);
       const isDir = stat?.isDirectory() ?? false;
       const isWin = process.platform === "win32";
@@ -56,7 +58,10 @@ export function createLinker({ cacheDir, logger, copyFallback }: LinkerOptions):
         return { kind: "symlink" satisfies LinkKind };
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
-        if ((code === "EPERM" || code === "EACCES") && (opts?.fallback === "copy" || copyFallback)) {
+        if (
+          (code === "EPERM" || code === "EACCES") &&
+          (opts?.fallback === "copy" || copyFallback)
+        ) {
           if (isDir) {
             await fs.cp(absoluteTarget, linkPath, { recursive: true });
           } else {

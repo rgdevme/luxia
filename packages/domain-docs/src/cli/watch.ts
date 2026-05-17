@@ -1,8 +1,12 @@
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
-import type { CliCommand, ResolveContext } from "@agnos/core";
-import { CONFIG_FILE, readConfigOrDefault } from "@agnos/core";
-import { readEffectiveDocsConfig, initFiles, type EffectiveDocsConfig } from "../effective-config.js";
+import type { CliCommand, ResolveContext } from "@luxia/core";
+import { CONFIG_FILE, readConfigOrDefault } from "@luxia/core";
+import {
+  readEffectiveDocsConfig,
+  initFiles,
+  type EffectiveDocsConfig,
+} from "../effective-config.js";
 import { runValidate } from "./validate.js";
 import { runGenerate } from "./generate.js";
 import { runInject } from "./inject.js";
@@ -114,8 +118,12 @@ async function openDownstreamWatchers(state: WatchState): Promise<void> {
   });
   state.mainWatcher.on("all", () => state.mainQueue(() => onMainChange(state)));
 
-  ctx.logger.info(`  docs observer:  ${path.relative(ctx.projectRoot, cfg.route)} (excl. init files)`);
-  ctx.logger.info(`  main observer:  ${path.relative(ctx.projectRoot, cfg.indexFile)} + ${path.relative(ctx.projectRoot, cfg.docRulesFile)}`);
+  ctx.logger.info(
+    `  docs observer:  ${path.relative(ctx.projectRoot, cfg.route)} (excl. init files)`,
+  );
+  ctx.logger.info(
+    `  main observer:  ${path.relative(ctx.projectRoot, cfg.indexFile)} + ${path.relative(ctx.projectRoot, cfg.docRulesFile)}`,
+  );
   ctx.logger.info(`  config observer: ${CONFIG_FILE}`);
 }
 
@@ -143,7 +151,7 @@ async function onConfigChange(state: WatchState): Promise<void> {
   await debounce(DEBOUNCE_MS);
   const { ctx } = state;
   const fresh = await readConfigOrDefault(ctx.configPath);
-  const newDocsBlock = JSON.stringify(((fresh as { docs?: unknown }).docs ?? null));
+  const newDocsBlock = JSON.stringify((fresh as { docs?: unknown }).docs ?? null);
   // Compare against current cfg's source snapshot by re-reading.
   const previous = JSON.stringify(snapshotDocsConfig(state.cfg));
   if (newDocsBlock === previous) {

@@ -32,7 +32,7 @@ export async function runAgents(opts: AgentsOptions): Promise<void> {
   const available = [...registry.agents.values()];
   if (available.length === 0) {
     opts.logger.warn(
-      "no agent plugins installed. Install one with `agnos agent add <id>` or `pnpm add @agnos/agent-claude-code`.",
+      "no agent plugins installed. Install one with `agnos agent add <id>` or `pnpm add @luxia/agent-claude-code`.",
     );
     return;
   }
@@ -61,10 +61,14 @@ export async function runAgents(opts: AgentsOptions): Promise<void> {
   const newRefs: AgentRef[] = selectedIds.map((id) => id);
   config.agents = newRefs;
   if (ctx.dryRun) {
-    opts.logger.info(`would: write agnos.json (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`);
+    opts.logger.info(
+      `would: write agnos.json (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`,
+    );
   } else {
     await writeConfig(paths.configPath, config);
-    opts.logger.success(`agnos.json updated (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`);
+    opts.logger.success(
+      `agnos.json updated (${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} enabled)`,
+    );
   }
 
   // 3) Activate newly-added agents (per-domain onInitialize).
@@ -207,12 +211,16 @@ export async function runAgentRemove(opts: AgentRemoveOptions): Promise<void> {
 
 function inferPackageName(target: string): string {
   if (target.startsWith("@") || target.includes("/")) return target;
-  return `@agnos/agent-${target}`;
+  return `@luxia/agent-${target}`;
 }
 
 function runPnpm(args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("pnpm", args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
+    const proc = spawn("pnpm", args, {
+      cwd,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
     proc.on("error", reject);
     proc.on("exit", (code) => {
       if (code === 0) resolve();

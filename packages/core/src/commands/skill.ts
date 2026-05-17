@@ -3,8 +3,13 @@ import { readConfig, writeConfig } from "../config.js";
 import { loadPlugins } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
 import { resolveSkill } from "../orchestrator.js";
-import { activeAgents, dispatchSkillAdded, dispatchSkillRemoved, dispatchSkillUpdated } from "../events.js";
-import type { Logger, ResolvedSkill, SkillDeclaration } from "../types/public.js";
+import {
+  activeAgents,
+  dispatchSkillAdded,
+  dispatchSkillRemoved,
+  dispatchSkillUpdated,
+} from "../events.js";
+import type { Logger, ResolveContext, ResolvedSkill, SkillDeclaration } from "../types/public.js";
 
 export interface SkillOptions {
   cwd: string;
@@ -28,7 +33,7 @@ export async function runSkill(opts: SkillOptions): Promise<void> {
 
   const domain = registry.domains.get("skills");
   if (!domain) {
-    throw new Error("no skills domain plugin installed. Run `pnpm add @agnos/domain-skills`.");
+    throw new Error("no skills domain plugin installed. Run `pnpm add @luxia/domain-skills`.");
   }
 
   const agents = activeAgents(config, registry, ctx);
@@ -92,6 +97,9 @@ export async function runSkill(opts: SkillOptions): Promise<void> {
   }
 }
 
-export async function resolveSkillByName(name: string, ctx: import("../types/public.js").ResolveContext): Promise<ResolvedSkill> {
+export async function resolveSkillByName(
+  name: string,
+  ctx: ResolveContext,
+): Promise<ResolvedSkill> {
   return resolveSkill(name, ctx);
 }

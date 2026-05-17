@@ -1,5 +1,5 @@
 {
-  "name": "@agnos/core",
+  "name": "@luxia/core",
   "version": "0.0.1",
   "description": "Agnos core CLI and plugin framework",
   "type": "module",
@@ -20,6 +20,9 @@
     "./fs": {
       "types": "./dist/fs/index.d.ts",
       "default": "./dist/fs/index.js"
+    },
+    "./cli.js": {
+      "default": "./dist/cli.js"
     }
   },
   "files": [
@@ -28,7 +31,10 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.1",

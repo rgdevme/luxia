@@ -230,7 +230,9 @@ export async function initializeAgentsInterleaved(
       ctx.logger.info(`  ${verb}${agent.id}`);
       ctx.logger.info(`    ${dom.plugin.name}.onInitialize`);
       if (ctx.dryRun) continue;
-      await runHook(`${agent.id}.${dom.plugin.name}.onInitialize`, () => fn(state[dom.plugin.name], mctx));
+      await runHook(`${agent.id}.${dom.plugin.name}.onInitialize`, () =>
+        fn(state[dom.plugin.name], mctx),
+      );
     }
   }
 }
@@ -259,7 +261,11 @@ function handlersFor(agent: AgentPlugin, domainName: string): AnyDomainHandlers 
   return (handles as unknown as Record<string, AnyDomainHandlers | undefined>)[domainName];
 }
 
-function buildMaterializeCtx(ctx: ResolveContext, agentId: string, indent: string): MaterializeContext {
+function buildMaterializeCtx(
+  ctx: ResolveContext,
+  agentId: string,
+  indent: string,
+): MaterializeContext {
   return { ...ctx, agentId, indent, logger: indentedLogger(ctx.logger, indent) };
 }
 
@@ -341,9 +347,7 @@ export async function reconcile(
     try {
       await dispatchSkillRemoved(name, agents, config, ctx);
     } catch (err) {
-      ctx.logger.warn(
-        `reconcile: ${(err as Error).message}; continuing with filesystem cleanup`,
-      );
+      ctx.logger.warn(`reconcile: ${(err as Error).message}; continuing with filesystem cleanup`);
     }
     const full = path.join(paths.skillsDir, name);
     await fs.rm(full, { recursive: true, force: true });
@@ -360,11 +364,6 @@ async function findOrphans(dir: string, declared: ReadonlySet<string>): Promise<
     throw err;
   }
   return entries.filter((name) => !declared.has(name));
-}
-
-function agentSkillDir(agentId: string, projectRoot: string): string | undefined {
-  if (agentId === "claude-code") return path.join(projectRoot, ".claude", "skills");
-  return undefined;
 }
 
 function computeFileSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boolean {

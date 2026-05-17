@@ -1,5 +1,5 @@
 {
-  "name": "@agnos/domain-rules",
+  "name": "@luxia/domain-rules",
   "version": "0.0.1",
   "description": "Agnos rules domain plugin",
   "type": "module",
@@ -25,16 +25,17 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "zod": "^3.24.1"
   },
   "peerDependencies": {
-    "@agnos/core": "workspace:*"
+    "@luxia/core": "workspace:*"
   },
   "devDependencies": {
-    "@agnos/core": "workspace:*",
+    "@luxia/core": "workspace:*",
     "@types/node": "^22.10.5",
     "tsup": "^8.3.5",
     "typescript": "^5.7.3"

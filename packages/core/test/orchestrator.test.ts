@@ -10,13 +10,14 @@ import {
   materializeAgent,
   orderedDomains,
 } from "../src/orchestrator.js";
-import type { AgentPlugin, AgnosConfig, DomainPlugin, ResolveContext } from "../src/types/public.js";
-import { createLogger } from "../src/logger.js";
 import type {
-  PluginRegistry,
-  RegisteredAgent,
-  RegisteredDomain,
-} from "../src/plugin-loader.js";
+  AgentPlugin,
+  AgnosConfig,
+  DomainPlugin,
+  ResolveContext,
+} from "../src/types/public.js";
+import { createLogger } from "../src/logger.js";
+import type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "../src/plugin-loader.js";
 
 function noopDomain(name: string, priority: number): DomainPlugin {
   return {
@@ -39,11 +40,16 @@ function spyDomain(name: string, priority: number, calls: string[]): DomainPlugi
 
 function registry(domains: DomainPlugin[], agents: AgentPlugin[] = []): PluginRegistry {
   const ds = new Map<string, RegisteredDomain>();
-  for (const d of domains) ds.set(d.name, { plugin: d, packageName: `@test/domain-${d.name}` });
+  for (const d of domains)
+    ds.set(d.name, { plugin: d, packageName: `@test/domain-${d.name}`, source: "project" });
   const as = new Map<string, RegisteredAgent>();
   const aByPkg = new Map<string, RegisteredAgent>();
   for (const a of agents) {
-    const reg: RegisteredAgent = { plugin: a, packageName: `@test/agent-${a.id}` };
+    const reg: RegisteredAgent = {
+      plugin: a,
+      packageName: `@test/agent-${a.id}`,
+      source: "project",
+    };
     as.set(a.id, reg);
     aByPkg.set(reg.packageName, reg);
   }
@@ -134,7 +140,12 @@ describe("materializeAgent + cleanupAgent ordering", () => {
       [agent],
     );
     const ctx = stubCtx(dir);
-    const config: AgnosConfig = { agents: ["spy"], rules: { source: "./AGENTS.md" }, mcp: [], skills: [] };
+    const config: AgnosConfig = {
+      agents: ["spy"],
+      rules: { source: "./AGENTS.md" },
+      mcp: [],
+      skills: [],
+    };
     await materializeAgent(agent, config, r, ctx);
     await cleanupAgent(agent, r, ctx);
     expect(calls).toEqual([
@@ -173,15 +184,16 @@ describe("materializeAgent + cleanupAgent ordering", () => {
     const a = makeAgent("a");
     const b = makeAgent("b");
     const r = registry(
-      [
-        spyDomain("rules", 10, calls),
-        spyDomain("mcp", 20, calls),
-        spyDomain("skills", 30, calls),
-      ],
+      [spyDomain("rules", 10, calls), spyDomain("mcp", 20, calls), spyDomain("skills", 30, calls)],
       [a, b],
     );
     const ctx = stubCtx(dir);
-    const config: AgnosConfig = { agents: ["a", "b"], rules: { source: "./AGENTS.md" }, mcp: [], skills: [] };
+    const config: AgnosConfig = {
+      agents: ["a", "b"],
+      rules: { source: "./AGENTS.md" },
+      mcp: [],
+      skills: [],
+    };
     await initializeAgentsInterleaved([a, b], config, r, ctx);
     expect(calls).toEqual([
       "domain:rules",
@@ -258,7 +270,7 @@ describe("buildAgentDomainStates", () => {
         relativeSource: "./AGENTS.md",
       });
       expect(state["mcp"]).toEqual([{ name: "github", command: "npx" }]);
-      expect((state["skills"] as Array<{ name: string }>)[0]?.name).toBe("pdf");
+      expect((state["skills"] as { name: string }[])[0]?.name).toBe("pdf");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

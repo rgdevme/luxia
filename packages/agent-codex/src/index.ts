@@ -1,12 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import TOML from "@iarna/toml";
-import type {
-  AgentPlugin,
-  MaterializeContext,
-  ResolvedMcp,
-  ResolvedRule,
-} from "@agnos/core";
+import type { AgentPlugin, MaterializeContext, ResolvedMcp, ResolvedRule } from "@luxia/core";
 
 const ROOT_AGENTS = "AGENTS.md";
 const CODEX_DIR = ".codex";
@@ -76,7 +71,9 @@ async function writeCodexConfig(servers: ResolvedMcp[], ctx: MaterializeContext)
   await fs.mkdir(path.dirname(file), { recursive: true });
   const content = TOML.stringify(tomlObj as TOML.JsonMap);
   await fs.writeFile(file, content, "utf8");
-  ctx.logger.info(`.codex/config.toml (${servers.length} server${servers.length === 1 ? "" : "s"})`);
+  ctx.logger.info(
+    `.codex/config.toml (${servers.length} server${servers.length === 1 ? "" : "s"})`,
+  );
 }
 
 function toCodexServer(decl: ResolvedMcp): Record<string, unknown> {

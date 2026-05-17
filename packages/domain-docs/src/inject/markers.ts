@@ -22,7 +22,8 @@ export function replaceBetweenMarkers(
 ): ReplaceResult {
   const lines = text.split(/\r?\n/);
   const startIdx = lines.findIndex((line) => line === startMarker);
-  const endIdx = startIdx >= 0 ? lines.findIndex((line, i) => i > startIdx && line === endMarker) : -1;
+  const endIdx =
+    startIdx >= 0 ? lines.findIndex((line, i) => i > startIdx && line === endMarker) : -1;
 
   if (startIdx < 0 || endIdx < 0) {
     const trailingBlank = text.endsWith("\n") ? "" : "\n";

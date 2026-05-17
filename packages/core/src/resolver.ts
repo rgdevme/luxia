@@ -22,7 +22,12 @@ export function createSourceResolver({ projectRoot, cacheDir }: ResolverOptions)
         return { path: destDir };
       }
 
-      if (source.startsWith("github:") || source.startsWith("npm:") || source.startsWith("http://") || source.startsWith("https://")) {
+      if (
+        source.startsWith("github:") ||
+        source.startsWith("npm:") ||
+        source.startsWith("http://") ||
+        source.startsWith("https://")
+      ) {
         const giSource = normalizeForGiget(source);
         await fs.rm(destDir, { recursive: true, force: true });
         await downloadTemplate(giSource, {

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CliCommand, ResolveContext } from "@agnos/core";
-import { readConfigOrDefault } from "@agnos/core";
+import type { CliCommand, ResolveContext } from "@luxia/core";
+import { readConfigOrDefault } from "@luxia/core";
 import { readEffectiveDocsConfig, type EffectiveDocsConfig } from "../effective-config.js";
 import { INDEX_BLOCK, RULES_BLOCK } from "../schema.js";
 import { replaceBetweenMarkers, stripFrontmatter } from "../inject/markers.js";
@@ -14,7 +14,10 @@ export const inject: CliCommand = {
   },
 };
 
-export async function runInject(cfg: EffectiveDocsConfig, ctx: ResolveContext): Promise<{ changed: boolean }> {
+export async function runInject(
+  cfg: EffectiveDocsConfig,
+  ctx: ResolveContext,
+): Promise<{ changed: boolean }> {
   const agnos = await readConfigOrDefault(ctx.configPath);
   const rulesRel = agnos.rules?.source;
   if (!rulesRel) {
