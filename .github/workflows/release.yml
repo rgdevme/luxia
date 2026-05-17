@@ -93,7 +93,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add packages/*/package.json pnpm-lock.yaml
           git commit -m "chore: release v$VERSION"
-          git tag "v$VERSION"
+          # Annotated tag (-a) so `git push --follow-tags` actually pushes it.
+          git tag -a "v$VERSION" -m "Release v$VERSION"
           git push origin HEAD:${{ github.ref_name }} --follow-tags
 
       - name: Create GitHub release
