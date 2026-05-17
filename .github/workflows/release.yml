@@ -60,12 +60,18 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Pack tarballs
+        run: |
+          mkdir -p .release-tarballs
+          pnpm -r --filter "./packages/*" pack --pack-destination "$GITHUB_WORKSPACE/.release-tarballs"
+
       - name: Publish to npm with provenance
         run: |
-          pnpm -r --filter "./packages/*" publish \
-            --access public \
-            --no-git-checks \
-            --provenance
+          shopt -s nullglob
+          for tgz in .release-tarballs/*.tgz; do
+            echo "publishing $tgz"
+            npm publish "$tgz" --access public --provenance
+          done
 
       - name: Commit, tag, and push
         env:
