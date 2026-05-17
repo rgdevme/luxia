@@ -9,11 +9,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rgdev/luxia.git",
+    "url": "git+https://github.com/rgdevme/luxia.git",
     "directory": "packages/core"
   },
-  "bugs": "https://github.com/rgdev/luxia/issues",
-  "homepage": "https://github.com/rgdev/luxia#readme",
+  "bugs": "https://github.com/rgdevme/luxia/issues",
+  "homepage": "https://github.com/rgdevme/luxia#readme",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
