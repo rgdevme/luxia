@@ -7,6 +7,17 @@
   "engines": {
     "node": ">=24"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rgdev/luxia.git",
+    "directory": "packages/domain-mcp"
+  },
+  "bugs": "https://github.com/rgdev/luxia/issues",
+  "homepage": "https://github.com/rgdev/luxia#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "agnos": {
     "type": "domain",
     "id": "mcp"
