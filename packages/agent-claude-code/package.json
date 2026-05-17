@@ -1,6 +1,6 @@
 {
   "name": "@luxia/agent-claude-code",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Agnos strategy plugin for Claude Code",
   "type": "module",
   "license": "MIT",
