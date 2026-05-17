@@ -63,9 +63,11 @@ jobs:
         run: node packages/agnos/scripts/check-versions.mjs
 
       - name: Pack tarballs
+        # pnpm pack is per-package (no -r), so use `exec` to run it inside
+        # each workspace package. Tarballs land in $GITHUB_WORKSPACE/.release-tarballs.
         run: |
           mkdir -p .release-tarballs
-          pnpm -r --filter "./packages/*" pack --pack-destination "$GITHUB_WORKSPACE/.release-tarballs"
+          pnpm -r --filter "./packages/*" exec pnpm pack --pack-destination "$GITHUB_WORKSPACE/.release-tarballs"
 
       - name: Publish to npm with provenance
         # NPM_TOKEN is only needed for the very first publish of each package
