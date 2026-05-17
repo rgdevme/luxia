@@ -48,17 +48,19 @@ jobs:
       - name: Refresh lockfile after version bump
         run: pnpm install --no-frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
+      # lint / format / typecheck / test are intentionally skipped — main is
+      # gated by ci.yml on every push, and a version-only bump can't affect
+      # any of those checks. The only invariants the bump itself can break
+      # are caught below: the build must still succeed, and the meta-package
+      # lockstep-version check must still pass.
 
-      - name: Format check
-        run: pnpm format:check
+      - name: Build (produces dist/ for tarballs)
+        run: pnpm build
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
+      - name: Verify lockstep versions across packages
+        # Normally this runs via `prepublishOnly`, but `npm publish <tarball>`
+        # doesn't fire that hook, so we invoke the check explicitly here.
+        run: node packages/agnos/scripts/check-versions.mjs
 
       - name: Pack tarballs
         run: |
