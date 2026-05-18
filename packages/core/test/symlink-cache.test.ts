@@ -14,7 +14,7 @@ function ctxWithLinker(linker: Linker): ResolveContext {
     agnosRoot: path.join(root, ".agnos"),
     cacheDir: path.join(root, ".agnos", "cache"),
     logger: createLogger(),
-    fetcher: { resolve: async () => ({ path: "" }) },
+    fetcher: { fetch: async () => ({ path: "" }) },
     linker,
   };
 }

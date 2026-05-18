@@ -64,7 +64,7 @@ function stubCtx(projectRoot: string): ResolveContext {
     agnosRoot: path.join(projectRoot, ".agnos"),
     cacheDir: path.join(projectRoot, ".agnos", "cache"),
     logger: createLogger(),
-    fetcher: { resolve: async () => ({ path: "" }) },
+    fetcher: { fetch: async () => ({ path: "" }) },
     linker: {
       canSymlinkFiles: async () => true,
       canSymlinkDirs: async () => true,
@@ -144,7 +144,7 @@ describe("materializeAgent + cleanupAgent ordering", () => {
       agents: ["spy"],
       rules: { source: "./AGENTS.md" },
       mcp: [],
-      skills: [],
+      skills: {},
     };
     await materializeAgent(agent, config, r, ctx);
     await cleanupAgent(agent, r, ctx);
@@ -192,7 +192,7 @@ describe("materializeAgent + cleanupAgent ordering", () => {
       agents: ["a", "b"],
       rules: { source: "./AGENTS.md" },
       mcp: [],
-      skills: [],
+      skills: {},
     };
     await initializeAgentsInterleaved([a, b], config, r, ctx);
     expect(calls).toEqual([
@@ -324,7 +324,7 @@ describe("buildAgentDomainStates", () => {
       const config: AgnosConfig = {
         rules: { source: "./AGENTS.md" },
         mcp: [{ name: "github", command: "npx" }],
-        skills: [{ name: "pdf", source: "file:./pdf" }],
+        skills: { pdf: "file:./pdf-repo/skills/pdf" },
       };
       const state = await buildAgentDomainStates(config, ctx);
       expect(state["rules"]).toEqual({

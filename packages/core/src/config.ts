@@ -6,7 +6,7 @@ export const DEFAULT_CONFIG: AgnosConfig = {
   $schema: "https://agnos.dev/schema/v0.json",
   agents: [],
   rules: { source: "./AGENTS.md" },
-  skills: [],
+  skills: {},
   mcp: [],
 };
 

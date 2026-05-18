@@ -1,10 +1,12 @@
 import path from "node:path";
 import fs from "node:fs/promises";
+import type { AgnosConfig } from "./types/public.js";
 
 export const CONFIG_FILE = "agnos.json";
 export const STATE_FILE = "state.json";
 export const AGNOS_DIR = ".agnos";
 export const DEFAULT_RULES_FILE = "AGENTS.md";
+export const DEFAULT_SKILLS_DIR = path.join(AGNOS_DIR, "skills");
 
 export interface ProjectPaths {
   projectRoot: string;
@@ -15,14 +17,15 @@ export interface ProjectPaths {
   statePath: string;
 }
 
-export function buildPaths(projectRoot: string): ProjectPaths {
+export function buildPaths(projectRoot: string, config?: AgnosConfig): ProjectPaths {
   const agnosRoot = path.join(projectRoot, AGNOS_DIR);
+  const skillsRel = config?.paths?.skillsDir ?? DEFAULT_SKILLS_DIR;
   return {
     projectRoot,
     configPath: path.join(projectRoot, CONFIG_FILE),
     agnosRoot,
     cacheDir: path.join(agnosRoot, "cache"),
-    skillsDir: path.join(agnosRoot, "skills"),
+    skillsDir: path.isAbsolute(skillsRel) ? skillsRel : path.join(projectRoot, skillsRel),
     statePath: path.join(agnosRoot, STATE_FILE),
   };
 }

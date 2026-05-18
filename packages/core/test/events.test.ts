@@ -20,7 +20,7 @@ function stubCtx(): ResolveContext {
     agnosRoot: path.join(root, ".agnos"),
     cacheDir: path.join(root, ".agnos", "cache"),
     logger: createLogger(),
-    fetcher: { resolve: async () => ({ path: "" }) },
+    fetcher: { fetch: async () => ({ path: "" }) },
     linker: {
       canSymlinkFiles: async () => true,
       canSymlinkDirs: async () => true,
@@ -79,7 +79,7 @@ describe("events dispatch", () => {
       },
     };
 
-    const emptyConfig: AgnosConfig = { skills: [], mcp: [] };
+    const emptyConfig: AgnosConfig = { skills: {}, mcp: [] };
     await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a, b], emptyConfig, ctx);
     await dispatchMcpAdded({ name: "github", command: "npx" }, [a, b], emptyConfig, ctx);
 
@@ -150,7 +150,7 @@ describe("events dispatch", () => {
         },
       },
     };
-    await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a], { skills: [] }, dryCtx);
+    await dispatchSkillAdded({ name: "pdf", absolutePath: "/x/pdf" }, [a], { skills: {} }, dryCtx);
     expect(calls).toEqual([]);
     expect(messages.some((m) => m.includes("would:"))).toBe(true);
   });

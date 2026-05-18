@@ -21,7 +21,7 @@ import {
   resolveAgentByRef,
 } from "./plugin-loader.js";
 import { buildPaths } from "./paths.js";
-import { writeConfig } from "./config.js";
+import { readConfigOrDefault, writeConfig } from "./config.js";
 import { mcpDeclarationSchema } from "./schema.js";
 import { ensureSymlinkPrivileges, rebuildContextWithCopyFallback } from "./context.js";
 import {
@@ -38,6 +38,7 @@ import {
 import { activeAgents, dispatchSkillRemoved } from "./events.js";
 import { indentedLogger } from "./logger.js";
 import { runHook } from "./hooks.js";
+import { prepareSkills } from "./skill-prepare.js";
 
 export interface InstallOptions {
   copyOnNoSymlink?: boolean;
@@ -82,7 +83,17 @@ export async function reinstate(
     if (!(await ensureAgentInstalled(agent, runCtx))) return { ok: false };
   }
 
-  // 2) Domain-outer interleaved fan-out: each domain's onInitialize, then each
+  // 2) Skill pre-pass: fetch + hash-verify (or pin) + materialize every declared
+  //    skill into the canonical dir BEFORE any agent hook runs. This is what
+  //    makes a fresh clone reproducible and surfaces upstream drift loudly.
+  try {
+    await prepareSkills(config, runCtx);
+  } catch (err) {
+    runCtx.logger.error(`skill prepare failed: ${(err as Error).message}`);
+    return { ok: false };
+  }
+
+  // 3) Domain-outer interleaved fan-out: each domain's onInitialize, then each
   //    agent's per-domain onInitialize in priority order.
   try {
     await initializeAgentsInterleaved(agents, config, registry, runCtx, {
@@ -201,10 +212,10 @@ export async function buildAgentDomainStates(
 
   out["mcp"] = (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[];
 
-  const skillsDir = buildPaths(ctx.projectRoot).skillsDir;
-  out["skills"] = (config.skills ?? []).map((s) => ({
-    name: s.name,
-    absolutePath: path.join(skillsDir, s.name),
+  const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
+  out["skills"] = Object.keys(config.skills ?? {}).map((name) => ({
+    name,
+    absolutePath: path.join(skillsDir, name),
   })) as ResolvedSkill[];
 
   return out;
@@ -517,9 +528,10 @@ export async function resolveRule(source: string, ctx: ResolveContext): Promise<
 }
 
 export async function resolveSkill(name: string, ctx: ResolveContext): Promise<ResolvedSkill> {
+  const config = await readConfigOrDefault(ctx.configPath);
   return {
     name,
-    absolutePath: path.join(buildPaths(ctx.projectRoot).skillsDir, name),
+    absolutePath: path.join(buildPaths(ctx.projectRoot, config).skillsDir, name),
   };
 }
 
@@ -535,8 +547,8 @@ export async function reconcile(
   agents: AgentPlugin[],
   ctx: ResolveContext,
 ): Promise<void> {
-  const paths = buildPaths(ctx.projectRoot);
-  const declaredSkills = new Set((config.skills ?? []).map((s) => s.name));
+  const paths = buildPaths(ctx.projectRoot, config);
+  const declaredSkills = new Set(Object.keys(config.skills ?? {}));
 
   const orphans = await findOrphans(paths.skillsDir, declaredSkills);
   for (const name of orphans) {
@@ -580,7 +592,7 @@ function computeFileSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boo
 }
 
 function computeDirSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boolean {
-  if (!config.skills?.length) return false;
+  if (!config.skills || Object.keys(config.skills).length === 0) return false;
   // Any active agent that declares a skills dir will trigger a dir-level
   // symlink in the skills domain bootstrap. Custom `handles.skills` agents
   // own their own materialization and may also need dir symlinks; we treat

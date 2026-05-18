@@ -1,65 +1,53 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentPlugin, DomainPlugin, ResolvedSkill, SkillDeclaration } from "@luxia/core";
-import { buildPaths, ensureLink, readConfigOrDefault, skillDeclarationSchema } from "@luxia/core";
+import type { AgentPlugin, DomainPlugin, ResolvedSkill } from "@luxia/core";
+import { buildPaths, ensureLink, readConfigOrDefault } from "@luxia/core";
+import { z } from "zod";
 
-const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
+export { findSkillsInRepo } from "@luxia/core";
+export type { DiscoveredSkill } from "@luxia/core";
+
+/**
+ * Per-skill declaration shape passed to plugin hooks. `agnos.json#skills` is a
+ * record `{ name: source }`; the orchestrator splays each entry into this
+ * `{ name, source }` shape for the domain's `resolve()` call.
+ */
+const declarationSchema = z.object({
+  name: z.string().min(1),
+  source: z.string().min(1),
+});
+
+const skillsPlugin: DomainPlugin<{ name: string; source: string }, ResolvedSkill> = {
   name: "skills",
   priority: 30,
-  declarationSchema: skillDeclarationSchema,
+  declarationSchema,
 
   async onInitialize(ctx) {
-    await fs.mkdir(buildPaths(ctx.projectRoot).skillsDir, { recursive: true });
+    const config = await readConfigOrDefault(ctx.configPath);
+    await fs.mkdir(buildPaths(ctx.projectRoot, config).skillsDir, { recursive: true });
   },
 
+  /**
+   * Canonical materialization happens in core's `prepareSkills`, called from
+   * `reinstate()` *before* the orchestrator runs domain/agent hooks. By the
+   * time this resolver fires (if at all — it's not called from the install
+   * path any more), the canonical bytes are already on disk.
+   */
   async resolve(decl, ctx) {
-    const targetDir = path.join(buildPaths(ctx.projectRoot).skillsDir, decl.name);
-    const skillFile = path.join(targetDir, "SKILL.md");
-    let needsFetch = true;
-    try {
-      await fs.access(skillFile);
-      needsFetch = false;
-    } catch {
-      // fall through
-    }
-    if (needsFetch) {
-      await fs.mkdir(targetDir, { recursive: true });
-      await ctx.fetcher.resolve(decl.source, targetDir);
-      if (!(await fileExists(skillFile))) {
-        ctx.logger.warn(
-          `skill "${decl.name}" resolved from ${decl.source} but contains no SKILL.md — agents may not pick it up`,
-        );
-      }
-    }
+    const config = await readConfigOrDefault(ctx.configPath);
+    const targetDir = path.join(buildPaths(ctx.projectRoot, config).skillsDir, decl.name);
     return { name: decl.name, absolutePath: targetDir };
   },
 
-  async add(ref, ctx) {
-    const name = deriveNameFromRef(ref);
-    const targetDir = path.join(buildPaths(ctx.projectRoot).skillsDir, name);
-    await fs.mkdir(targetDir, { recursive: true });
-    await ctx.fetcher.resolve(ref, targetDir);
-    return { name, absolutePath: targetDir };
-  },
-
   async remove(name, ctx) {
-    const targetDir = path.join(buildPaths(ctx.projectRoot).skillsDir, name);
-    await fs.rm(targetDir, { recursive: true, force: true });
-  },
-
-  async update(name, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
-    const decl = (config.skills ?? []).find((s) => s.name === name);
-    if (!decl) throw new Error(`skill "${name}" is not declared in agnos.json`);
-    const targetDir = path.join(buildPaths(ctx.projectRoot).skillsDir, name);
+    const targetDir = path.join(buildPaths(ctx.projectRoot, config).skillsDir, name);
     await fs.rm(targetDir, { recursive: true, force: true });
-    await fs.mkdir(targetDir, { recursive: true });
-    await ctx.fetcher.resolve(decl.source, targetDir, { noCache: true });
-    return { name, absolutePath: targetDir };
   },
 
   async list(ctx) {
-    const skillsDir = buildPaths(ctx.projectRoot).skillsDir;
+    const config = await readConfigOrDefault(ctx.configPath);
+    const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
     let names: string[] = [];
     try {
       names = await fs.readdir(skillsDir);
@@ -71,7 +59,8 @@ const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
 
   /**
    * Bootstrap a per-agent skills directory: link `<projectRoot>/<paths.skillsDir>`
-   * to the canonical `.agnos/skills/` so the agent automatically gets every
+   * to the canonical skills dir (default `.agnos/skills/`, overridable via
+   * `agnos.json#paths.skillsDir`) so the agent automatically gets every
    * current and future skill via a single directory-level symlink.
    *
    * No-op when:
@@ -86,8 +75,9 @@ const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
     if (!rel) return;
     if (agent.handles?.skills) return;
 
+    const config = await readConfigOrDefault(ctx.configPath);
     const linkPath = path.resolve(ctx.projectRoot, rel);
-    const canonical = buildPaths(ctx.projectRoot).skillsDir;
+    const canonical = buildPaths(ctx.projectRoot, config).skillsDir;
     await fs.mkdir(canonical, { recursive: true });
 
     if (await tryMigrateLegacyDir(linkPath, canonical)) {
@@ -145,29 +135,6 @@ export function findAgentsUsingSkillsDir(
     if (!rel) return false;
     return path.resolve(projectRoot, rel) === norm;
   });
-}
-
-export function deriveSkillNameFromRef(ref: string): string {
-  return deriveNameFromRef(ref);
-}
-
-function deriveNameFromRef(ref: string): string {
-  const colonIdx = ref.indexOf(":");
-  const after = colonIdx >= 0 ? ref.slice(colonIdx + 1) : ref;
-  const noQuery = after.split(/[?#@]/)[0] ?? after;
-  const segments = noQuery.split(/[\\/]/).filter(Boolean);
-  const last = segments[segments.length - 1];
-  if (!last) throw new Error(`Cannot derive skill name from ref: ${ref}`);
-  return last.replace(/^@/, "");
-}
-
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
