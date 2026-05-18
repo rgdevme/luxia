@@ -186,7 +186,8 @@ async function addOne(
   direct: DirectSkillRef,
 ): Promise<void> {
   const fetched = await ctx.fetcher.fetch(parsed);
-  const skillSrc = direct.kind === "git" ? path.join(fetched.path, direct.subPathOrDir) : fetched.path;
+  const skillSrc =
+    direct.kind === "git" ? path.join(fetched.path, direct.subPathOrDir) : fetched.path;
   if (!(await isSkillDir(skillSrc))) {
     throw new Error(
       `no SKILL.md found at ${parsed.canonical}` +
@@ -194,7 +195,8 @@ async function addOne(
     );
   }
   const composite = parsed.canonical;
-  const baseName = direct.kind === "git" ? path.basename(direct.subPathOrDir) : path.basename(skillSrc);
+  const baseName =
+    direct.kind === "git" ? path.basename(direct.subPathOrDir) : path.basename(skillSrc);
   const finalName = chooseUniqueName(opts.name ?? baseName, composite, config);
   const sel: SelectedSkill = {
     name: finalName,
@@ -446,10 +448,7 @@ function disambiguateFromDiscovery(
   for (const d of picked) {
     const composite = compositeFor(parsed, d.path);
     const base = nameOverride ?? d.defaultName;
-    const taken = new Set<string>([
-      ...Object.keys(config.skills ?? {}),
-      ...out.map((o) => o.name),
-    ]);
+    const taken = new Set<string>([...Object.keys(config.skills ?? {}), ...out.map((o) => o.name)]);
     const existingComposite = (config.skills ?? {})[base];
     let name = base;
     if (existingComposite === composite) {

@@ -148,10 +148,7 @@ export interface CompositeSkillRef {
   composite: string;
 }
 
-export function parseCompositeSkillRef(
-  value: string,
-  opts: ParseOptions,
-): CompositeSkillRef {
+export function parseCompositeSkillRef(value: string, opts: ParseOptions): CompositeSkillRef {
   const parsed = parseSource(value, opts);
   if (parsed.kind === "git") {
     if (!parsed.subPath) {

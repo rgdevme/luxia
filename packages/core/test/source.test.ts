@@ -31,10 +31,9 @@ describe("parseSource", () => {
   });
 
   it("parses https github URL with /tree/<branch>/<sub> suffix (captures subPath)", () => {
-    const r = parseSource(
-      "https://github.com/vercel-labs/agent-skills/tree/main/skills/foo",
-      { projectRoot },
-    );
+    const r = parseSource("https://github.com/vercel-labs/agent-skills/tree/main/skills/foo", {
+      projectRoot,
+    });
     expect(r).toMatchObject({
       kind: "git",
       provider: "github",

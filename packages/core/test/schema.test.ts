@@ -32,9 +32,7 @@ describe("schemas", () => {
   });
 
   it("skillsConfigSchema rejects invalid names", () => {
-    expect(() =>
-      skillsConfigSchema.parse({ " bad ": "github:foo/bar/skills/pdf" }),
-    ).toThrow();
+    expect(() => skillsConfigSchema.parse({ " bad ": "github:foo/bar/skills/pdf" })).toThrow();
   });
 
   it("skillsConfigSchema rejects multi-line refs", () => {

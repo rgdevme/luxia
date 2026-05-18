@@ -56,12 +56,7 @@ export { loadPlugins, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
 export { createLinker, describeSymlinkFailure } from "./fs/link.js";
 export { createRepoFetcher } from "./resolver.js";
-export {
-  parseSource,
-  parseCompositeSkillRef,
-  isProvider,
-  SUPPORTED_PROVIDERS,
-} from "./source.js";
+export { parseSource, parseCompositeSkillRef, isProvider, SUPPORTED_PROVIDERS } from "./source.js";
 export type {
   ParsedSource,
   GitSource,

@@ -103,7 +103,9 @@ describe("prepareSkills", () => {
     // No seedSkill — repoCache is empty.
     const ctx = makeCtx();
     const config: AgnosConfig = { skills: { pdf: "github:foo/bar/skills/pdf" } };
-    await expect(prepareSkills(config, ctx)).rejects.toThrow(/not found at github:foo\/bar\/skills\/pdf/);
+    await expect(prepareSkills(config, ctx)).rejects.toThrow(
+      /not found at github:foo\/bar\/skills\/pdf/,
+    );
   });
 
   it("is a no-op for an empty skills record", async () => {
