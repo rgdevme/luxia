@@ -1,4 +1,5 @@
 export type {
+  AgentPaths,
   AgentPlugin,
   AgentRef,
   AgnosConfig,
@@ -51,7 +52,8 @@ export {
 } from "./context.js";
 export { loadPlugins, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
-export { createLinker, describeSymlinkFailure } from "./fs/link.js";
+export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";
+export type { EnsureLinkResult } from "./fs/link.js";
 export { createSourceResolver } from "./resolver.js";
 export {
   activateAgent,

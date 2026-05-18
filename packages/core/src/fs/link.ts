@@ -85,6 +85,60 @@ export async function predictRequiresFileSymlinks(plan: {
   return plan.fileSymlinks;
 }
 
+export interface EnsureLinkResult {
+  kind: LinkKind | "already-linked";
+}
+
+/**
+ * Idempotent link: if `linkPath` already points to `target`, no-op. If it's a
+ * stale symlink, replace it. If it's a real file/directory (not a link), throw
+ * EEXIST — callers decide whether to migrate, prompt, or skip. Reuses
+ * `linker.link` for the cross-OS junction/symlink/copy-fallback path.
+ */
+export async function ensureLink(
+  target: string,
+  linkPath: string,
+  linker: Linker,
+  opts?: { fallback?: "copy" },
+): Promise<EnsureLinkResult> {
+  const absTarget = path.resolve(target);
+  const lstat = await fs.lstat(linkPath).catch(() => null);
+
+  if (lstat?.isSymbolicLink()) {
+    let resolvedCurrent = "";
+    try {
+      // realpath follows the link and normalizes Windows junction prefixes
+      // like \\?\C:\... so comparison against a resolved absolute target works.
+      resolvedCurrent = await fs.realpath(linkPath);
+    } catch {
+      // broken link — fall through to recreate
+    }
+    let resolvedTarget = absTarget;
+    try {
+      resolvedTarget = await fs.realpath(absTarget);
+    } catch {
+      // target may not exist yet in some edge cases; fall back to absTarget
+    }
+    if (resolvedCurrent && path.resolve(resolvedCurrent) === path.resolve(resolvedTarget)) {
+      return { kind: "already-linked" };
+    }
+    await linker.unlink(linkPath);
+    const out = await linker.link(absTarget, linkPath, opts);
+    return { kind: out.kind };
+  }
+
+  if (lstat && (lstat.isDirectory() || lstat.isFile())) {
+    const err = new Error(
+      `cannot link ${linkPath}: a ${lstat.isDirectory() ? "directory" : "file"} already exists there`,
+    ) as NodeJS.ErrnoException;
+    err.code = "EEXIST";
+    throw err;
+  }
+
+  const out = await linker.link(absTarget, linkPath, opts);
+  return { kind: out.kind };
+}
+
 async function statOrNull(p: string) {
   try {
     return await fs.stat(p);

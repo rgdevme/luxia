@@ -6,7 +6,6 @@ import type {
   McpDeclaration,
   ResolvedMcp,
   ResolvedRule,
-  ResolvedSkill,
 } from "@luxia/core";
 
 const CLAUDE_RULES = "CLAUDE.md";
@@ -16,6 +15,13 @@ const CLAUDE_SKILLS_DIR = path.join(".claude", "skills");
 const claudeCode: AgentPlugin = {
   id: "claude-code",
   displayName: "Claude Code",
+
+  // Declarative: the skills domain links this directory to `.agnos/skills/`.
+  // No per-skill handlers needed — Claude Code reads `.claude/skills/<name>/`
+  // and that directory IS the canonical skills storage after bootstrap.
+  paths: {
+    skillsDir: CLAUDE_SKILLS_DIR,
+  },
 
   handles: {
     rules: {
@@ -43,26 +49,6 @@ const claudeCode: AgentPlugin = {
       },
       async onCleanup(ctx) {
         await removeMcpFile(ctx);
-      },
-    },
-    skills: {
-      // Per-skill incremental; each skill is its own junction.
-      async onInitialize(state, ctx) {
-        await materializeSkills(state, ctx);
-      },
-      async onAdded(item, ctx) {
-        await ensureSkillLink(item, ctx);
-      },
-      async onUpdated(item, ctx) {
-        await ensureSkillLink(item, ctx);
-      },
-      async onRemoved(name, ctx) {
-        await removeSkillLink(name, ctx);
-      },
-      async onCleanup(ctx) {
-        await fs
-          .rm(path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR), { recursive: true, force: true })
-          .catch(() => {});
       },
     },
   },
@@ -99,30 +85,6 @@ async function removeMcpFile(ctx: MaterializeContext): Promise<void> {
     await ctx.linker.unlink(path.join(ctx.projectRoot, CLAUDE_MCP));
   } catch {
     // ignore
-  }
-}
-
-async function materializeSkills(items: ResolvedSkill[], ctx: MaterializeContext): Promise<void> {
-  const dir = path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR);
-  await fs.mkdir(dir, { recursive: true });
-  for (const s of items) {
-    await ensureSkillLink(s, ctx);
-  }
-  ctx.logger.info(`.claude/skills/ (${items.length} skill${items.length === 1 ? "" : "s"})`);
-}
-
-async function ensureSkillLink(item: ResolvedSkill, ctx: MaterializeContext): Promise<void> {
-  const dir = path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR);
-  await fs.mkdir(dir, { recursive: true });
-  await ctx.linker.link(item.absolutePath, path.join(dir, item.name));
-}
-
-async function removeSkillLink(name: string, ctx: MaterializeContext): Promise<void> {
-  const target = path.join(ctx.projectRoot, CLAUDE_SKILLS_DIR, name);
-  try {
-    await ctx.linker.unlink(target);
-  } catch {
-    await fs.rm(target, { recursive: true, force: true }).catch(() => {});
   }
 }
 
