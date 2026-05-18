@@ -1,5 +1,6 @@
 import { createHash, type Hash } from "node:crypto";
 import fs from "node:fs";
+import type { Dirent } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
@@ -40,7 +41,7 @@ interface FileEntry {
 }
 
 async function collectFiles(root: string, dir: string): Promise<FileEntry[]> {
-  let entries: import("node:fs").Dirent[];
+  let entries: Dirent[];
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
   } catch (err) {

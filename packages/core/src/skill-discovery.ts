@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 
 const SKILL_MARKER = "SKILL.md";
@@ -77,7 +78,7 @@ async function walk(
     return;
   }
 
-  let entries: import("node:fs").Dirent[];
+  let entries: Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch {

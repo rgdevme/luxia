@@ -55,8 +55,8 @@ export function upsertSkill(lock: LockFile, key: string, entry: SkillLockEntry):
 
 export function removeSkill(lock: LockFile, key: string): LockFile {
   if (!(key in lock.skills)) return lock;
-  const skills = { ...lock.skills };
-  delete skills[key];
+  const { [key]: _removed, ...skills } = lock.skills;
+  void _removed;
   return { ...lock, skills };
 }
 

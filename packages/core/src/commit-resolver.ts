@@ -11,7 +11,7 @@ export interface CommitResolution {
 
 export async function resolveGitCommit(
   src: GitSource,
-  ref: string = "HEAD",
+  ref = "HEAD",
 ): Promise<CommitResolution> {
   const sha = await fetchCommit(src, ref);
   return { commit: sha, ref };

@@ -95,7 +95,7 @@ export interface Linker {
  */
 export interface RepoFetcher {
   fetch(
-    source: import("./public.js").ParsedSourceRef,
+    source: ParsedSourceRef,
     opts?: { ref?: string; noCache?: boolean },
   ): Promise<{ path: string }>;
 }

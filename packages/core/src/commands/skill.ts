@@ -368,8 +368,8 @@ async function runRemove(
   const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
   await fs.rm(path.join(skillsDir, name), { recursive: true, force: true });
 
-  const nextSkills = { ...(config.skills ?? {}) };
-  delete nextSkills[name];
+  const { [name]: _removed, ...nextSkills } = config.skills ?? {};
+  void _removed;
   config.skills = nextSkills;
   await writeConfig(ctx.configPath, config);
 
