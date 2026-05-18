@@ -8,11 +8,11 @@ import type { EffectiveDocsConfig } from "../src/effective-config.js";
 import { DEFAULT_DOCS_METADATA } from "../src/schema.js";
 
 async function makeCfg(root: string): Promise<EffectiveDocsConfig> {
-  const docsRoute = path.join(root, ".agnos", ".docs");
+  const docsRoute = path.join(root, ".docs");
   await fs.mkdir(docsRoute, { recursive: true });
   return {
     route: docsRoute,
-    routeRelative: ".agnos/.docs",
+    routeRelative: ".docs",
     indexName: "index",
     contentName: "content",
     docRulesName: "doc-rules",

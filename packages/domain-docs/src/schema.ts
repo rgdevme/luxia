@@ -31,7 +31,7 @@ export const DEFAULT_DOCS_METADATA: MetadataSchema = {
 };
 
 export const DEFAULTS = {
-  route: ".agnos/.docs",
+  route: ".docs",
   indexName: "index",
   contentName: "content" as const,
   docRulesName: "doc-rules",
