@@ -1,6 +1,6 @@
 {
   "name": "@luxia/agent-codex",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Agnos strategy plugin for OpenAI Codex",
   "type": "module",
   "license": "MIT",

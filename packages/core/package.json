@@ -1,6 +1,6 @@
 {
   "name": "@luxia/core",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Agnos core CLI and plugin framework",
   "type": "module",
   "license": "MIT",
