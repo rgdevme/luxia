@@ -8,14 +8,11 @@ import { runMcp } from "./commands/mcp.js";
 import { runInstallCommand } from "./commands/install.js";
 import { runDomainCli } from "./commands/domain-cli.js";
 import { RESERVED_CLI_IDS } from "./types/public.js";
-import type { PackageManager } from "./pkg-manager.js";
 
 const USAGE = `agnos - agent-agnostic project configuration manager
 
 Usage:
-  agnos init [-y] [--install|--no-install]
-                                        Initialize agnos (= install bundled plugins
-                                        locally + agnos rules + agnos agents)
+  agnos init [-y]                       Initialize agnos (= agnos rules + agnos agents)
   agnos rules [path]                    Set the rules-source path (default ./AGENTS.md)
   agnos agents                          Pick which agent plugins to enable
   agnos agent add <id|pkg>              Install + activate an agent plugin
@@ -46,7 +43,6 @@ async function main(): Promise<void> {
       "yes",
       "help",
       "debug",
-      "install",
       "no-install",
       "no-activate",
       "copy-on-no-symlink",
@@ -54,7 +50,7 @@ async function main(): Promise<void> {
       "quiet",
     ],
     alias: { y: "yes", h: "help", q: "quiet" },
-    string: ["cwd", "package-manager"],
+    string: ["cwd"],
   });
 
   if (argv["help"] && argv._.length === 0) {
@@ -81,21 +77,11 @@ async function main(): Promise<void> {
         process.stdout.write(USAGE);
         return;
       case "init": {
-        let install: boolean | undefined;
-        if (argv["no-install"]) install = false;
-        else if (argv["install"]) install = true;
-        const pmRaw = argv["package-manager"];
-        const packageManager =
-          typeof pmRaw === "string" && ["npm", "pnpm", "yarn", "bun"].includes(pmRaw)
-            ? (pmRaw as PackageManager)
-            : undefined;
         await runInit({
           cwd,
           yes: Boolean(argv["yes"]),
           copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
           dryRun,
-          install,
-          packageManager,
           logger: effectiveLogger,
         });
         return;
