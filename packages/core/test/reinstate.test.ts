@@ -80,7 +80,7 @@ function ctxFor(projectRoot: string): ResolveContext {
     agnosRoot: path.join(projectRoot, ".agnos"),
     cacheDir: path.join(projectRoot, ".agnos", "cache"),
     logger: createLogger({ quiet: true }),
-    fetcher: { resolve: async () => ({ path: "" }) },
+    fetcher: { fetch: async () => ({ path: "" }) },
     linker: {
       canSymlinkFiles: async () => true,
       canSymlinkDirs: async () => true,
@@ -109,7 +109,7 @@ describe("reinstate end-to-end", () => {
       agents: ["a", "b"],
       rules: { source: "./AGENTS.md" },
       mcp: [],
-      skills: [],
+      skills: {},
     };
     await writeConfig(path.join(dir, "agnos.json"), config);
     const r = registry(
@@ -146,7 +146,7 @@ describe("reinstate end-to-end", () => {
       agents: ["a"],
       rules: { source: "./AGENTS.md" },
       mcp: [],
-      skills: [],
+      skills: {},
     };
     await writeConfig(path.join(dir, "agnos.json"), config);
     const r1 = registry([spyDomain("rules", 10, calls1)], [spyAgent("a", calls1)]);

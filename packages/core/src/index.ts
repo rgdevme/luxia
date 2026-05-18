@@ -8,20 +8,23 @@ export type {
   DomainPlugin,
   LinkKind,
   Linker,
+  LockFile,
   Logger,
   MaterializeContext,
   McpDeclaration,
   McpEventHandlers,
+  ParsedSourceRef,
+  PathsConfig,
   PluginManifest,
+  RepoFetcher,
   ResolveContext,
   ResolvedMcp,
   ResolvedRule,
   ResolvedSkill,
   RulesDeclaration,
   RulesEventHandlers,
-  SkillDeclaration,
+  SkillLockEntry,
   SkillsEventHandlers,
-  SourceResolver,
 } from "./types/public.js";
 export { RESERVED_CLI_IDS } from "./types/public.js";
 
@@ -52,7 +55,37 @@ export {
 export { loadPlugins, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
 export { createLinker, describeSymlinkFailure } from "./fs/link.js";
-export { createSourceResolver } from "./resolver.js";
+export { createRepoFetcher } from "./resolver.js";
+export {
+  parseSource,
+  parseCompositeSkillRef,
+  isProvider,
+  SUPPORTED_PROVIDERS,
+} from "./source.js";
+export type {
+  ParsedSource,
+  GitSource,
+  LocalSource,
+  Provider,
+  CompositeSkillRef,
+} from "./source.js";
+export { resolveGitCommit, resolveLocalCommit } from "./commit-resolver.js";
+export type { CommitResolution } from "./commit-resolver.js";
+export { findSkillsInRepo } from "./skill-discovery.js";
+export type { DiscoveredSkill } from "./skill-discovery.js";
+export { hashSkillDir } from "./skill-hash.js";
+export { prepareSkills } from "./skill-prepare.js";
+export type { PrepareResult } from "./skill-prepare.js";
+export {
+  LOCK_FILE,
+  emptyLock,
+  getSkill,
+  lockPath,
+  readLock,
+  removeSkill,
+  upsertSkill,
+  writeLock,
+} from "./lock.js";
 export {
   activateAgent,
   buildAgentDomainStates,
@@ -91,7 +124,12 @@ export type { AgnosState } from "./state.js";
 export {
   agentRefSchema,
   agnosConfigSchema,
+  lockFileSchema,
   mcpDeclarationSchema,
+  pathsConfigSchema,
   rulesDeclarationSchema,
-  skillDeclarationSchema,
+  skillLockEntrySchema,
+  skillNameSchema,
+  skillRefSchema,
+  skillsConfigSchema,
 } from "./schema.js";

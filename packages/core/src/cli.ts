@@ -17,13 +17,28 @@ Usage:
   agnos agents                          Pick which agent plugins to enable
   agnos agent add <id|pkg>              Install + activate an agent plugin
   agnos agent remove <id>               Deactivate + uninstall an agent plugin
-  agnos skill add <ref>                 Add a skill (e.g. github:owner/repo/path)
+  agnos skill add <source> [-p <provider>] [-s <list>]
+                                        Pick skills from a repo containing ./skills/*
   agnos skill remove <name>             Remove a skill
-  agnos skill update <name>             Re-fetch a skill from its source
+  agnos skill update <name> [--ref <r>] Re-fetch the skill (and its siblings) at a new commit
+  agnos skill list                      List installed skills
   agnos mcp add <name>                  Add an MCP server
   agnos mcp remove <name>               Remove an MCP server
   agnos mcp update <name>               Update an MCP server
   agnos install                         Materialize current config for declared agents
+
+Skill source forms (bare = discover + prompt; with /<path> = install that one):
+  <owner>/<repo>[/<path>]               e.g. vercel-labs/agent-skills  or  vercel-labs/agent-skills/skills/pdf
+  https://<host>/<owner>/<repo>[/tree/<ref>/<path>]
+                                        github.com, gitlab.com, bitbucket.org
+  git@<host>:<owner>/<repo>.git         SSH URL (repo only, no sub-path)
+  ./local/path | /abs/path              Local directory (the dir itself, or a repo to discover within)
+
+Skill flags:
+  -p, --provider <name>                 github | gitlab | bitbucket (default github)
+  -s, --skills <list>                   Comma-separated globs (e.g. "claude-*,convex-*"). "*" = all
+      --name <name>                     Rename the skill locally (only with a single -s match)
+      --ref <ref>                       For \`skill update\`: an explicit commit / branch / tag
 
 Common flags:
   -y, --yes                             Skip prompts (non-interactive defaults)
@@ -49,8 +64,8 @@ async function main(): Promise<void> {
       "dry-run",
       "quiet",
     ],
-    alias: { y: "yes", h: "help", q: "quiet" },
-    string: ["cwd"],
+    alias: { y: "yes", h: "help", q: "quiet", p: "provider", s: "skills" },
+    string: ["cwd", "provider", "skills", "ref", "name"],
   });
 
   if (argv["help"] && argv._.length === 0) {
@@ -131,6 +146,10 @@ async function main(): Promise<void> {
           copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
           dryRun,
           logger: effectiveLogger,
+          provider: typeof argv["provider"] === "string" ? argv["provider"] : undefined,
+          skills: typeof argv["skills"] === "string" ? argv["skills"] : undefined,
+          ref: typeof argv["ref"] === "string" ? argv["ref"] : undefined,
+          name: typeof argv["name"] === "string" ? argv["name"] : undefined,
         });
         return;
       case "mcp":

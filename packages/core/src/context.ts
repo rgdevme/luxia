@@ -1,20 +1,24 @@
 import path from "node:path";
 import { confirm } from "@inquirer/prompts";
 import { createLinker, predictRequiresFileSymlinks } from "./fs/link.js";
-import { createSourceResolver } from "./resolver.js";
+import { createRepoFetcher } from "./resolver.js";
 import { createLogger } from "./logger.js";
 import { buildPaths, ensureDir } from "./paths.js";
-import type { Logger, ResolveContext } from "./types/public.js";
+import { readConfigOrDefault } from "./config.js";
+import type { AgnosConfig, Logger, ResolveContext } from "./types/public.js";
 
 export interface BuildContextOptions {
   projectRoot: string;
   copyFallback?: boolean;
   dryRun?: boolean;
   logger?: Logger;
+  config?: AgnosConfig;
 }
 
 export async function buildResolveContext(opts: BuildContextOptions): Promise<ResolveContext> {
-  const paths = buildPaths(opts.projectRoot);
+  const config =
+    opts.config ?? (await readConfigOrDefault(path.join(opts.projectRoot, "agnos.json")));
+  const paths = buildPaths(opts.projectRoot, config);
   if (!opts.dryRun) {
     await ensureDir(paths.agnosRoot);
     await ensureDir(paths.cacheDir);
@@ -25,7 +29,7 @@ export async function buildResolveContext(opts: BuildContextOptions): Promise<Re
     logger,
     copyFallback: opts.copyFallback,
   });
-  const fetcher = createSourceResolver({ projectRoot: opts.projectRoot, cacheDir: paths.cacheDir });
+  const fetcher = createRepoFetcher({ projectRoot: opts.projectRoot, cacheDir: paths.cacheDir });
   return {
     projectRoot: opts.projectRoot,
     configPath: paths.configPath,

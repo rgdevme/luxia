@@ -11,17 +11,39 @@ export interface AgnosConfig {
   $schema?: string;
   agents?: AgentRef[];
   rules?: RulesDeclaration;
-  skills?: SkillDeclaration[];
+  /**
+   * Map of local skill name → composite source ref.
+   *
+   * Value grammar:
+   *   - git: `<provider>:<owner>/<repo>/<in-repo-path>`
+   *     e.g. `github:vercel-labs/agent-skills/skills/pdf`
+   *   - local: `file:<path-to-skill-dir>` (the directory contains SKILL.md directly)
+   */
+  skills?: Record<string, string>;
   mcp?: McpDeclaration[];
+  paths?: PathsConfig;
   [domain: string]: unknown;
 }
 
-export interface RulesDeclaration {
-  source: string;
+export interface PathsConfig {
+  /** Canonical skills directory, relative to project root. Defaults to ".agnos/skills". */
+  skillsDir?: string;
 }
 
-export interface SkillDeclaration {
-  name: string;
+export interface SkillLockEntry {
+  /** SHA-256 hex of the materialized skill directory's contents. */
+  computedHash: string;
+  /** ISO timestamp of when this hash was last computed. Informational. */
+  resolvedAt: string;
+}
+
+export interface LockFile {
+  version: 1;
+  /** Keyed by the composite source string (same value as `AgnosConfig.skills[name]`). */
+  skills: Record<string, SkillLockEntry>;
+}
+
+export interface RulesDeclaration {
   source: string;
 }
 
@@ -65,9 +87,33 @@ export interface Linker {
   unlink(linkPath: string): Promise<void>;
 }
 
-export interface SourceResolver {
-  resolve(source: string, destDir: string, opts?: { noCache?: boolean }): Promise<{ path: string }>;
+/**
+ * Repository fetcher. Materializes a parsed git or local source into a
+ * cache-managed directory and returns the root path. The result represents
+ * the repository root, not a specific skill — domains walk into it to find
+ * what they need (e.g. domain-skills looks under `./skills/*`).
+ */
+export interface RepoFetcher {
+  fetch(
+    source: import("./public.js").ParsedSourceRef,
+    opts?: { ref?: string; noCache?: boolean },
+  ): Promise<{ path: string }>;
 }
+
+/**
+ * Structural type for parsed sources — kept here so external plugins can use
+ * `ctx.fetcher.fetch` without importing internal helpers. The shape matches
+ * `ParsedSource` in `source.ts`.
+ */
+export type ParsedSourceRef =
+  | {
+      kind: "git";
+      provider: "github" | "gitlab" | "bitbucket";
+      owner: string;
+      repo: string;
+      canonical: string;
+    }
+  | { kind: "local"; absolutePath: string; canonical: string };
 
 export interface ResolveContext {
   agnosRoot: string;
@@ -76,7 +122,7 @@ export interface ResolveContext {
   configPath: string;
   statePath: string;
   logger: Logger;
-  fetcher: SourceResolver;
+  fetcher: RepoFetcher;
   linker: Linker;
   /** When true, mutation paths log "would: …" lines and skip side effects. */
   dryRun?: boolean;
