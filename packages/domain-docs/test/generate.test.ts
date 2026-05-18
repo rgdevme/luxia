@@ -11,11 +11,11 @@ async function makeCfg(
   root: string,
   overrides: Partial<EffectiveDocsConfig> = {},
 ): Promise<EffectiveDocsConfig> {
-  const docsRoute = path.join(root, ".agnos", ".docs");
+  const docsRoute = path.join(root, ".docs");
   await fs.mkdir(docsRoute, { recursive: true });
   return {
     route: docsRoute,
-    routeRelative: ".agnos/.docs",
+    routeRelative: ".docs",
     indexName: "index",
     contentName: "content",
     docRulesName: "doc-rules",

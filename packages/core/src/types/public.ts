@@ -205,6 +205,13 @@ export interface McpEventHandlers {
   onUpdated?(item: ResolvedMcp, ctx: MaterializeContext): Promise<void>;
   onRemoved?(name: string, ctx: MaterializeContext): Promise<void>;
   onCleanup?(ctx: MaterializeContext): Promise<void>;
+  /**
+   * One-time reverse-import. Read the agent's own project-scoped MCP config
+   * file(s), parse them, and return declarations to centralize into agnos.json.
+   * Fires once per agent per project (gated by state.json) on first activation.
+   * Return [] if the source file is absent or unparseable — do not throw.
+   */
+  onImport?(ctx: MaterializeContext): Promise<McpDeclaration[]>;
 }
 
 export interface SkillsEventHandlers {
