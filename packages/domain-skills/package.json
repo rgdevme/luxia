@@ -1,6 +1,6 @@
 {
   "name": "@luxia/domain-skills",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Agnos skills domain plugin",
   "type": "module",
   "license": "MIT",

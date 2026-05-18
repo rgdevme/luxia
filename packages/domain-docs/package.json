@@ -1,6 +1,6 @@
 {
   "name": "@luxia/domain-docs",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Agnos docs domain plugin",
   "type": "module",
   "license": "MIT",
