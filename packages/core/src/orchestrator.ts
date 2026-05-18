@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { select } from "@inquirer/prompts";
 import type {
   AgentPlugin,
   AgnosConfig,
   DomainEventHandlers,
+  Logger,
   MaterializeContext,
+  McpDeclaration,
   ResolveContext,
   ResolvedMcp,
   ResolvedRule,
@@ -18,12 +21,16 @@ import {
   resolveAgentByRef,
 } from "./plugin-loader.js";
 import { buildPaths } from "./paths.js";
+import { writeConfig } from "./config.js";
+import { mcpDeclarationSchema } from "./schema.js";
 import { ensureSymlinkPrivileges, rebuildContextWithCopyFallback } from "./context.js";
 import {
+  hasImported,
   isAgentInstalled,
   isDomainInitialized,
   markAgentInstalled,
   markDomainInitialized,
+  markImported,
   readState,
   unmarkAgentInstalled,
   writeState,
@@ -78,7 +85,9 @@ export async function reinstate(
   // 2) Domain-outer interleaved fan-out: each domain's onInitialize, then each
   //    agent's per-domain onInitialize in priority order.
   try {
-    await initializeAgentsInterleaved(agents, config, registry, runCtx);
+    await initializeAgentsInterleaved(agents, config, registry, runCtx, {
+      interactive: opts.interactive ?? true,
+    });
   } catch (err) {
     runCtx.logger.error(`initialize failed: ${(err as Error).message}`);
     return { ok: false };
@@ -101,11 +110,12 @@ export async function activateAgent(
   config: AgnosConfig,
   registry: PluginRegistry,
   ctx: ResolveContext,
+  opts: { interactive?: boolean } = {},
 ): Promise<void> {
   if (!(await ensureAgentInstalled(agent, ctx))) {
     throw new Error(`onInstalled failed for ${agent.id}`);
   }
-  await materializeAgent(agent, config, registry, ctx);
+  await materializeAgent(agent, config, registry, ctx, opts);
 }
 
 /**
@@ -202,8 +212,10 @@ export async function initializeAgentsInterleaved(
   config: AgnosConfig,
   registry: PluginRegistry,
   ctx: ResolveContext,
+  opts: { interactive?: boolean } = {},
 ): Promise<void> {
-  const state = await buildAgentDomainStates(config, ctx);
+  const interactive = opts.interactive ?? true;
+  let state = await buildAgentDomainStates(config, ctx);
   let projectState = await readState(ctx.statePath);
 
   for (const dom of orderedDomains(registry)) {
@@ -218,6 +230,14 @@ export async function initializeAgentsInterleaved(
         projectState = markDomainInitialized(projectState, dom.plugin.name);
         await writeState(ctx.statePath, projectState);
       }
+    }
+
+    // One-time reverse-import pass: lets agents contribute existing per-agent
+    // config (e.g. .mcp.json) back into agnos.json before forward materialization.
+    const importChanged = await runDomainImportPass(agents, dom, config, ctx, { interactive });
+    if (importChanged) {
+      state = await buildAgentDomainStates(config, ctx);
+      projectState = await readState(ctx.statePath);
     }
 
     for (const agent of agents) {
@@ -238,6 +258,161 @@ export async function initializeAgentsInterleaved(
 }
 
 /**
+ * Per-domain one-time import pass. For each agent that has not yet imported
+ * this domain (state.json-gated), call `handles.<domain>.onImport`, validate
+ * the returned declarations, resolve conflicts (interactively when allowed),
+ * and merge into agnos.json. Currently only `mcp` participates; other domains
+ * are ignored even if they define onImport.
+ *
+ * Returns true if agnos.json or state.json was modified.
+ */
+async function runDomainImportPass(
+  agents: AgentPlugin[],
+  dom: RegisteredDomain,
+  config: AgnosConfig,
+  ctx: ResolveContext,
+  opts: { interactive: boolean },
+): Promise<boolean> {
+  if (ctx.dryRun) return false;
+  if (dom.plugin.name !== "mcp") return false;
+
+  let projectState = await readState(ctx.statePath);
+  let mutated = false;
+
+  type Owner = { kind: "config" } | { kind: "agent"; id: string };
+  const owners = new Map<string, Owner>();
+  for (const m of config.mcp ?? []) owners.set(m.name, { kind: "config" });
+
+  for (const agent of agents) {
+    if (hasImported(projectState, agent.id, dom.plugin.name)) continue;
+    const handlers = handlersFor(agent, dom.plugin.name);
+    const onImport = handlers?.onImport;
+    if (!onImport) continue;
+
+    const mctx = buildMaterializeCtx(ctx, agent.id, "    ");
+    ctx.logger.info(`  -> ${agent.id}`);
+
+    let raw: unknown[] = [];
+    try {
+      const result = await onImport(mctx);
+      raw = Array.isArray(result) ? result : [];
+    } catch (err) {
+      mctx.logger.warn(`${dom.plugin.name}.onImport failed: ${(err as Error).message}`);
+      raw = [];
+    }
+
+    let imported = 0;
+    let kept = 0;
+    for (const candidate of raw) {
+      const parsed = mcpDeclarationSchema.safeParse(candidate);
+      if (!parsed.success) {
+        mctx.logger.warn(`skipping invalid imported entry: ${parsed.error.message}`);
+        continue;
+      }
+      const decl = parsed.data as McpDeclaration;
+      const existingOwner = owners.get(decl.name);
+      if (!existingOwner) {
+        config.mcp = [...(config.mcp ?? []), decl];
+        owners.set(decl.name, { kind: "agent", id: agent.id });
+        imported++;
+        mutated = true;
+        continue;
+      }
+      const existing = (config.mcp ?? []).find((m) => m.name === decl.name);
+      if (!existing) {
+        // Shouldn't happen given owners map, but treat as additive.
+        config.mcp = [...(config.mcp ?? []), decl];
+        owners.set(decl.name, { kind: "agent", id: agent.id });
+        imported++;
+        mutated = true;
+        continue;
+      }
+      const choice = await resolveMcpConflict({
+        name: decl.name,
+        existingOwner,
+        existing,
+        importedFrom: agent.id,
+        imported: decl,
+        interactive: opts.interactive,
+        logger: mctx.logger,
+      });
+      if (choice === "replace") {
+        config.mcp = (config.mcp ?? []).map((m) => (m.name === decl.name ? decl : m));
+        owners.set(decl.name, { kind: "agent", id: agent.id });
+        imported++;
+        mutated = true;
+      } else {
+        kept++;
+      }
+    }
+
+    const parts = [`imported ${imported}`];
+    if (kept > 0) parts.push(`kept ${kept} existing`);
+    mctx.logger.info(`${dom.plugin.name}.onImport (${parts.join(", ")})`);
+
+    projectState = markImported(projectState, agent.id, dom.plugin.name);
+    await writeState(ctx.statePath, projectState);
+  }
+
+  if (mutated) {
+    await writeConfig(buildPaths(ctx.projectRoot).configPath, config);
+  }
+  return mutated;
+}
+
+interface OwnerRef {
+  kind: "config" | "agent";
+  id?: string;
+}
+
+async function resolveMcpConflict(opts: {
+  name: string;
+  existingOwner: OwnerRef;
+  existing: McpDeclaration;
+  importedFrom: string;
+  imported: McpDeclaration;
+  interactive: boolean;
+  logger: Logger;
+}): Promise<"keep" | "replace"> {
+  const existingLabel =
+    opts.existingOwner.kind === "config"
+      ? "already in agnos.json"
+      : `already imported from "${opts.existingOwner.id}"`;
+
+  if (!opts.interactive) {
+    opts.logger.info(
+      `conflict: keeping existing "${opts.name}" (${existingLabel}); imported from "${opts.importedFrom}" skipped`,
+    );
+    return "keep";
+  }
+
+  const choice = await select<"keep" | "replace">({
+    message:
+      `MCP server "${opts.name}" conflict (${existingLabel}; new from "${opts.importedFrom}"):\n` +
+      `  existing: ${summarizeMcp(opts.existing)}\n` +
+      `  imported: ${summarizeMcp(opts.imported)}`,
+    choices: [
+      { name: "Keep existing", value: "keep" },
+      { name: `Replace with imported (from ${opts.importedFrom})`, value: "replace" },
+    ],
+    default: "keep",
+  });
+  return choice;
+}
+
+function summarizeMcp(m: McpDeclaration): string {
+  const parts: string[] = [];
+  if (m.transport && m.transport !== "stdio") {
+    parts.push(`${m.transport} ${m.command ?? ""}`.trim());
+  } else {
+    const args = m.args?.length ? " " + m.args.join(" ") : "";
+    parts.push(`${m.command ?? ""}${args}`.trim() || "(no command)");
+  }
+  if (m.env && Object.keys(m.env).length) parts.push(`env: ${Object.keys(m.env).join(",")}`);
+  return parts.join(" | ");
+}
+
+/**
  * Single-agent activation: delegates to the interleaved helper with a
  * one-element list so the log layout matches multi-agent flows.
  */
@@ -246,12 +421,14 @@ export async function materializeAgent(
   config: AgnosConfig,
   registry: PluginRegistry,
   ctx: ResolveContext,
+  opts: { interactive?: boolean } = {},
 ): Promise<void> {
-  await initializeAgentsInterleaved([agent], config, registry, ctx);
+  await initializeAgentsInterleaved([agent], config, registry, ctx, opts);
 }
 
 interface AnyDomainHandlers {
   onInitialize?: (state: unknown, ctx: MaterializeContext) => Promise<void>;
+  onImport?: (ctx: MaterializeContext) => Promise<unknown[]>;
   onCleanup?: (ctx: MaterializeContext) => Promise<void>;
 }
 
