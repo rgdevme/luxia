@@ -21,6 +21,7 @@ Usage:
                                         Pick skills from a repo containing ./skills/*
   agnos skill remove <name>             Remove a skill
   agnos skill update <name> [--ref <r>] Re-fetch the skill (and its siblings) at a new commit
+  agnos skill migrate [path]            Import skills from a skills.sh \`skills-lock.json\` (default ./skills-lock.json)
   agnos skill list                      List installed skills
   agnos mcp add <name>                  Add an MCP server
   agnos mcp remove <name>               Remove an MCP server
