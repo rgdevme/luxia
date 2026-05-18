@@ -131,16 +131,29 @@ export async function activateAgent(
 
 /**
  * Run per-domain onCleanup for an agent (in reverse priority order). Does
- * NOT modify agnos.json or state.json.
+ * NOT modify agnos.json or state.json. For each domain, fires
+ * `onAgentDeactivate` first (so the domain can decide whether to keep shared
+ * artifacts based on the remaining active agents), then the agent's own
+ * `handles.<domain>.onCleanup`.
  */
 export async function cleanupAgent(
   agent: AgentPlugin,
   registry: PluginRegistry,
   ctx: ResolveContext,
+  opts: { remainingAgents?: readonly AgentPlugin[] } = {},
 ): Promise<void> {
   const mctx = buildMaterializeCtx(ctx, agent.id, "  ");
   const verb = ctx.dryRun ? "would: " : "-> ";
+  const remaining = opts.remainingAgents ?? [];
   for (const dom of orderedDomains(registry).reverse()) {
+    if (dom.plugin.onAgentDeactivate) {
+      ctx.logger.info(`${verb}${dom.plugin.name}.onAgentDeactivate[${agent.id}]`);
+      if (!ctx.dryRun) {
+        await runHook(`${dom.plugin.name}.onAgentDeactivate[${agent.id}]`, () =>
+          dom.plugin.onAgentDeactivate!(agent, remaining, mctx),
+        );
+      }
+    }
     const handlers = handlersFor(agent, dom.plugin.name);
     const fn = handlers?.onCleanup;
     if (!fn) continue;
@@ -256,14 +269,26 @@ export async function initializeAgentsInterleaved(
       const fn = handlers?.onInitialize as
         | ((s: unknown, c: MaterializeContext) => Promise<void>)
         | undefined;
-      if (!fn) continue;
+      const hasActivate = !!dom.plugin.onAgentActivate;
+      if (!fn && !hasActivate) continue;
       const mctx = buildMaterializeCtx(ctx, agent.id, "    ");
       ctx.logger.info(`  ${verb}${agent.id}`);
-      ctx.logger.info(`    ${dom.plugin.name}.onInitialize`);
-      if (ctx.dryRun) continue;
-      await runHook(`${agent.id}.${dom.plugin.name}.onInitialize`, () =>
-        fn(state[dom.plugin.name], mctx),
-      );
+      if (hasActivate) {
+        ctx.logger.info(`    ${dom.plugin.name}.onAgentActivate`);
+        if (!ctx.dryRun) {
+          await runHook(`${dom.plugin.name}.onAgentActivate[${agent.id}]`, () =>
+            dom.plugin.onAgentActivate!(agent, agents, mctx),
+          );
+        }
+      }
+      if (fn) {
+        ctx.logger.info(`    ${dom.plugin.name}.onInitialize`);
+        if (!ctx.dryRun) {
+          await runHook(`${agent.id}.${dom.plugin.name}.onInitialize`, () =>
+            fn(state[dom.plugin.name], mctx),
+          );
+        }
+      }
     }
   }
 }
@@ -568,7 +593,11 @@ function computeFileSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boo
 
 function computeDirSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boolean {
   if (!config.skills || Object.keys(config.skills).length === 0) return false;
-  return agents.some((a) => a.id === "claude-code");
+  // Any active agent that declares a skills dir will trigger a dir-level
+  // symlink in the skills domain bootstrap. Custom `handles.skills` agents
+  // own their own materialization and may also need dir symlinks; we treat
+  // their presence as also requiring the capability.
+  return agents.some((a) => Boolean(a.paths?.skillsDir) || Boolean(a.handles?.skills));
 }
 
 function normalize(p: string): string {

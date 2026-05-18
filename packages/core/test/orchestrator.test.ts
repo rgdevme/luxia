@@ -230,6 +230,68 @@ describe("materializeAgent + cleanupAgent ordering", () => {
     expect(calls).toEqual(["domain:rules", "a:rules", "a:rules"]);
   });
 
+  it("fires domain.onAgentActivate before the agent's handles.<domain>.onInitialize", async () => {
+    const calls: string[] = [];
+    const skillsDomain: DomainPlugin = {
+      name: "skills",
+      priority: 30,
+      declarationSchema: z.any(),
+      async onInitialize() {
+        calls.push("domain:skills");
+      },
+      async onAgentActivate(agent) {
+        calls.push(`skills.onAgentActivate[${agent.id}]`);
+      },
+      async onAgentDeactivate(agent) {
+        calls.push(`skills.onAgentDeactivate[${agent.id}]`);
+      },
+    };
+    const agent: AgentPlugin = {
+      id: "spy",
+      displayName: "Spy",
+      handles: {
+        skills: {
+          async onInitialize() {
+            calls.push("agent:skills:init");
+          },
+          async onCleanup() {
+            calls.push("agent:skills:cleanup");
+          },
+        },
+      },
+    };
+    const r = registry([skillsDomain], [agent]);
+    const ctx = stubCtx(dir);
+    const config: AgnosConfig = { agents: ["spy"], skills: [] };
+    await materializeAgent(agent, config, r, ctx);
+    await cleanupAgent(agent, r, ctx, { remainingAgents: [] });
+    expect(calls).toEqual([
+      "domain:skills",
+      "skills.onAgentActivate[spy]",
+      "agent:skills:init",
+      "skills.onAgentDeactivate[spy]",
+      "agent:skills:cleanup",
+    ]);
+  });
+
+  it("fires domain.onAgentActivate even when agent has no handles.<domain>", async () => {
+    const calls: string[] = [];
+    const skillsDomain: DomainPlugin = {
+      name: "skills",
+      priority: 30,
+      declarationSchema: z.any(),
+      async onAgentActivate(agent) {
+        calls.push(`skills.onAgentActivate[${agent.id}]`);
+      },
+    };
+    const agent: AgentPlugin = { id: "declarative", displayName: "Declarative" };
+    const r = registry([skillsDomain], [agent]);
+    const ctx = stubCtx(dir);
+    const config: AgnosConfig = { agents: ["declarative"], skills: [] };
+    await materializeAgent(agent, config, r, ctx);
+    expect(calls).toEqual(["skills.onAgentActivate[declarative]"]);
+  });
+
   it("skips domains the agent doesn't handle", async () => {
     const calls: string[] = [];
     const agent: AgentPlugin = {

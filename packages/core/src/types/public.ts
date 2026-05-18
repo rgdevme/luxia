@@ -185,6 +185,32 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
 
   /** Optional CLI subcommands exposed under `agnos <domain-id> <subcommand>`. */
   cli?: Record<string, CliCommand>;
+
+  /**
+   * Per-agent activation hook. Called after `onInitialize` (which runs once
+   * per project) and before the agent's own `handles.<domain>.onInitialize`.
+   * Lets a domain materialize per-agent artifacts (e.g. a directory-level
+   * symlink) from declarative agent fields like `paths.skillsDir` without
+   * requiring the agent to write any handler. Receives the full active-agent
+   * list so the domain can dedupe across agents sharing the same target.
+   */
+  onAgentActivate?(
+    agent: AgentPlugin,
+    activeAgents: readonly AgentPlugin[],
+    ctx: MaterializeContext,
+  ): Promise<void>;
+
+  /**
+   * Per-agent deactivation hook. Called before the agent's own
+   * `handles.<domain>.onCleanup`. `remainingAgents` is the active set with
+   * the agent being deactivated removed, so the domain can decide whether to
+   * keep shared artifacts in place.
+   */
+  onAgentDeactivate?(
+    agent: AgentPlugin,
+    remainingAgents: readonly AgentPlugin[],
+    ctx: MaterializeContext,
+  ): Promise<void>;
 }
 
 // ---------- Agent plugin: per-domain event handlers ----------
@@ -250,9 +276,25 @@ export interface DomainEventHandlers {
   skills?: SkillsEventHandlers;
 }
 
+/**
+ * Declarative per-agent paths consumed by domain plugins. Built-in keys are
+ * known to the standard domains; third-party domains can add their own via
+ * declaration merging (same pattern as DomainEventHandlers).
+ */
+export interface AgentPaths {
+  /** Project-relative directory the skills domain should link to `.agnos/skills/`. */
+  skillsDir?: string;
+}
+
 export interface AgentPlugin {
   id: string;
   displayName: string;
+
+  /**
+   * Declarative paths a domain inspects to bootstrap per-agent artifacts
+   * without requiring the agent to write a handler. See AgentPaths.
+   */
+  paths?: AgentPaths;
 
   /** Top-level lifecycle for non-domain-specific work. */
   onInstalled?(ctx: ResolveContext): Promise<void>;

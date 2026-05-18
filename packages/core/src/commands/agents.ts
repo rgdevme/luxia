@@ -51,10 +51,16 @@ export async function runAgents(opts: AgentsOptions): Promise<void> {
   const added = selectedIds.filter((id) => !currentIds.has(id));
 
   // 1) Deactivate removed agents (per-domain cleanup) while their plugins are loadable.
+  //    Compute "remaining" each time so domains can dedupe shared artifacts.
+  const remainingAfterRemoval = new Set(currentIds);
   for (const id of removed) {
     const reg = registry.agents.get(id);
     if (!reg) continue;
-    await cleanupAgent(reg.plugin, registry, ctx);
+    remainingAfterRemoval.delete(id);
+    const remaining = [...remainingAfterRemoval]
+      .map((rid) => registry.agents.get(rid)?.plugin)
+      .filter((p): p is AgentPlugin => Boolean(p));
+    await cleanupAgent(reg.plugin, registry, ctx, { remainingAgents: remaining });
   }
 
   // 2) Persist new selection.
@@ -181,10 +187,15 @@ export async function runAgentRemove(opts: AgentRemoveOptions): Promise<void> {
     return;
   }
 
-  // 1) If active: clean up per-domain artifacts.
+  // 1) If active: clean up per-domain artifacts. Pass the remaining active set
+  //    so domains can keep shared artifacts (e.g. shared skills dirs) in place.
   const isActive = (config.agents ?? []).some((a) => refToId(registry, a) === reg.plugin.id);
   if (isActive) {
-    await cleanupAgent(reg.plugin, registry, ctx);
+    const remaining = (config.agents ?? [])
+      .filter((a) => refToId(registry, a) !== reg.plugin.id)
+      .map((ref) => resolveAgentByRef(registry, ref)?.plugin)
+      .filter((p): p is AgentPlugin => Boolean(p));
+    await cleanupAgent(reg.plugin, registry, ctx, { remainingAgents: remaining });
   }
 
   // 2) Remove from agnos.json.agents (matches by id OR package name).

@@ -12,10 +12,17 @@ import type {
 const ROOT_AGENTS = "AGENTS.md";
 const CODEX_DIR = ".codex";
 const CODEX_CONFIG = path.join(CODEX_DIR, "config.toml");
+const CODEX_SKILLS_DIR = path.join(".agents", "skills");
 
 const codex: AgentPlugin = {
   id: "codex",
   displayName: "OpenAI Codex",
+
+  // Declarative: the skills domain links this directory to `.agnos/skills/`.
+  // Codex picks up skills under `.agents/skills/<name>/` automatically.
+  paths: {
+    skillsDir: CODEX_SKILLS_DIR,
+  },
 
   handles: {
     rules: {
