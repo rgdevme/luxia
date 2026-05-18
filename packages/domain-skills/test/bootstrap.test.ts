@@ -3,12 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createLinker } from "@luxia/core";
-import type {
-  AgentPlugin,
-  Linker,
-  Logger,
-  MaterializeContext,
-} from "@luxia/core";
+import type { AgentPlugin, Linker, Logger, MaterializeContext } from "@luxia/core";
 import skillsPlugin, { findAgentsUsingSkillsDir } from "../src/index.js";
 
 function silentLogger(): Logger {
@@ -120,14 +115,14 @@ describe("skills domain onAgentActivate / onAgentDeactivate", () => {
     const agent = makeAgent("claude-code", ".claude/skills");
     const mctx = ctx(projectRoot, linker, agent.id);
     await skillsPlugin.onAgentActivate!(agent, [agent], mctx);
-    expect(
-      await fs.lstat(path.join(projectRoot, ".claude", "skills")).catch(() => null),
-    ).not.toBe(null);
+    expect(await fs.lstat(path.join(projectRoot, ".claude", "skills")).catch(() => null)).not.toBe(
+      null,
+    );
 
     await skillsPlugin.onAgentDeactivate!(agent, [], mctx);
-    expect(
-      await fs.lstat(path.join(projectRoot, ".claude", "skills")).catch(() => null),
-    ).toBe(null);
+    expect(await fs.lstat(path.join(projectRoot, ".claude", "skills")).catch(() => null)).toBe(
+      null,
+    );
   });
 
   it("deactivate preserves the link when another active agent still uses it", async () => {

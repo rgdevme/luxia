@@ -1,17 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  AgentPlugin,
-  DomainPlugin,
-  ResolvedSkill,
-  SkillDeclaration,
-} from "@luxia/core";
-import {
-  buildPaths,
-  ensureLink,
-  readConfigOrDefault,
-  skillDeclarationSchema,
-} from "@luxia/core";
+import type { AgentPlugin, DomainPlugin, ResolvedSkill, SkillDeclaration } from "@luxia/core";
+import { buildPaths, ensureLink, readConfigOrDefault, skillDeclarationSchema } from "@luxia/core";
 
 const skillsPlugin: DomainPlugin<SkillDeclaration, ResolvedSkill> = {
   name: "skills",
