@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   AgentPlugin,
   MaterializeContext,
+  McpDeclaration,
   ResolvedMcp,
   ResolvedRule,
   ResolvedSkill,
@@ -36,6 +37,9 @@ const claudeCode: AgentPlugin = {
       // back to onInitialize with the full mcp[] state.
       async onInitialize(state, ctx) {
         await writeMcpFile(state, ctx);
+      },
+      async onImport(ctx) {
+        return await importMcpFile(ctx);
       },
       async onCleanup(ctx) {
         await removeMcpFile(ctx);
@@ -120,6 +124,70 @@ async function removeSkillLink(name: string, ctx: MaterializeContext): Promise<v
   } catch {
     await fs.rm(target, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function importMcpFile(ctx: MaterializeContext): Promise<McpDeclaration[]> {
+  const file = path.join(ctx.projectRoot, CLAUDE_MCP);
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    ctx.logger.warn(`could not read ${CLAUDE_MCP}: ${(err as Error).message}`);
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    ctx.logger.warn(`${CLAUDE_MCP} is not valid JSON; skipping import`);
+    return [];
+  }
+  const servers = (parsed as { mcpServers?: unknown })?.mcpServers;
+  if (!servers || typeof servers !== "object") return [];
+  const out: McpDeclaration[] = [];
+  for (const [name, entry] of Object.entries(servers as Record<string, unknown>)) {
+    const decl = fromClaudeServer(name, entry);
+    if (decl) out.push(decl);
+  }
+  return out;
+}
+
+function fromClaudeServer(name: string, entry: unknown): McpDeclaration | undefined {
+  if (!entry || typeof entry !== "object") return undefined;
+  const e = entry as Record<string, unknown>;
+  const type = typeof e["type"] === "string" ? (e["type"] as string) : undefined;
+  if (type === "sse" || type === "http") {
+    const url = typeof e["url"] === "string" ? (e["url"] as string) : undefined;
+    if (!url) return undefined;
+    const decl: McpDeclaration = { name, transport: type, command: url };
+    const env = pickEnv(e["env"]);
+    if (env) decl.env = env;
+    return decl;
+  }
+  const command = typeof e["command"] === "string" ? (e["command"] as string) : undefined;
+  if (!command) return undefined;
+  const decl: McpDeclaration = { name, transport: "stdio", command };
+  const args = pickStringArray(e["args"]);
+  if (args && args.length > 0) decl.args = args;
+  const env = pickEnv(e["env"]);
+  if (env) decl.env = env;
+  return decl;
+}
+
+function pickStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out = value.filter((x): x is string => typeof x === "string");
+  return out.length === value.length ? out : undefined;
+}
+
+function pickEnv(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function toClaudeServer(decl: ResolvedMcp): Record<string, unknown> {

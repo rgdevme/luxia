@@ -5,12 +5,15 @@ export interface AgnosState {
   version: 1;
   installedAgents: string[];
   initializedDomains: string[];
+  /** agentId → set of domain names that have completed onImport. */
+  importedDomains?: Record<string, string[]>;
 }
 
 const DEFAULT_STATE: AgnosState = {
   version: 1,
   installedAgents: [],
   initializedDomains: [],
+  importedDomains: {},
 };
 
 export async function readState(statePath: string): Promise<AgnosState> {
@@ -53,6 +56,22 @@ export function markDomainInitialized(state: AgnosState, name: string): AgnosSta
   return { ...state, initializedDomains: [...state.initializedDomains, name] };
 }
 
+export function hasImported(state: AgnosState, agentId: string, domain: string): boolean {
+  return state.importedDomains?.[agentId]?.includes(domain) ?? false;
+}
+
+export function markImported(state: AgnosState, agentId: string, domain: string): AgnosState {
+  const current = state.importedDomains?.[agentId] ?? [];
+  if (current.includes(domain)) return state;
+  return {
+    ...state,
+    importedDomains: {
+      ...(state.importedDomains ?? {}),
+      [agentId]: [...current, domain],
+    },
+  };
+}
+
 function normalize(parsed: Partial<AgnosState>): AgnosState {
   return {
     version: 1,
@@ -62,5 +81,17 @@ function normalize(parsed: Partial<AgnosState>): AgnosState {
     initializedDomains: Array.isArray(parsed.initializedDomains)
       ? parsed.initializedDomains.filter((x): x is string => typeof x === "string")
       : [],
+    importedDomains: normalizeImportedDomains(parsed.importedDomains),
   };
+}
+
+function normalizeImportedDomains(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof k !== "string") continue;
+    if (!Array.isArray(v)) continue;
+    out[k] = v.filter((x): x is string => typeof x === "string");
+  }
+  return out;
 }
