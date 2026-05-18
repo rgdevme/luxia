@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { checkbox } from "@inquirer/prompts";
 import picomatch from "picomatch";
+import { z } from "zod";
 import { buildPaths } from "../paths.js";
 import { readConfig, writeConfig } from "../config.js";
 import { loadPlugins } from "../plugin-loader.js";
@@ -79,6 +80,9 @@ export async function runSkill(opts: SkillOptions): Promise<void> {
       return;
     case "update":
       await runUpdate(opts, ctx, config, agents);
+      return;
+    case "migrate":
+      await runMigrate(opts, ctx, config, agents);
       return;
     case "list":
     case undefined: {
@@ -344,6 +348,206 @@ async function runUpdate(
 
   if (opts.noInstall) return;
   await dispatchSkillUpdated({ name, absolutePath: dst }, agents, config, ctx);
+}
+
+// ---------- migrate ----------
+
+const MIGRATE_DEFAULT_FILE = "skills-lock.json";
+
+const externalLockEntrySchema = z.object({
+  source: z.string().min(1),
+  sourceType: z.string().min(1),
+  computedHash: z.string().optional(),
+});
+
+const externalLockSchema = z.object({
+  version: z.literal(1),
+  skills: z.record(z.string().min(1), externalLockEntrySchema),
+});
+
+export async function runMigrate(
+  opts: SkillOptions,
+  ctx: ResolveContext,
+  config: AgnosConfig,
+  agents: ReturnType<typeof activeAgents>,
+): Promise<void> {
+  const inputPath = path.resolve(ctx.projectRoot, opts.args[0] ?? MIGRATE_DEFAULT_FILE);
+
+  let raw: string;
+  try {
+    raw = await fs.readFile(inputPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        `skills lock file not found at ${inputPath}. ` +
+          `Pass an explicit path: \`agnos skill migrate <path>\`.`,
+      );
+    }
+    throw err;
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${inputPath} is not valid JSON: ${(err as Error).message}`);
+  }
+
+  const validated = externalLockSchema.safeParse(parsedJson);
+  if (!validated.success) {
+    throw new Error(`${inputPath} schema validation failed:\n${validated.error.message}`);
+  }
+
+  const entries = Object.entries(validated.data.skills);
+  if (entries.length === 0) {
+    opts.logger.info("nothing to migrate; agnos.json unchanged");
+    return;
+  }
+
+  // Group by repo so each is fetched once.
+  interface GroupEntry {
+    name: string;
+    sourceType: string;
+    source: string;
+  }
+  const groups = new Map<string, GroupEntry[]>();
+  for (const [name, entry] of entries) {
+    if (!isProvider(entry.sourceType)) {
+      throw new Error(
+        `${inputPath}: unsupported sourceType "${entry.sourceType}" for "${name}". ` +
+          `Supported: ${SUPPORTED_PROVIDERS.join(", ")}.`,
+      );
+    }
+    const key = `${entry.sourceType}:${entry.source}`;
+    const list = groups.get(key) ?? [];
+    list.push({ name, sourceType: entry.sourceType, source: entry.source });
+    groups.set(key, list);
+  }
+
+  const selected: SelectedSkill[] = [];
+  const skipped: { name: string; reason: string }[] = [];
+  const takenNames = new Set<string>(Object.keys(config.skills ?? {}));
+
+  for (const [repoKey, items] of groups) {
+    const parsed = parseSource(repoKey, { projectRoot: ctx.projectRoot });
+    if (parsed.kind !== "git") {
+      // Defensive — schema requires git-style sourceType, but parseSource may
+      // produce a local source if `source` somehow looks like a path.
+      for (const it of items) {
+        skipped.push({ name: it.name, reason: `non-git source ${repoKey}` });
+      }
+      continue;
+    }
+
+    if (ctx.dryRun) {
+      // Dry-run: don't fetch; we can't know in-repo paths without a fetch, so
+      // log the intent at the repo level.
+      for (const it of items) {
+        opts.logger.info(
+          `would: migrate ${it.name} from ${repoKey} (in-repo path discovered at run-time)`,
+        );
+      }
+      continue;
+    }
+
+    let fetched: { path: string };
+    try {
+      fetched = await ctx.fetcher.fetch(parsed);
+    } catch (err) {
+      for (const it of items) {
+        skipped.push({ name: it.name, reason: `fetch failed: ${(err as Error).message}` });
+      }
+      continue;
+    }
+
+    const discovered = await findSkillsInRepo(fetched.path);
+    for (const it of items) {
+      const matches = discovered.filter((d) => d.defaultName === it.name);
+      if (matches.length === 0) {
+        opts.logger.warn(
+          `skills: cannot locate "${it.name}" in ${repoKey}; skipping ` +
+            `(use \`agnos skill add\` to add it manually)`,
+        );
+        skipped.push({ name: it.name, reason: "no matching SKILL.md" });
+        continue;
+      }
+      const pick = matches.reduce((a, b) => (a.path.length <= b.path.length ? a : b));
+      if (matches.length > 1) {
+        opts.logger.debug(
+          `skills: multiple matches for "${it.name}" in ${repoKey}; picked ${pick.path}`,
+        );
+      }
+
+      const composite = `${parsed.provider}:${parsed.owner}/${parsed.repo}/${pick.path}`;
+      const existingComposite = (config.skills ?? {})[it.name];
+      let finalName = it.name;
+      if (existingComposite && existingComposite !== composite) {
+        let i = 2;
+        while (takenNames.has(finalName) && (config.skills ?? {})[finalName] !== composite) {
+          finalName = `${it.name}-${i++}`;
+        }
+      }
+      takenNames.add(finalName);
+      selected.push({
+        name: finalName,
+        composite,
+        fetchedAbsPath: path.join(fetched.path, pick.path),
+        discoveredDefaultName: it.name,
+      });
+    }
+  }
+
+  if (ctx.dryRun) {
+    opts.logger.info(
+      `would: migrate ${entries.length} skill(s) from ${path.relative(ctx.projectRoot, inputPath) || inputPath}`,
+    );
+    return;
+  }
+
+  if (selected.length === 0) {
+    opts.logger.warn(`migrated 0/${entries.length} skills; nothing written`);
+    return;
+  }
+
+  // Materialize + persist (mirrors commitSelection).
+  const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
+  await fs.mkdir(skillsDir, { recursive: true });
+
+  let lock = await readLock(ctx.projectRoot);
+  const skills = { ...(config.skills ?? {}) };
+  const resolvedItems: ResolvedSkill[] = [];
+
+  for (const sel of selected) {
+    const targetDir = path.join(skillsDir, sel.name);
+    await fs.rm(targetDir, { recursive: true, force: true });
+    await fs.cp(sel.fetchedAbsPath, targetDir, { recursive: true, force: true });
+
+    const hash = await hashSkillDir(sel.fetchedAbsPath);
+    skills[sel.name] = sel.composite;
+    lock = upsertSkill(lock, sel.composite, {
+      computedHash: hash,
+      resolvedAt: new Date().toISOString(),
+    });
+    resolvedItems.push({ name: sel.name, absolutePath: targetDir });
+
+    if (sel.discoveredDefaultName && sel.name !== sel.discoveredDefaultName) {
+      opts.logger.info(`renamed ${sel.discoveredDefaultName} → ${sel.name} to avoid collision`);
+    }
+  }
+
+  config.skills = skills;
+  await writeConfig(ctx.configPath, config);
+  await writeLock(ctx.projectRoot, lock);
+
+  const tail = skipped.length > 0 ? ` (skipped: ${skipped.map((s) => s.name).join(", ")})` : "";
+  opts.logger.success(
+    `migrated ${selected.length}/${entries.length} skills from ${path.relative(ctx.projectRoot, inputPath) || inputPath}${tail}`,
+  );
+
+  if (opts.noInstall) return;
+  for (const item of resolvedItems) {
+    await dispatchSkillAdded(item, agents, config, ctx);
+  }
 }
 
 // ---------- remove ----------

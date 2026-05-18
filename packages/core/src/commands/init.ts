@@ -1,13 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { checkbox } from "@inquirer/prompts";
+import { checkbox, confirm } from "@inquirer/prompts";
 import { buildPaths, ensureDir } from "../paths.js";
 import { configExists, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../config.js";
 import { runRules } from "./rules.js";
+import { runMigrate } from "./skill.js";
 import { loadPlugins, refToId } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
 import { reinstate } from "../orchestrator.js";
 import type { AgentRef, Logger } from "../types/public.js";
+
+const SKILLS_LOCK_FILE = "skills-lock.json";
 
 const STARTER_RULES = `# AGENTS.md
 
@@ -69,7 +72,10 @@ export async function runInit(opts: InitOptions): Promise<void> {
   // 2) Pick agents (inline; do NOT call runAgents — it does its own reinstate).
   await promptAndPersistAgents(opts);
 
-  // 3) Single materialization pass.
+  // 3) Offer to migrate from a sibling skills.sh `skills-lock.json` if present.
+  await maybeMigrateSkillsLock(opts);
+
+  // 4) Single materialization pass.
   const config = await readConfigOrDefault(paths.configPath);
   const ctx = await buildResolveContext({
     projectRoot: opts.cwd,
@@ -81,6 +87,51 @@ export async function runInit(opts: InitOptions): Promise<void> {
     copyOnNoSymlink: opts.copyOnNoSymlink,
     interactive: !opts.yes,
   });
+}
+
+async function maybeMigrateSkillsLock(opts: InitOptions): Promise<void> {
+  const lockPath = path.join(opts.cwd, SKILLS_LOCK_FILE);
+  try {
+    await fs.access(lockPath);
+  } catch {
+    return;
+  }
+
+  const rel = path.relative(opts.cwd, lockPath) || SKILLS_LOCK_FILE;
+
+  if (opts.yes) {
+    opts.logger.info(
+      `detected ${rel}; skipping migration under -y (run \`agnos skill migrate\` to import)`,
+    );
+    return;
+  }
+
+  const proceed = await confirm({
+    message: `Detected ${rel} from skills.sh. Migrate those skills into agnos.json?`,
+    default: true,
+  });
+  if (!proceed) return;
+
+  const config = await readConfigOrDefault(buildPaths(opts.cwd).configPath);
+  const ctx = await buildResolveContext({
+    projectRoot: opts.cwd,
+    logger: opts.logger,
+    dryRun: opts.dryRun ?? false,
+  });
+  await runMigrate(
+    {
+      cwd: opts.cwd,
+      sub: "migrate",
+      args: [],
+      noInstall: true,
+      copyOnNoSymlink: opts.copyOnNoSymlink,
+      dryRun: opts.dryRun ?? false,
+      logger: opts.logger,
+    },
+    ctx,
+    config,
+    [],
+  );
 }
 
 async function promptAndPersistAgents(opts: InitOptions): Promise<void> {
