@@ -23,6 +23,10 @@ export async function runDomainInitSteps(
 
   for (const step of steps) {
     try {
+      if (step.when && !(await step.when(ctx))) {
+        ctx.logger.debug(`skipping ${plugin.name}.${step.id} (when predicate false)`);
+        continue;
+      }
       const value = await resolveStepValue(step, opts, ctx);
       if (opts.dryRun) {
         ctx.logger.info(`would: ${plugin.name}.${step.id} = ${formatValue(value)}`);

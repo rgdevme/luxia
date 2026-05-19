@@ -176,6 +176,40 @@ describe("runDomainInitSteps", () => {
     expect(logs.find((l) => l.level === "error" && l.msg.includes("errs.boom"))).toBeTruthy();
   });
 
+  it("skips a step entirely when its `when` predicate returns false", async () => {
+    const calls: string[] = [];
+    const plugin: DomainPlugin = {
+      name: "gate",
+      priority: 1,
+      declarationSchema: {
+        parse: (x: unknown) => x,
+      } as unknown as DomainPlugin["declarationSchema"],
+      initSteps: [
+        {
+          id: "skipped",
+          type: "text",
+          message: "?",
+          default: "no",
+          when: () => false,
+          async callback() {
+            calls.push("skipped");
+          },
+        },
+        {
+          id: "ran",
+          type: "text",
+          message: "?",
+          default: "yes",
+          async callback() {
+            calls.push("ran");
+          },
+        },
+      ],
+    };
+    await runDomainInitSteps(plugin, ctx, { yes: true, dryRun: false });
+    expect(calls).toEqual(["ran"]);
+  });
+
   it("function-typed defaults are resolved with the active ctx", async () => {
     const seen: string[] = [];
     const plugin: DomainPlugin = {

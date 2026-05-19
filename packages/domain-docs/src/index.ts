@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { AgnosConfig, DomainPlugin, ResolveContext } from "@luxia/core";
 import { readConfigOrDefault, writeConfig } from "@luxia/core";
 import { DEFAULTS, docsConfigSchema, type DocsConfig } from "./schema.js";
@@ -14,6 +16,24 @@ async function patchDocs(patch: Partial<DocsConfig>, ctx: ResolveContext): Promi
   const merged: DocsConfig = { ...existing, ...patch };
   if (ctx.dryRun) return;
   await writeConfig(ctx.configPath, { ...config, docs: merged });
+}
+
+/**
+ * True when agnos manages a rules file AND that file exists on disk. Used by
+ * the inject-related init steps and by `runInject` to short-circuit when
+ * there's no rules file to inject into.
+ */
+async function hasManagedRulesFile(ctx: ResolveContext): Promise<boolean> {
+  const cfg = await readConfigOrDefault(ctx.configPath);
+  const source = cfg.rules?.source;
+  if (!source) return false;
+  const abs = path.resolve(ctx.projectRoot, source);
+  try {
+    await fs.access(abs);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
@@ -75,6 +95,7 @@ const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
       id: "injectIndex",
       type: "boolean",
       message: "Inject the docs index into the rules file?",
+      when: (ctx) => hasManagedRulesFile(ctx),
       default: async (ctx) => {
         const cfg = await readConfigOrDefault(ctx.configPath);
         return (cfg.docs as DocsConfig | undefined)?.injectIndex ?? DEFAULTS.injectIndex;
@@ -87,6 +108,7 @@ const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
       id: "injectRules",
       type: "boolean",
       message: "Inject doc-rules into the rules file?",
+      when: (ctx) => hasManagedRulesFile(ctx),
       default: async (ctx) => {
         const cfg = await readConfigOrDefault(ctx.configPath);
         return (cfg.docs as DocsConfig | undefined)?.injectRules ?? DEFAULTS.injectRules;

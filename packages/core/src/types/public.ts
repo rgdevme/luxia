@@ -167,6 +167,13 @@ export interface InitStepBase {
   /** Stable identifier for --only filtering and dry-run logging. Unique within the plugin. */
   id: string;
   message: string;
+  /**
+   * Predicate to gate the step. Returning `false` (or a falsy value) skips the
+   * step entirely — no prompt and no callback fires. Useful for conditional
+   * configuration (e.g. don't ask about rules-file injection when there is no
+   * rules file).
+   */
+  when?(ctx: ResolveContext): boolean | Promise<boolean>;
 }
 
 /** A literal value or a function (sync or async) that returns one given the active context. */
