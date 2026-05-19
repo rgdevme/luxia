@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import type { DomainPlugin, ResolvedRule, RulesDeclaration } from "@luxia/core";
-import { rulesDeclarationSchema } from "@luxia/core";
+import { readConfigOrDefault, rulesDeclarationSchema, setRulesSource } from "@luxia/core";
 import { readDefaultRulesTemplate } from "./template.js";
 
 export { readDefaultRulesTemplate };
@@ -11,8 +11,34 @@ const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
   priority: 10,
   declarationSchema: rulesDeclarationSchema,
 
+  async getStarterContent() {
+    return readDefaultRulesTemplate();
+  },
+
+  initSteps: [
+    {
+      id: "source",
+      type: "text",
+      message: "Rules-source path (relative to project root):",
+      default: async (ctx) => {
+        const cfg = await readConfigOrDefault(ctx.configPath);
+        return cfg.rules?.source ?? "./AGENTS.md";
+      },
+      async callback(value, ctx) {
+        await setRulesSource(value, {
+          cwd: ctx.projectRoot,
+          yes: true,
+          dryRun: ctx.dryRun ?? false,
+          logger: ctx.logger,
+          noDispatch: true,
+          getStarterContent: () => readDefaultRulesTemplate(),
+        });
+      },
+    },
+  ],
+
   async onInitialize(_ctx) {
-    // No work — `agnos init`'s rules step already ensures a starter file exists.
+    // No work — the initSteps + reinstate pass cover bootstrap.
   },
 
   async resolve(decl, ctx) {

@@ -21,7 +21,8 @@ export async function runInject(
   const agnos = await readConfigOrDefault(ctx.configPath);
   const rulesRel = agnos.rules?.source;
   if (!rulesRel) {
-    throw new Error("no rules source configured in agnos.json — run `agnos rules` first");
+    ctx.logger.debug("no rules source configured in agnos.json — skipping inject");
+    return { changed: false };
   }
   const rulesAbs = path.resolve(ctx.projectRoot, rulesRel);
   let text: string;
@@ -29,7 +30,10 @@ export async function runInject(
     text = await fs.readFile(rulesAbs, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    text = "";
+    ctx.logger.debug(
+      `rules file ${path.relative(ctx.projectRoot, rulesAbs)} does not exist — skipping inject`,
+    );
+    return { changed: false };
   }
 
   // Apply rules block first, then index block.
