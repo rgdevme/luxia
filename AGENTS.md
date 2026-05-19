@@ -1,3 +1,9 @@
+## Branch management
+
+- `main` branch is locked.
+- When **creating a PR** Use the `GH_TOKEN` value declared in `.env.agent` in the main branch to execute the github​ cli tool `gh`.
+- Do not ever print or show the contents of any .env files.
+
 ## Coding Standards
 
 Enforced on all packages. Non-negotiable.
