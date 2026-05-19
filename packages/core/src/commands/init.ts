@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { checkbox, confirm } from "@inquirer/prompts";
+import { readDefaultRulesTemplate } from "@luxia/domain-rules/template";
 import { buildPaths, ensureDir } from "../paths.js";
 import { configExists, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../config.js";
 import { runRules } from "./rules.js";
@@ -11,24 +12,6 @@ import { reinstate } from "../orchestrator.js";
 import type { AgentRef, Logger } from "../types/public.js";
 
 const SKILLS_LOCK_FILE = "skills-lock.json";
-
-const STARTER_RULES = `# AGENTS.md
-
-> Project guidance for AI coding agents (Claude Code, Codex, Cursor, …).
-> This file is the canonical rules document for the agnos-managed project.
-
-## Overview
-
-_Describe what this project does, who it's for, and any high-level conventions._
-
-## Conventions
-
-_List code style, testing, or documentation conventions agents should follow._
-
-## Don'ts
-
-_List specific things agents should not do._
-`;
 
 export interface InitOptions {
   cwd: string;
@@ -203,7 +186,7 @@ export async function ensureStarterRules(rulesPath: string): Promise<{ created: 
     return { created: false };
   } catch {
     await fs.mkdir(path.dirname(rulesPath), { recursive: true });
-    await fs.writeFile(rulesPath, STARTER_RULES, "utf8");
+    await fs.writeFile(rulesPath, await readDefaultRulesTemplate(), "utf8");
     return { created: true };
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderTemplate, renderFrontmatter, renderRequiredFields } from "../src/templates.js";
+import { renderTemplate, renderFrontmatter } from "../src/templates.js";
 import type { EffectiveDocsConfig } from "../src/effective-config.js";
 
 function cfg(metadata: Record<string, string>): EffectiveDocsConfig {
@@ -47,12 +47,5 @@ describe("renderFrontmatter", () => {
   it("emits empty string for unknown keys", () => {
     const text = renderFrontmatter(cfg({ a: "desc a", owner: "desc owner" }), { a: "1" });
     expect(text).toBe("a: 1\nowner: ");
-  });
-});
-
-describe("renderRequiredFields", () => {
-  it("emits a bullet per metadata entry with its description", () => {
-    const text = renderRequiredFields(cfg({ title: "Short title", owner: "Document owner" }));
-    expect(text).toBe("  - `title` — Short title\n  - `owner` — Document owner");
   });
 });

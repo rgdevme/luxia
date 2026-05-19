@@ -6,15 +6,17 @@ import { readEffectiveDocsConfig, type EffectiveDocsConfig } from "../effective-
 import { listUserDocs } from "./validate.js";
 import {
   CONTENT_VALUES,
-  contentTemplate,
-  DOC_RULES_VALUES,
-  docRulesTemplate,
   INDEX_VALUES,
-  indexTemplate,
+  readContentTemplate,
+  readIndexTemplate,
   renderFrontmatter,
-  renderRequiredFields,
   renderTemplate,
 } from "../templates.js";
+import {
+  readDefaultDocRulesTemplate,
+  renderMetadataBlock,
+  replaceFrontmatterBlock,
+} from "../metadata-block.js";
 
 export const generate: CliCommand = {
   description:
@@ -33,7 +35,7 @@ export async function runGenerate(
   const docs = await Promise.all(files.map((abs) => readDoc(abs, cfg)));
   docs.sort(compareDocs);
 
-  const indexText = renderTemplate(indexTemplate, {
+  const indexText = renderTemplate(await readIndexTemplate(), {
     frontmatter: renderFrontmatter(cfg, INDEX_VALUES),
     body: renderIndexBody(docs),
   });
@@ -41,17 +43,21 @@ export async function runGenerate(
 
   let contentChanged = false;
   if (cfg.contentFile) {
-    const contentText = renderTemplate(contentTemplate, {
+    const contentText = renderTemplate(await readContentTemplate(), {
       frontmatter: renderFrontmatter(cfg, CONTENT_VALUES),
       body: renderContentBody(docs),
     });
     contentChanged = await writeIfChanged(cfg.contentFile, contentText, ctx);
   }
 
-  const rulesText = renderTemplate(docRulesTemplate, {
-    frontmatter: renderFrontmatter(cfg, DOC_RULES_VALUES),
-    required_fields: renderRequiredFields(cfg),
-  });
+  const metadataBlock = renderMetadataBlock(cfg.metadata);
+  let existingRules: string;
+  try {
+    existingRules = await fs.readFile(cfg.docRulesFile, "utf8");
+  } catch {
+    existingRules = await readDefaultDocRulesTemplate();
+  }
+  const { result: rulesText } = replaceFrontmatterBlock(existingRules, metadataBlock);
   const docRulesChanged = await writeIfChanged(cfg.docRulesFile, rulesText, ctx);
 
   return { indexChanged, contentChanged, docRulesChanged };
