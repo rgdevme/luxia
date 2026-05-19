@@ -203,6 +203,15 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
   initSteps?: InitStep[];
 
   /**
+   * Returns the default starter content for a file this domain materializes
+   * (e.g. AGENTS.md for the rules domain). Lets core write the starter file
+   * via the loaded plugin instance instead of importing from the plugin's
+   * package directly — avoids a workspace dependency cycle between core
+   * and the plugin.
+   */
+  getStarterContent?(): string | Promise<string>;
+
+  /**
    * Position in the lifecycle order. Lower numbers run first. The orchestrator
    * iterates domains by ascending priority for activation/initialization;
    * cleanup runs in descending order. Built-ins: rules=10, mcp=20, skills=30,

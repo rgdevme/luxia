@@ -11,6 +11,10 @@ const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
   priority: 10,
   declarationSchema: rulesDeclarationSchema,
 
+  async getStarterContent() {
+    return readDefaultRulesTemplate();
+  },
+
   initSteps: [
     {
       id: "source",
@@ -27,6 +31,7 @@ const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
           dryRun: ctx.dryRun ?? false,
           logger: ctx.logger,
           noDispatch: true,
+          getStarterContent: () => readDefaultRulesTemplate(),
         });
       },
     },

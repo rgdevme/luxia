@@ -49,11 +49,17 @@ export async function runRules(opts: RulesOptions): Promise<void> {
     });
   }
 
+  const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
+  const getStarterContent = registry.domains
+    .get("rules")
+    ?.plugin.getStarterContent?.bind(registry.domains.get("rules")?.plugin);
+
   await setRulesSource(target, {
     cwd: opts.cwd,
     yes: opts.yes,
     dryRun: opts.dryRun ?? false,
     logger: opts.logger,
+    getStarterContent,
   });
 }
 
@@ -64,6 +70,8 @@ export interface SetRulesSourceOptions {
   logger: Logger;
   /** Skip dispatching onAdded/onMoved to active agents. Used by `agnos init` where reinstate runs after. */
   noDispatch?: boolean;
+  /** Starter content to seed the rules file with when none exists. */
+  getStarterContent?: () => string | Promise<string>;
 }
 
 /**
@@ -85,7 +93,7 @@ export async function setRulesSource(target: string, opts: SetRulesSourceOptions
   const pathUnchanged = path.relative(oldAbs, newAbs) === "";
 
   if (pathUnchanged) {
-    const { created } = await ensureStarterRules(newAbs);
+    const { created } = await ensureStarterRules(newAbs, opts.getStarterContent);
     if (created) opts.logger.success(`created ${normalized}`);
     if (!config.rules) {
       config.rules = { source: normalized };
@@ -134,7 +142,7 @@ export async function setRulesSource(target: string, opts: SetRulesSourceOptions
       }
     }
   } else if (!oldExists && !newExists) {
-    const { created } = await ensureStarterRules(newAbs);
+    const { created } = await ensureStarterRules(newAbs, opts.getStarterContent);
     if (created) opts.logger.success(`created starter ${normalized}`);
   } else {
     opts.logger.info(`using existing ${normalized}`);

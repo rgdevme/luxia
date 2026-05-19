@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { checkbox, confirm } from "@inquirer/prompts";
-import { readDefaultRulesTemplate } from "@luxia/domain-rules/template";
 import { buildPaths, ensureDir } from "../paths.js";
 import { configExists, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../config.js";
 import { runMigrate } from "./skill.js";
@@ -189,13 +188,19 @@ async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {
   logger.info(`updated .gitignore (+ ${missing.join(", ")})`);
 }
 
-export async function ensureStarterRules(rulesPath: string): Promise<{ created: boolean }> {
+const FALLBACK_RULES_TEMPLATE = `# AGENTS.md\n\n> Project guidance for AI coding agents. Edit freely.\n`;
+
+export async function ensureStarterRules(
+  rulesPath: string,
+  getContent?: () => string | Promise<string>,
+): Promise<{ created: boolean }> {
   try {
     await fs.access(rulesPath);
     return { created: false };
   } catch {
     await fs.mkdir(path.dirname(rulesPath), { recursive: true });
-    await fs.writeFile(rulesPath, await readDefaultRulesTemplate(), "utf8");
+    const content = getContent ? await getContent() : FALLBACK_RULES_TEMPLATE;
+    await fs.writeFile(rulesPath, content, "utf8");
     return { created: true };
   }
 }

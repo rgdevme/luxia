@@ -49,7 +49,6 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.1",
-    "@luxia/domain-rules": "workspace:*",
     "giget": "^1.2.3",
     "minimist": "^1.2.8",
     "picomatch": "^4.0.2",
