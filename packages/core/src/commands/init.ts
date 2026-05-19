@@ -4,8 +4,8 @@ import { checkbox, confirm } from "@inquirer/prompts";
 import { readDefaultRulesTemplate } from "@luxia/domain-rules/template";
 import { buildPaths, ensureDir } from "../paths.js";
 import { configExists, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../config.js";
-import { runRules } from "./rules.js";
 import { runMigrate } from "./skill.js";
+import { runAllDomainInitSteps } from "./init-steps.js";
 import { loadPlugins, refToId } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
 import { reinstate } from "../orchestrator.js";
@@ -19,6 +19,11 @@ export interface InitOptions {
   copyOnNoSymlink: boolean;
   dryRun?: boolean;
   logger: Logger;
+  /**
+   * When set, only run init steps for these domain plugin ids. Also skips the
+   * agents picker and the `skills.sh` lock migration prompt.
+   */
+  onlyIds?: readonly string[];
 }
 
 export async function runInit(opts: InitOptions): Promise<void> {
@@ -44,28 +49,32 @@ export async function runInit(opts: InitOptions): Promise<void> {
     await ensureGitIgnore(opts.cwd, opts.logger);
   }
 
-  // 1) Rules-source path (interactive unless -y).
-  await runRules({
-    cwd: opts.cwd,
-    yes: opts.yes,
-    dryRun: opts.dryRun ?? false,
-    logger: opts.logger,
-  });
-
-  // 2) Pick agents (inline; do NOT call runAgents — it does its own reinstate).
-  await promptAndPersistAgents(opts);
-
-  // 3) Offer to migrate from a sibling skills.sh `skills-lock.json` if present.
-  await maybeMigrateSkillsLock(opts);
-
-  // 4) Single materialization pass.
-  const config = await readConfigOrDefault(paths.configPath);
   const ctx = await buildResolveContext({
     projectRoot: opts.cwd,
     logger: opts.logger,
     dryRun: opts.dryRun ?? false,
   });
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
+
+  // 1) Run domain plugins' interactive init steps in priority order. Done
+  //    before the agents picker so rules' setRulesSource sees no active
+  //    agents (avoids redundant event dispatch since reinstate runs below).
+  await runAllDomainInitSteps(
+    registry,
+    ctx,
+    { yes: opts.yes, dryRun: opts.dryRun ?? false },
+    opts.onlyIds,
+  );
+
+  // 2) Pick agents + offer skills.sh migration — skipped under --only.
+  const scoped = opts.onlyIds && opts.onlyIds.length > 0;
+  if (!scoped) {
+    await promptAndPersistAgents(opts);
+    await maybeMigrateSkillsLock(opts);
+  }
+
+  // 3) Single materialization pass.
+  const config = await readConfigOrDefault(paths.configPath);
   await reinstate(config, registry, ctx, {
     copyOnNoSymlink: opts.copyOnNoSymlink,
     interactive: !opts.yes,

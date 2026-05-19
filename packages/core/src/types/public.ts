@@ -157,9 +157,50 @@ export const RESERVED_CLI_IDS = [
 
 // ---------- Domain plugin ----------
 
+/**
+ * One interactive configuration step a domain plugin contributes to
+ * `agnos init`. The runner prompts the user (or uses `default` under `-y`)
+ * and calls `callback` with the resolved value. Callbacks are responsible
+ * for persisting their value into `agnos.json`.
+ */
+export interface InitStepBase {
+  /** Stable identifier for --only filtering and dry-run logging. Unique within the plugin. */
+  id: string;
+  message: string;
+}
+
+/** A literal value or a function (sync or async) that returns one given the active context. */
+export type InitStepDefault<T> = T | ((ctx: ResolveContext) => T | Promise<T>);
+
+export type InitStep =
+  | (InitStepBase & {
+      type: "text";
+      default?: InitStepDefault<string>;
+      validate?(value: string): true | string;
+      callback(value: string, ctx: ResolveContext): Promise<void>;
+    })
+  | (InitStepBase & {
+      type: "boolean";
+      default?: InitStepDefault<boolean>;
+      callback(value: boolean, ctx: ResolveContext): Promise<void>;
+    })
+  | (InitStepBase & {
+      type: "select";
+      choices: { name: string; value: string }[];
+      default?: InitStepDefault<string>;
+      callback(value: string, ctx: ResolveContext): Promise<void>;
+    });
+
 export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
   name: string;
   declarationSchema: z.ZodType<TDecl>;
+
+  /**
+   * Interactive setup steps. Run by `agnos init` in domain-priority order, and
+   * by the auto-synthesized `agnos <domain> init` when the plugin doesn't
+   * define its own `cli.init`.
+   */
+  initSteps?: InitStep[];
 
   /**
    * Position in the lifecycle order. Lower numbers run first. The orchestrator

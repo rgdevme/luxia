@@ -12,7 +12,7 @@ import { RESERVED_CLI_IDS } from "./types/public.js";
 const USAGE = `agnos - agent-agnostic project configuration manager
 
 Usage:
-  agnos init [-y]                       Initialize agnos (= agnos rules + agnos agents)
+  agnos init [-y] [--only=<ids>]        Initialize agnos (runs each domain's init steps, then picks agents)
   agnos rules [path]                    Set the rules-source path (default ./AGENTS.md)
   agnos agents                          Pick which agent plugins to enable
   agnos agent add <id|pkg>              Install + activate an agent plugin
@@ -43,6 +43,7 @@ Skill flags:
 
 Common flags:
   -y, --yes                             Skip prompts (non-interactive defaults)
+      --only <ids>                      For \`init\`: only run the listed domain plugins' init steps (comma-separated)
       --no-install                      For add/remove/update: skip the trailing install
       --no-activate                     For \`agent add\`: install but don't activate
       --copy-on-no-symlink              Auto-copy when symlinks aren't available
@@ -66,7 +67,7 @@ async function main(): Promise<void> {
       "quiet",
     ],
     alias: { y: "yes", h: "help", q: "quiet", p: "provider", s: "skills" },
-    string: ["cwd", "provider", "skills", "ref", "name"],
+    string: ["cwd", "provider", "skills", "ref", "name", "only"],
   });
 
   if (argv["help"] && argv._.length === 0) {
@@ -93,12 +94,20 @@ async function main(): Promise<void> {
         process.stdout.write(USAGE);
         return;
       case "init": {
+        const onlyRaw = typeof argv["only"] === "string" ? argv["only"] : undefined;
+        const onlyIds = onlyRaw
+          ? onlyRaw
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0)
+          : undefined;
         await runInit({
           cwd,
           yes: Boolean(argv["yes"]),
           copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
           dryRun,
           logger: effectiveLogger,
+          onlyIds,
         });
         return;
       }

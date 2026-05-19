@@ -1,5 +1,6 @@
 import { loadPlugins } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
+import { runDomainInitSteps } from "./init-steps.js";
 import type { CliCommand, Logger } from "../types/public.js";
 
 export interface DomainCliOptions {
@@ -14,10 +15,13 @@ export interface DomainCliOptions {
 export async function runDomainCli(opts: DomainCliOptions): Promise<boolean> {
   const registry = await loadPlugins({ projectRoot: opts.cwd, logger: opts.logger });
   const dom = registry.domains.get(opts.domainId);
-  if (!dom || !dom.plugin.cli) return false;
+  if (!dom) return false;
+  // A domain with no cli but with initSteps still gets a synthesized `init`.
+  const hasInitSteps = (dom.plugin.initSteps?.length ?? 0) > 0;
+  if (!dom.plugin.cli && !hasInitSteps) return false;
 
   const ctx = await buildResolveContext({ projectRoot: opts.cwd, logger: opts.logger });
-  const cliMap = dom.plugin.cli;
+  const cliMap = dom.plugin.cli ?? {};
 
   if (opts.sub === undefined) {
     const cmd = cliMap["default"];
@@ -31,6 +35,15 @@ export async function runDomainCli(opts: DomainCliOptions): Promise<boolean> {
 
   const cmd = cliMap[opts.sub];
   if (!cmd) {
+    // Synthesize `<domain> init` from initSteps when the plugin doesn't
+    // declare its own cli.init.
+    if (opts.sub === "init" && dom.plugin.initSteps && dom.plugin.initSteps.length > 0) {
+      await runDomainInitSteps(dom.plugin, ctx, {
+        yes: false,
+        dryRun: ctx.dryRun ?? false,
+      });
+      return true;
+    }
     opts.logger.error(`unknown ${opts.domainId} subcommand: ${opts.sub}`);
     listAvailable(opts.domainId, cliMap, opts.logger);
     process.exitCode = 1;
