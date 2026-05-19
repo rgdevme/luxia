@@ -262,7 +262,7 @@ describe("materializeAgent + cleanupAgent ordering", () => {
     };
     const r = registry([skillsDomain], [agent]);
     const ctx = stubCtx(dir);
-    const config: AgnosConfig = { agents: ["spy"], skills: [] };
+    const config: AgnosConfig = { agents: ["spy"], skills: {} };
     await materializeAgent(agent, config, r, ctx);
     await cleanupAgent(agent, r, ctx, { remainingAgents: [] });
     expect(calls).toEqual([
@@ -287,7 +287,7 @@ describe("materializeAgent + cleanupAgent ordering", () => {
     const agent: AgentPlugin = { id: "declarative", displayName: "Declarative" };
     const r = registry([skillsDomain], [agent]);
     const ctx = stubCtx(dir);
-    const config: AgnosConfig = { agents: ["declarative"], skills: [] };
+    const config: AgnosConfig = { agents: ["declarative"], skills: {} };
     await materializeAgent(agent, config, r, ctx);
     expect(calls).toEqual(["skills.onAgentActivate[declarative]"]);
   });
@@ -324,7 +324,7 @@ describe("buildAgentDomainStates", () => {
       const config: AgnosConfig = {
         rules: { source: "./AGENTS.md" },
         mcp: [{ name: "github", command: "npx" }],
-        skills: { pdf: "file:./pdf-repo/skills/pdf" },
+        skills: { sources: { pdf: "file:./pdf-repo/skills/pdf" } },
       };
       const state = await buildAgentDomainStates(config, ctx);
       expect(state["rules"]).toEqual({

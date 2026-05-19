@@ -19,7 +19,7 @@ export interface ProjectPaths {
 
 export function buildPaths(projectRoot: string, config?: AgnosConfig): ProjectPaths {
   const agnosRoot = path.join(projectRoot, AGNOS_DIR);
-  const skillsRel = config?.paths?.skillsDir ?? DEFAULT_SKILLS_DIR;
+  const skillsRel = config?.skills?.route ?? DEFAULT_SKILLS_DIR;
   return {
     projectRoot,
     configPath: path.join(projectRoot, CONFIG_FILE),

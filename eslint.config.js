@@ -12,7 +12,7 @@ export default tseslint.config(
       "**/coverage/**",
       "scratch/**",
       "test-output/**",
-      ".agnos/cache/**",
+      ".agnos/**",
       "**/*.tsbuildinfo",
     ],
   },

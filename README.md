@@ -59,8 +59,10 @@ A typical `agnos.json` looks like this:
   "agents": ["claude-code", "codex"],
   "rules": { "source": "./AGENTS.md" },
   "skills": {
-    "pdf": "github:vercel-labs/agent-skills/skills/pdf",
-    "review": "file:./skills/review"
+    "sources": {
+      "pdf": "github:vercel-labs/agent-skills/skills/pdf",
+      "review": "file:./skills/review"
+    }
   },
   "mcp": [
     {

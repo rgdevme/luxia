@@ -7,7 +7,7 @@
 
 ## What it does
 
-- Owns the `skills` map in `agnos.json` (composite source refs keyed by local skill name).
+- Owns the `skills` block in `agnos.json` — `route` (where canonical content lives) and `sources` (composite source refs keyed by local skill name).
 - Owns `.agnos/skills/` (canonical content) and `.agnos/cache/` (gitignored fetch cache).
 - Resolves each source ref through `core`'s `RepoFetcher` and `prepareSkills`, materializing the canonical bytes under `.agnos/skills/<name>/`.
 - Lets agents opt in declaratively: any agent that declares `paths.skillsDir` gets a symlink from that path to `.agnos/skills/`, so every current and future skill flows through automatically.
@@ -30,17 +30,20 @@ pnpm add -D @luxia/domain-skills
 ```json
 {
   "skills": {
-    "pdf": "github:vercel-labs/agent-skills/skills/pdf",
-    "convex-functions": "github:get-convex/agent-skills/skills/convex-functions",
-    "review": "file:./skills/review"
+    "route": ".agnos/skills",
+    "sources": {
+      "pdf": "github:vercel-labs/agent-skills/skills/pdf",
+      "convex-functions": "github:get-convex/agent-skills/skills/convex-functions",
+      "review": "file:./skills/review"
+    }
   }
 }
 ```
 
-Source ref grammar:
-
-- `github:<owner>/<repo>/<in-repo-path>` (or `gitlab:`, `bitbucket:`)
-- `file:<path-to-skill-dir>` (the directory contains `SKILL.md` directly)
+- `route` (optional, default `.agnos/skills`) is the canonical directory where skill content is materialized.
+- `sources` is the map of local skill name → composite source ref. Grammar:
+  - `github:<owner>/<repo>/<in-repo-path>` (or `gitlab:`, `bitbucket:`)
+  - `file:<path-to-skill-dir>` (the directory contains `SKILL.md` directly)
 
 ## CLI
 

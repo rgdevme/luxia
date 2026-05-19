@@ -5,6 +5,7 @@ import {
   lockFileSchema,
   mcpDeclarationSchema,
   rulesDeclarationSchema,
+  skillSourcesSchema,
   skillsConfigSchema,
   skillLockEntrySchema,
 } from "../src/schema.js";
@@ -23,20 +24,29 @@ describe("schemas", () => {
     });
   });
 
-  it("skillsConfigSchema accepts a name → composite-ref record", () => {
-    const parsed = skillsConfigSchema.parse({
+  it("skillSourcesSchema accepts a name → composite-ref record", () => {
+    const parsed = skillSourcesSchema.parse({
       pdf: "github:foo/bar/skills/pdf",
       "data-cleanup": "github:org/agents/packages/data/cleanup",
     });
     expect(parsed["pdf"]).toBe("github:foo/bar/skills/pdf");
   });
 
-  it("skillsConfigSchema rejects invalid names", () => {
-    expect(() => skillsConfigSchema.parse({ " bad ": "github:foo/bar/skills/pdf" })).toThrow();
+  it("skillSourcesSchema rejects invalid names", () => {
+    expect(() => skillSourcesSchema.parse({ " bad ": "github:foo/bar/skills/pdf" })).toThrow();
   });
 
-  it("skillsConfigSchema rejects multi-line refs", () => {
-    expect(() => skillsConfigSchema.parse({ pdf: "foo\nbar" })).toThrow();
+  it("skillSourcesSchema rejects multi-line refs", () => {
+    expect(() => skillSourcesSchema.parse({ pdf: "foo\nbar" })).toThrow();
+  });
+
+  it("skillsConfigSchema wraps route + sources into a single block", () => {
+    const parsed = skillsConfigSchema.parse({
+      route: ".agnos/skills",
+      sources: { pdf: "github:foo/bar/skills/pdf" },
+    });
+    expect(parsed.route).toBe(".agnos/skills");
+    expect(parsed.sources?.["pdf"]).toBe("github:foo/bar/skills/pdf");
   });
 
   it("mcpDeclarationSchema accepts minimal and full forms", () => {

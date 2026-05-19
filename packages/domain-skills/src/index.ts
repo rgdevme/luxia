@@ -10,8 +10,8 @@ export { findSkillsInRepo } from "@luxia/core";
 export type { DiscoveredSkill } from "@luxia/core";
 
 /**
- * Per-skill declaration shape passed to plugin hooks. `agnos.json#skills` is a
- * record `{ name: source }`; the orchestrator splays each entry into this
+ * Per-skill declaration shape passed to plugin hooks. `agnos.json#skills.sources`
+ * is a record `{ name: source }`; the orchestrator splays each entry into this
  * `{ name, source }` shape for the domain's `resolve()` call.
  */
 const declarationSchema = z.object({
@@ -26,34 +26,33 @@ const skillsPlugin: DomainPlugin<{ name: string; source: string }, ResolvedSkill
 
   initSteps: [
     {
-      id: "skillsDir",
+      id: "route",
       type: "text",
       message: "Canonical skills directory (relative to project root):",
       default: async (ctx) => {
         const cfg = await readConfigOrDefault(ctx.configPath);
-        return cfg.paths?.skillsDir ?? DEFAULT_SKILLS_DIR_REL;
+        return cfg.skills?.route ?? DEFAULT_SKILLS_DIR_REL;
       },
       async callback(value, ctx) {
         const trimmed = value.trim() || DEFAULT_SKILLS_DIR_REL;
         const config = (await readConfigOrDefault(ctx.configPath)) as AgnosConfig;
-        const previous = config.paths?.skillsDir;
+        const previous = config.skills?.route;
         const persisted = normalizeSkillsDir(trimmed);
         const next: AgnosConfig = { ...config };
+        const skills = { ...(next.skills ?? {}) };
         if (persisted === normalizeSkillsDir(DEFAULT_SKILLS_DIR_REL)) {
-          // Keep agnos.json clean: drop paths.skillsDir when set to default.
-          if (next.paths) {
-            const { skillsDir: _drop, ...rest } = next.paths;
-            next.paths = Object.keys(rest).length > 0 ? rest : undefined;
-          }
+          // Keep agnos.json clean: drop skills.route when set to default.
+          delete skills.route;
         } else {
-          next.paths = { ...(next.paths ?? {}), skillsDir: persisted };
+          skills.route = persisted;
         }
+        next.skills = skills;
         if (previous !== persisted) {
           if (ctx.dryRun) {
-            ctx.logger.info(`would: agnos.json paths.skillsDir = ${persisted}`);
+            ctx.logger.info(`would: agnos.json skills.route = ${persisted}`);
           } else {
             await writeConfig(ctx.configPath, next);
-            ctx.logger.info(`agnos.json: paths.skillsDir = ${persisted}`);
+            ctx.logger.info(`agnos.json: skills.route = ${persisted}`);
           }
         }
         if (!ctx.dryRun) {
@@ -100,10 +99,10 @@ const skillsPlugin: DomainPlugin<{ name: string; source: string }, ResolvedSkill
   },
 
   /**
-   * Bootstrap a per-agent skills directory: link `<projectRoot>/<paths.skillsDir>`
+   * Bootstrap a per-agent skills directory: link `<projectRoot>/<agent.paths.skillsDir>`
    * to the canonical skills dir (default `.agnos/skills/`, overridable via
-   * `agnos.json#paths.skillsDir`) so the agent automatically gets every
-   * current and future skill via a single directory-level symlink.
+   * `agnos.json#skills.route`) so the agent automatically gets every current
+   * and future skill via a single directory-level symlink.
    *
    * No-op when:
    *  - the agent does not declare `paths.skillsDir` (opted out), or

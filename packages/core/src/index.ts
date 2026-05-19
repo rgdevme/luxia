@@ -18,7 +18,6 @@ export type {
   McpDeclaration,
   McpEventHandlers,
   ParsedSourceRef,
-  PathsConfig,
   PluginManifest,
   RepoFetcher,
   ResolveContext,
@@ -28,6 +27,7 @@ export type {
   RulesDeclaration,
   RulesEventHandlers,
   SkillLockEntry,
+  SkillsConfig,
   SkillsEventHandlers,
 } from "./types/public.js";
 export { RESERVED_CLI_IDS } from "./types/public.js";
@@ -48,6 +48,7 @@ export {
   writeConfig,
   configExists,
   DEFAULT_CONFIG,
+  SCHEMA_URL,
 } from "./config.js";
 export {
   buildResolveContext,
@@ -130,10 +131,10 @@ export {
   agnosConfigSchema,
   lockFileSchema,
   mcpDeclarationSchema,
-  pathsConfigSchema,
   rulesDeclarationSchema,
   skillLockEntrySchema,
   skillNameSchema,
   skillRefSchema,
+  skillSourcesSchema,
   skillsConfigSchema,
 } from "./schema.js";

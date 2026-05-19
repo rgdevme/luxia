@@ -18,7 +18,7 @@ export interface PrepareResult {
 /**
  * Install-time pre-pass.
  *
- * For each declared skill in `config.skills`:
+ * For each declared skill in `config.skills.sources`:
  *  1. Parse the composite source, fetch the parent repo / open the local dir.
  *  2. Hash the materialized skill content at the recorded sub-path.
  *  3. Compare to the lock:
@@ -35,7 +35,7 @@ export async function prepareSkills(
   ctx: ResolveContext,
 ): Promise<PrepareResult> {
   const result: PrepareResult = { filled: [], verified: [] };
-  const entries = Object.entries(config.skills ?? {});
+  const entries = Object.entries(config.skills?.sources ?? {});
   if (entries.length === 0) return result;
 
   const lockBefore = await readLock(ctx.projectRoot);

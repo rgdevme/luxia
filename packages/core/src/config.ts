@@ -2,8 +2,10 @@ import fs from "node:fs/promises";
 import type { AgnosConfig } from "./types/public.js";
 import { agnosConfigSchema } from "./schema.js";
 
+export const SCHEMA_URL = "https://unpkg.com/@luxia/core/schema.json";
+
 export const DEFAULT_CONFIG: AgnosConfig = {
-  $schema: "https://agnos.dev/schema/v0.json",
+  $schema: SCHEMA_URL,
   agents: [],
   rules: { source: "./AGENTS.md" },
   skills: {},
