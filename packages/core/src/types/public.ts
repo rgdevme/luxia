@@ -11,6 +11,14 @@ export interface AgnosConfig {
   $schema?: string;
   agents?: AgentRef[];
   rules?: RulesDeclaration;
+  skills?: SkillsConfig;
+  mcp?: McpDeclaration[];
+  [domain: string]: unknown;
+}
+
+export interface SkillsConfig {
+  /** Canonical skills directory, relative to project root. Defaults to ".agnos/skills". */
+  route?: string;
   /**
    * Map of local skill name → composite source ref.
    *
@@ -19,15 +27,7 @@ export interface AgnosConfig {
    *     e.g. `github:vercel-labs/agent-skills/skills/pdf`
    *   - local: `file:<path-to-skill-dir>` (the directory contains SKILL.md directly)
    */
-  skills?: Record<string, string>;
-  mcp?: McpDeclaration[];
-  paths?: PathsConfig;
-  [domain: string]: unknown;
-}
-
-export interface PathsConfig {
-  /** Canonical skills directory, relative to project root. Defaults to ".agnos/skills". */
-  skillsDir?: string;
+  sources?: Record<string, string>;
 }
 
 export interface SkillLockEntry {

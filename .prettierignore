@@ -3,7 +3,7 @@ dist
 coverage
 .turbo
 pnpm-lock.yaml
-.agnos/cache
+.agnos
 test-output
 scratch
 packages/*/dist

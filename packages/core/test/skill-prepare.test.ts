@@ -52,7 +52,7 @@ describe("prepareSkills", () => {
     await seedSkill("skills/pdf");
     const ctx = makeCtx();
     const config: AgnosConfig = {
-      skills: { pdf: "github:foo/bar/skills/pdf" },
+      skills: { sources: { pdf: "github:foo/bar/skills/pdf" } },
     };
     const result = await prepareSkills(config, ctx);
     expect(result.filled).toEqual(["pdf"]);
@@ -77,7 +77,7 @@ describe("prepareSkills", () => {
     });
     await writeLock(root, lock);
 
-    const config: AgnosConfig = { skills: { pdf: "github:foo/bar/skills/pdf" } };
+    const config: AgnosConfig = { skills: { sources: { pdf: "github:foo/bar/skills/pdf" } } };
     const result = await prepareSkills(config, ctx);
     expect(result.filled).toEqual([]);
     expect(result.verified).toEqual(["pdf"]);
@@ -93,7 +93,7 @@ describe("prepareSkills", () => {
     });
     await writeLock(root, lock);
 
-    const config: AgnosConfig = { skills: { pdf: "github:foo/bar/skills/pdf" } };
+    const config: AgnosConfig = { skills: { sources: { pdf: "github:foo/bar/skills/pdf" } } };
     await expect(prepareSkills(config, ctx)).rejects.toThrow(
       /upstream content for "pdf".*has changed.*agnos skill update pdf/s,
     );
@@ -102,7 +102,7 @@ describe("prepareSkills", () => {
   it("errors clearly when the in-repo path is missing", async () => {
     // No seedSkill — repoCache is empty.
     const ctx = makeCtx();
-    const config: AgnosConfig = { skills: { pdf: "github:foo/bar/skills/pdf" } };
+    const config: AgnosConfig = { skills: { sources: { pdf: "github:foo/bar/skills/pdf" } } };
     await expect(prepareSkills(config, ctx)).rejects.toThrow(
       /not found at github:foo\/bar\/skills\/pdf/,
     );

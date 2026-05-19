@@ -27,7 +27,7 @@ describe("config", () => {
       $schema: "https://agnos.dev/schema/v0.json",
       agents: ["claude-code"],
       rules: { source: "./AGENTS.md" },
-      skills: { pdf: "github:foo/bar/skills/pdf" },
+      skills: { sources: { pdf: "github:foo/bar/skills/pdf" } },
       mcp: [],
     };
     await writeConfig(configPath, config);

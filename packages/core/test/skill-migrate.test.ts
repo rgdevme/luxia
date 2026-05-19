@@ -102,7 +102,7 @@ describe("runMigrate", () => {
 
     await runMigrate(baseOpts(), ctx, config, []);
 
-    expect(config.skills).toEqual({
+    expect(config.skills?.sources).toEqual({
       foo: "github:acme/a/skills/foo",
       bar: "github:acme/b/skills/bar",
     });
@@ -128,10 +128,10 @@ describe("runMigrate", () => {
     const ctx = makeCtx({ fetchByCanonical: { "github:acme/a": repoA } });
 
     await runMigrate(baseOpts(), ctx, config, []);
-    const firstSkills = { ...(config.skills ?? {}) };
+    const firstSources = { ...(config.skills?.sources ?? {}) };
 
     await runMigrate(baseOpts(), ctx, config, []);
-    expect(config.skills).toEqual(firstSkills);
+    expect(config.skills?.sources).toEqual(firstSources);
   });
 
   it("dry-run does not write agnos.json, lock, or skills dir", async () => {
@@ -146,7 +146,7 @@ describe("runMigrate", () => {
 
     await runMigrate(baseOpts(), ctx, config, []);
 
-    expect(config.skills ?? {}).toEqual({});
+    expect(config.skills?.sources ?? {}).toEqual({});
     await expect(fs.access(path.join(root, "agnos.lock.json"))).rejects.toBeTruthy();
     await expect(fs.access(path.join(root, ".agnos", "skills", "foo"))).rejects.toBeTruthy();
   });
@@ -181,12 +181,12 @@ describe("runMigrate", () => {
     });
 
     const config: AgnosConfig = structuredClone(DEFAULT_CONFIG);
-    config.skills = { foo: "github:other/repo/path/foo" };
+    config.skills = { sources: { foo: "github:other/repo/path/foo" } };
 
     const ctx = makeCtx({ fetchByCanonical: { "github:acme/a": repoA } });
     await runMigrate(baseOpts(), ctx, config, []);
 
-    expect(config.skills).toMatchObject({
+    expect(config.skills?.sources).toMatchObject({
       foo: "github:other/repo/path/foo",
       "foo-2": "github:acme/a/skills/foo",
     });

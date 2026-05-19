@@ -22,7 +22,12 @@ export const skillRefSchema = z
   .min(1)
   .refine((v) => !v.includes("\n") && !v.includes("\r"), "skill ref must be a single line");
 
-export const skillsConfigSchema = z.record(skillNameSchema, skillRefSchema);
+export const skillSourcesSchema = z.record(skillNameSchema, skillRefSchema);
+
+export const skillsConfigSchema = z.object({
+  route: z.string().min(1).optional(),
+  sources: skillSourcesSchema.optional(),
+});
 
 export const mcpDeclarationSchema = z.object({
   name: z.string().min(1),
@@ -45,10 +50,6 @@ export const docsConfigSchema = z.object({
   injectRules: z.boolean().optional(),
 });
 
-export const pathsConfigSchema = z.object({
-  skillsDir: z.string().min(1).optional(),
-});
-
 export const agnosConfigSchema = z
   .object({
     $schema: z.string().optional(),
@@ -57,7 +58,6 @@ export const agnosConfigSchema = z
     skills: skillsConfigSchema.optional(),
     mcp: z.array(mcpDeclarationSchema).optional(),
     docs: docsConfigSchema.optional(),
-    paths: pathsConfigSchema.optional(),
   })
   .passthrough();
 

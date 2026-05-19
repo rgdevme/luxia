@@ -213,7 +213,7 @@ export async function buildAgentDomainStates(
   out["mcp"] = (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[];
 
   const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
-  out["skills"] = Object.keys(config.skills ?? {}).map((name) => ({
+  out["skills"] = Object.keys(config.skills?.sources ?? {}).map((name) => ({
     name,
     absolutePath: path.join(skillsDir, name),
   })) as ResolvedSkill[];
@@ -548,7 +548,7 @@ export async function reconcile(
   ctx: ResolveContext,
 ): Promise<void> {
   const paths = buildPaths(ctx.projectRoot, config);
-  const declaredSkills = new Set(Object.keys(config.skills ?? {}));
+  const declaredSkills = new Set(Object.keys(config.skills?.sources ?? {}));
 
   const orphans = await findOrphans(paths.skillsDir, declaredSkills);
   for (const name of orphans) {
@@ -592,7 +592,7 @@ function computeFileSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boo
 }
 
 function computeDirSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boolean {
-  if (!config.skills || Object.keys(config.skills).length === 0) return false;
+  if (!config.skills?.sources || Object.keys(config.skills.sources).length === 0) return false;
   // Any active agent that declares a skills dir will trigger a dir-level
   // symlink in the skills domain bootstrap. Custom `handles.skills` agents
   // own their own materialization and may also need dir symlinks; we treat

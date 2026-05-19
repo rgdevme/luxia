@@ -3,7 +3,13 @@ import path from "node:path";
 import { checkbox, confirm } from "@inquirer/prompts";
 import { readDefaultRulesTemplate } from "@luxia/domain-rules/template";
 import { buildPaths, ensureDir } from "../paths.js";
-import { configExists, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../config.js";
+import {
+  configExists,
+  readConfigOrDefault,
+  writeConfig,
+  DEFAULT_CONFIG,
+  SCHEMA_URL,
+} from "../config.js";
 import { runRules } from "./rules.js";
 import { runMigrate } from "./skill.js";
 import { loadPlugins, refToId } from "../plugin-loader.js";
@@ -36,6 +42,7 @@ export async function runInit(opts: InitOptions): Promise<void> {
     }
   } else {
     opts.logger.info(`${path.relative(opts.cwd, paths.configPath)} already exists`);
+    await backfillSchemaField(opts);
   }
 
   if (!opts.dryRun) {
@@ -162,6 +169,19 @@ async function promptAndPersistAgents(opts: InitOptions): Promise<void> {
   }
 }
 
+async function backfillSchemaField(opts: InitOptions): Promise<void> {
+  const paths = buildPaths(opts.cwd);
+  const config = await readConfigOrDefault(paths.configPath);
+  if (config.$schema === SCHEMA_URL) return;
+  if (opts.dryRun) {
+    opts.logger.info(`would: set $schema in ${path.relative(opts.cwd, paths.configPath)}`);
+    return;
+  }
+  config.$schema = SCHEMA_URL;
+  await writeConfig(paths.configPath, config);
+  opts.logger.info(`set $schema in ${path.relative(opts.cwd, paths.configPath)}`);
+}
+
 async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {
   const giPath = path.join(cwd, ".gitignore");
   let current = "";
@@ -170,14 +190,15 @@ async function ensureGitIgnore(cwd: string, logger: Logger): Promise<void> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
-  const requiredLines = [".agnos/cache/", ".agnos/state.json"];
+  // Everything under .agnos/ (cache, state.json, materialized skills) is
+  // reproducible from agnos.json + agnos.lock.json, so the whole directory
+  // is gitignored.
+  const required = ".agnos/";
   const existingLines = current.split(/\r?\n/).map((l) => l.trim());
-  const missing = requiredLines.filter((line) => !existingLines.includes(line));
-  if (missing.length === 0) return;
+  if (existingLines.includes(required)) return;
   const prefix = current.length === 0 || current.endsWith("\n") ? current : current + "\n";
-  const updated = prefix + missing.map((l) => `${l}\n`).join("");
-  await fs.writeFile(giPath, updated, "utf8");
-  logger.info(`updated .gitignore (+ ${missing.join(", ")})`);
+  await fs.writeFile(giPath, `${prefix}${required}\n`, "utf8");
+  logger.info(`updated .gitignore (+ ${required})`);
 }
 
 export async function ensureStarterRules(rulesPath: string): Promise<{ created: boolean }> {

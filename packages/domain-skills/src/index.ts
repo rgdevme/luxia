@@ -8,8 +8,8 @@ export { findSkillsInRepo } from "@luxia/core";
 export type { DiscoveredSkill } from "@luxia/core";
 
 /**
- * Per-skill declaration shape passed to plugin hooks. `agnos.json#skills` is a
- * record `{ name: source }`; the orchestrator splays each entry into this
+ * Per-skill declaration shape passed to plugin hooks. `agnos.json#skills.sources`
+ * is a record `{ name: source }`; the orchestrator splays each entry into this
  * `{ name, source }` shape for the domain's `resolve()` call.
  */
 const declarationSchema = z.object({
@@ -58,10 +58,10 @@ const skillsPlugin: DomainPlugin<{ name: string; source: string }, ResolvedSkill
   },
 
   /**
-   * Bootstrap a per-agent skills directory: link `<projectRoot>/<paths.skillsDir>`
+   * Bootstrap a per-agent skills directory: link `<projectRoot>/<agent.paths.skillsDir>`
    * to the canonical skills dir (default `.agnos/skills/`, overridable via
-   * `agnos.json#paths.skillsDir`) so the agent automatically gets every
-   * current and future skill via a single directory-level symlink.
+   * `agnos.json#skills.route`) so the agent automatically gets every current
+   * and future skill via a single directory-level symlink.
    *
    * No-op when:
    *  - the agent does not declare `paths.skillsDir` (opted out), or

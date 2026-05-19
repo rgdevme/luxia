@@ -253,7 +253,7 @@ async function commitSelection(
   await fs.mkdir(skillsDir, { recursive: true });
 
   let lock = await readLock(ctx.projectRoot);
-  const skills = { ...(config.skills ?? {}) };
+  const sources = { ...(config.skills?.sources ?? {}) };
   const resolvedItems: ResolvedSkill[] = [];
 
   for (const sel of selected) {
@@ -262,7 +262,7 @@ async function commitSelection(
     await fs.cp(sel.fetchedAbsPath, targetDir, { recursive: true, force: true });
 
     const hash = await hashSkillDir(sel.fetchedAbsPath);
-    skills[sel.name] = sel.composite;
+    sources[sel.name] = sel.composite;
     lock = upsertSkill(lock, sel.composite, {
       computedHash: hash,
       resolvedAt: new Date().toISOString(),
@@ -274,7 +274,7 @@ async function commitSelection(
     }
   }
 
-  config.skills = skills;
+  config.skills = { ...(config.skills ?? {}), sources };
   await writeConfig(ctx.configPath, config);
   await writeLock(ctx.projectRoot, lock);
 
@@ -299,7 +299,7 @@ async function runUpdate(
   const name = opts.args[0];
   if (!name) throw new Error("usage: agnos skill update <name> [--ref <ref>]");
 
-  const composite = (config.skills ?? {})[name];
+  const composite = (config.skills?.sources ?? {})[name];
   if (!composite) throw new Error(`skill "${name}" is not declared in agnos.json`);
 
   const parsed = parseSource(composite, { projectRoot: ctx.projectRoot });
@@ -426,7 +426,7 @@ export async function runMigrate(
 
   const selected: SelectedSkill[] = [];
   const skipped: { name: string; reason: string }[] = [];
-  const takenNames = new Set<string>(Object.keys(config.skills ?? {}));
+  const takenNames = new Set<string>(Object.keys(config.skills?.sources ?? {}));
 
   for (const [repoKey, items] of groups) {
     const parsed = parseSource(repoKey, { projectRoot: ctx.projectRoot });
@@ -479,11 +479,14 @@ export async function runMigrate(
       }
 
       const composite = `${parsed.provider}:${parsed.owner}/${parsed.repo}/${pick.path}`;
-      const existingComposite = (config.skills ?? {})[it.name];
+      const existingComposite = (config.skills?.sources ?? {})[it.name];
       let finalName = it.name;
       if (existingComposite && existingComposite !== composite) {
         let i = 2;
-        while (takenNames.has(finalName) && (config.skills ?? {})[finalName] !== composite) {
+        while (
+          takenNames.has(finalName) &&
+          (config.skills?.sources ?? {})[finalName] !== composite
+        ) {
           finalName = `${it.name}-${i++}`;
         }
       }
@@ -514,7 +517,7 @@ export async function runMigrate(
   await fs.mkdir(skillsDir, { recursive: true });
 
   let lock = await readLock(ctx.projectRoot);
-  const skills = { ...(config.skills ?? {}) };
+  const sources = { ...(config.skills?.sources ?? {}) };
   const resolvedItems: ResolvedSkill[] = [];
 
   for (const sel of selected) {
@@ -523,7 +526,7 @@ export async function runMigrate(
     await fs.cp(sel.fetchedAbsPath, targetDir, { recursive: true, force: true });
 
     const hash = await hashSkillDir(sel.fetchedAbsPath);
-    skills[sel.name] = sel.composite;
+    sources[sel.name] = sel.composite;
     lock = upsertSkill(lock, sel.composite, {
       computedHash: hash,
       resolvedAt: new Date().toISOString(),
@@ -535,7 +538,7 @@ export async function runMigrate(
     }
   }
 
-  config.skills = skills;
+  config.skills = { ...(config.skills ?? {}), sources };
   await writeConfig(ctx.configPath, config);
   await writeLock(ctx.projectRoot, lock);
 
@@ -561,7 +564,7 @@ async function runRemove(
   const name = opts.args[0];
   if (!name) throw new Error("usage: agnos skill remove <name>");
 
-  const composite = (config.skills ?? {})[name];
+  const composite = (config.skills?.sources ?? {})[name];
   if (!composite) throw new Error(`skill "${name}" is not declared in agnos.json`);
 
   if (ctx.dryRun) {
@@ -572,14 +575,14 @@ async function runRemove(
   const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
   await fs.rm(path.join(skillsDir, name), { recursive: true, force: true });
 
-  const { [name]: _removed, ...nextSkills } = config.skills ?? {};
+  const { [name]: _removed, ...nextSources } = config.skills?.sources ?? {};
   void _removed;
-  config.skills = nextSkills;
+  config.skills = { ...(config.skills ?? {}), sources: nextSources };
   await writeConfig(ctx.configPath, config);
 
   const lock = await readLock(ctx.projectRoot);
   // Drop the lock entry only if no remaining skill points at the same composite source.
-  const stillUsed = Object.values(nextSkills).includes(composite);
+  const stillUsed = Object.values(nextSources).includes(composite);
   if (!stillUsed && getSkill(lock, composite)) {
     await writeLock(ctx.projectRoot, removeSkill(lock, composite));
   }
@@ -652,8 +655,11 @@ function disambiguateFromDiscovery(
   for (const d of picked) {
     const composite = compositeFor(parsed, d.path);
     const base = nameOverride ?? d.defaultName;
-    const taken = new Set<string>([...Object.keys(config.skills ?? {}), ...out.map((o) => o.name)]);
-    const existingComposite = (config.skills ?? {})[base];
+    const taken = new Set<string>([
+      ...Object.keys(config.skills?.sources ?? {}),
+      ...out.map((o) => o.name),
+    ]);
+    const existingComposite = (config.skills?.sources ?? {})[base];
     let name = base;
     if (existingComposite === composite) {
       // Re-adding the exact same skill — keep its name and overwrite.
@@ -688,12 +694,12 @@ function compositeFor(parsed: ParsedSource, inRepoPath: string): string {
 }
 
 function chooseUniqueName(base: string, composite: string, config: AgnosConfig): string {
-  const skills = config.skills ?? {};
+  const sources = config.skills?.sources ?? {};
   // Re-add of an identical composite is idempotent (overwrite same name).
-  for (const [name, c] of Object.entries(skills)) {
+  for (const [name, c] of Object.entries(sources)) {
     if (c === composite) return name;
   }
-  const taken = new Set(Object.keys(skills));
+  const taken = new Set(Object.keys(sources));
   let name = base;
   let i = 2;
   while (taken.has(name)) name = `${base}-${i++}`;

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unpkg.com/@luxia/core/schema.json",
+  "title": "agnos.json",
+  "description": "Single source of truth for an agnos project: which agents are active, where rules live, what skills are installed, which MCP servers are configured, and how docs are managed.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of this JSON schema. Recommended so editors can validate and autocomplete agnos.json."
+    },
+    "agents": {
+      "type": "array",
+      "description": "Active agent plugins, by id (e.g. \"claude-code\") or by full npm package name (e.g. \"@me/agnos-agent-zed\") when disambiguating colliding ids.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "rules": {
+      "type": "object",
+      "description": "Where the canonical rules file lives. Agents materialize their own rules artifacts (CLAUDE.md, AGENTS.md, etc.) by linking to this file.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Project-relative path to the rules markdown file (default \"./AGENTS.md\")."
+        }
+      },
+      "required": ["source"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "description": "Skills domain configuration: where canonical content lives and which skills to install.",
+      "properties": {
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical skills directory, project-relative. Defaults to \".agnos/skills\". Agents symlink their own skills dir to this path."
+        },
+        "sources": {
+          "type": "object",
+          "description": "Map of local skill name → composite source ref. Grammar: \"github:<owner>/<repo>/<in-repo-path>\" (or gitlab:/bitbucket:), or \"file:<path-to-skill-dir>\" pointing at a directory containing SKILL.md.",
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcp": {
+      "type": "array",
+      "description": "MCP server declarations. Each entry is materialized into per-agent MCP config (e.g. .mcp.json for Claude Code, .codex/config.toml for Codex).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Local name for this MCP server."
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional source ref for the server package."
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Executable to run (for stdio transport)."
+          },
+          "args": {
+            "type": "array",
+            "description": "Arguments passed to `command`.",
+            "items": { "type": "string" }
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables for the server process. Values may contain ${VAR} references resolved at materialization time.",
+            "additionalProperties": { "type": "string" }
+          },
+          "transport": {
+            "type": "string",
+            "enum": ["stdio", "sse", "http"],
+            "description": "Transport protocol the agent uses to talk to this server."
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    "docs": {
+      "type": "object",
+      "description": "Docs domain configuration. Controls where documentation lives, what frontmatter metadata is required, and whether the rules/index blocks get injected back into the rules file.",
+      "properties": {
+        "route": {
+          "type": "string",
+          "description": "Directory where doc files live (default \".docs\")."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Map of frontmatter key → natural-language description. Tells the LLM how to populate each value when generating or updating a doc.",
+          "additionalProperties": { "type": "string" }
+        },
+        "index": {
+          "type": "string",
+          "description": "Basename of the generated docs index file (default \"index\")."
+        },
+        "content": {
+          "oneOf": [{ "type": "string" }, { "type": "boolean", "enum": [false] }],
+          "description": "Basename of the content doc, or `false` to skip generating one (default \"content\")."
+        },
+        "docRules": {
+          "type": "string",
+          "description": "Basename of the doc-rules file (default \"doc-rules\")."
+        },
+        "injectIndex": {
+          "type": "boolean",
+          "description": "Inject the documentation index block into the rules file (default true)."
+        },
+        "injectRules": {
+          "type": "boolean",
+          "description": "Inject the documentation-rules block into the rules file (default true)."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
