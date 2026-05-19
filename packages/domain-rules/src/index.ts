@@ -2,6 +2,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import type { DomainPlugin, ResolvedRule, RulesDeclaration } from "@luxia/core";
 import { rulesDeclarationSchema } from "@luxia/core";
+import { readDefaultRulesTemplate } from "./template.js";
+
+export { readDefaultRulesTemplate };
 
 const rulesPlugin: DomainPlugin<RulesDeclaration, ResolvedRule> = {
   name: "rules",
@@ -44,7 +47,7 @@ async function ensureFileExists(absPath: string): Promise<void> {
     await fs.access(absPath);
   } catch {
     await fs.mkdir(path.dirname(absPath), { recursive: true });
-    await fs.writeFile(absPath, "# AGENTS.md\n", "utf8");
+    await fs.writeFile(absPath, await readDefaultRulesTemplate(), "utf8");
   }
 }
 
