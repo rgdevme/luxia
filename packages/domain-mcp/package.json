@@ -1,6 +1,6 @@
 {
   "name": "@luxia/domain-mcp",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Agnos MCP servers domain plugin",
   "type": "module",
   "license": "MIT",
