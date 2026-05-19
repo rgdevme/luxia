@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentPlugin, DomainPlugin, ResolvedSkill } from "@luxia/core";
-import { buildPaths, ensureLink, readConfigOrDefault } from "@luxia/core";
+import type { AgentPlugin, AgnosConfig, DomainPlugin, ResolvedSkill } from "@luxia/core";
+import { buildPaths, ensureLink, readConfigOrDefault, writeConfig } from "@luxia/core";
 import { z } from "zod";
+
+const DEFAULT_SKILLS_DIR_REL = "./.agnos/skills";
 
 export { findSkillsInRepo } from "@luxia/core";
 export type { DiscoveredSkill } from "@luxia/core";
@@ -21,6 +23,45 @@ const skillsPlugin: DomainPlugin<{ name: string; source: string }, ResolvedSkill
   name: "skills",
   priority: 30,
   declarationSchema,
+
+  initSteps: [
+    {
+      id: "route",
+      type: "text",
+      message: "Canonical skills directory (relative to project root):",
+      default: async (ctx) => {
+        const cfg = await readConfigOrDefault(ctx.configPath);
+        return cfg.skills?.route ?? DEFAULT_SKILLS_DIR_REL;
+      },
+      async callback(value, ctx) {
+        const trimmed = value.trim() || DEFAULT_SKILLS_DIR_REL;
+        const config = (await readConfigOrDefault(ctx.configPath)) as AgnosConfig;
+        const previous = config.skills?.route;
+        const persisted = normalizeSkillsDir(trimmed);
+        const next: AgnosConfig = { ...config };
+        const skills = { ...(next.skills ?? {}) };
+        if (persisted === normalizeSkillsDir(DEFAULT_SKILLS_DIR_REL)) {
+          // Keep agnos.json clean: drop skills.route when set to default.
+          delete skills.route;
+        } else {
+          skills.route = persisted;
+        }
+        next.skills = skills;
+        if (previous !== persisted) {
+          if (ctx.dryRun) {
+            ctx.logger.info(`would: agnos.json skills.route = ${persisted}`);
+          } else {
+            await writeConfig(ctx.configPath, next);
+            ctx.logger.info(`agnos.json: skills.route = ${persisted}`);
+          }
+        }
+        if (!ctx.dryRun) {
+          const resolved = buildPaths(ctx.projectRoot, next).skillsDir;
+          await fs.mkdir(resolved, { recursive: true });
+        }
+      },
+    },
+  ],
 
   async onInitialize(ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
@@ -124,6 +165,13 @@ const skillsPlugin: DomainPlugin<{ name: string; source: string }, ResolvedSkill
  * Returns the active agents whose `paths.skillsDir` resolves to the given
  * absolute path. Used by `onAgentDeactivate` for dedup, exported for tests.
  */
+function normalizeSkillsDir(p: string): string {
+  const trimmed = p.replace(/\\/g, "/").trim();
+  if (trimmed === "" || trimmed === "./") return DEFAULT_SKILLS_DIR_REL;
+  if (trimmed.startsWith("./") || trimmed.startsWith("/")) return trimmed;
+  return `./${trimmed}`;
+}
+
 export function findAgentsUsingSkillsDir(
   absSkillsDir: string,
   agents: readonly AgentPlugin[],

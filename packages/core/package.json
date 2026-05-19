@@ -1,6 +1,6 @@
 {
   "name": "@luxia/core",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Agnos core CLI and plugin framework",
   "type": "module",
   "license": "MIT",
@@ -50,7 +50,6 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.1",
-    "@luxia/domain-rules": "workspace:*",
     "giget": "^1.2.3",
     "minimist": "^1.2.8",
     "picomatch": "^4.0.2",

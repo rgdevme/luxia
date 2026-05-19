@@ -7,6 +7,7 @@ import { buildPaths } from "../paths.js";
 import { readConfig, writeConfig } from "../config.js";
 import { loadPlugins } from "../plugin-loader.js";
 import { buildResolveContext } from "../context.js";
+import { runDomainInitSteps } from "./init-steps.js";
 import { resolveSkill } from "../orchestrator.js";
 import {
   activeAgents,
@@ -83,6 +84,12 @@ export async function runSkill(opts: SkillOptions): Promise<void> {
       return;
     case "migrate":
       await runMigrate(opts, ctx, config, agents);
+      return;
+    case "init":
+      await runDomainInitSteps(domain.plugin, ctx, {
+        yes: false,
+        dryRun: opts.dryRun ?? false,
+      });
       return;
     case "list":
     case undefined: {
