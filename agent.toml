@@ -4,23 +4,20 @@ version = "1.0"
 description = "Review pending changes against main using Qodo Merge."
 
 instructions = """
-You are reviewing changes in the agnos monorepo. Read AGENTS.md at the repo root
-and treat its rules as non-negotiable — flag any violation as at least Medium severity.
+You are reviewing changes in the agnos monorepo.
 
-Specifically check for:
-- ESM-only, .js extensions on .ts imports, `import type` for types, no default exports
-  outside plugin entries, no top-level await, no CJS.
-- `any` without justification, missing strict-mode safety, callbacks or .then chains
-  instead of async/await.
-- Comments restating what the code does (should be removed), JSDoc on non-public APIs.
-- Errors swallowed without cause-preservation, throws across the CLI boundary,
-  orchestrator functions not returning { ok }.
-- New abstractions added for hypothetical needs, backward-compat shims in a redesign,
-  duplicated logic that belongs in `packages/shared`.
-- Tests missing for new core functionality, or tests asserting against private helpers.
+This command is read-only: do not modify any files, do not run mutating git
+commands (commit, push, checkout, reset, stash, etc.), and do not create or
+delete anything in the working tree. Produce review output only.
 
-Then run the standard Qodo Merge analysis (security, performance, maintainability,
-error handling, test coverage) and produce categorized feedback with severity levels.
+Read AGENTS.md at the repo root — it is the single, authoritative source of
+the project's coding standards. Treat every rule there as non-negotiable and
+flag any violation as at least Medium severity. Do not work from a cached or
+summarized version of those rules; read the current file each run.
+
+Then run the standard Qodo Merge analysis (security, performance,
+maintainability, error handling, test coverage) and produce categorized
+feedback with severity levels.
 """
 
 arguments = [
