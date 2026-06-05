@@ -13,8 +13,7 @@ vi.mock("giget", () => ({
   downloadTemplate: (src: string, opts: { dir: string }) => downloadTemplate(src, opts),
 }));
 
-import { createRepoFetcher, gigetTarballPath } from "../src/resolver.js";
-import { parseSource } from "../src/source.js";
+import { createRepoFetcher, gigetTarballPath, parseSource } from "../src/index.js";
 
 describe("createRepoFetcher noCache", () => {
   let root: string;
@@ -54,6 +53,31 @@ describe("createRepoFetcher noCache", () => {
     await expect(fs.access(tarPath)).rejects.toThrow();
     await expect(fs.access(`${tarPath}.json`)).rejects.toThrow();
     expect(downloadTemplate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects refs that escape the source's cache directory", async () => {
+    const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
+
+    const sentinelDir = path.join(cacheHome, "giget", "github", "other-repo");
+    await fs.mkdir(sentinelDir, { recursive: true });
+    const sentinel = path.join(sentinelDir, "main.tar.gz");
+    await fs.writeFile(sentinel, "sibling-tarball");
+
+    expect(() => gigetTarballPath(source, "../../other-repo/main")).toThrow(/escapes/);
+
+    const fetcher = createRepoFetcher({
+      projectRoot: root,
+      cacheDir: path.join(root, ".agnos", "cache"),
+    });
+    await expect(
+      fetcher.fetch(source, { ref: "../../other-repo/main", noCache: true }),
+    ).rejects.toThrow(/escapes/);
+
+    // The sibling tarball must not have been touched.
+    const sibling = await fs.readFile(sentinel, "utf8");
+    expect(sibling).toBe("sibling-tarball");
+    expect(downloadTemplate).not.toHaveBeenCalled();
   });
 
   it("leaves giget's cached tarball untouched when noCache is not set", async () => {

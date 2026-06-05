@@ -101,7 +101,15 @@ function gigetCacheDir(): string {
 export function gigetTarballPath(source: GitSource, ref: string | undefined): string {
   const name = `${source.owner}-${source.repo}`.replace(/[^\da-z-]/gi, "-");
   const version = ref ?? "main";
-  return path.join(gigetCacheDir(), source.provider, name, `${version}.tar.gz`);
+  const sourceDir = path.resolve(gigetCacheDir(), source.provider, name);
+  const tarPath = path.resolve(sourceDir, `${version}.tar.gz`);
+  const rel = path.relative(sourceDir, tarPath);
+  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(
+      `Refusing to compute giget tarball path: ref "${ref ?? ""}" escapes source cache dir`,
+    );
+  }
+  return tarPath;
 }
 
 async function dirHasFiles(p: string): Promise<boolean> {
