@@ -1,54 +1,74 @@
 import { describe, it, expect } from "vitest";
-import { replaceBetweenMarkers, stripFrontmatter } from "../src/inject/markers.js";
+import { replaceUnderHeading, stripFrontmatter } from "../src/inject/markers.js";
 
-const RULES_START = "## Documentation Rules";
-const RULES_END = ">__Documentation rules end__";
+const HEADING = "## Documentation Rules";
 
-describe("replaceBetweenMarkers", () => {
-  it("appends both markers when absent", () => {
-    const result = replaceBetweenMarkers("hello world\n", RULES_START, RULES_END, "first body");
+describe("replaceUnderHeading", () => {
+  it("appends the heading + payload when absent", () => {
+    const result = replaceUnderHeading("hello world\n", HEADING, "first body");
     expect(result.appended).toBe(true);
     expect(result.changed).toBe(true);
-    expect(result.text).toContain(RULES_START);
+    expect(result.text).toContain(HEADING);
     expect(result.text).toContain("first body");
-    expect(result.text).toContain(RULES_END);
-    // payload is between the markers
-    const a = result.text.indexOf(RULES_START);
-    const b = result.text.indexOf("first body");
-    const c = result.text.indexOf(RULES_END);
-    expect(a).toBeLessThan(b);
-    expect(b).toBeLessThan(c);
+    expect(result.text.indexOf(HEADING)).toBeLessThan(result.text.indexOf("first body"));
   });
 
-  it("replaces content between existing markers without removing them", () => {
-    const text = ["Preamble", RULES_START, "old line 1", "old line 2", RULES_END, "Trailer"].join(
-      "\n",
-    );
-    const result = replaceBetweenMarkers(text, RULES_START, RULES_END, "new body");
+  it("replaces content under heading up to the next ## boundary", () => {
+    const text = [
+      "Preamble",
+      HEADING,
+      "old line 1",
+      "old line 2",
+      "",
+      "## Next Section",
+      "Trailer",
+    ].join("\n");
+    const result = replaceUnderHeading(text, HEADING, "new body");
     expect(result.appended).toBe(false);
     expect(result.changed).toBe(true);
     expect(result.text).toContain("Preamble");
-    expect(result.text).toContain(RULES_START);
+    expect(result.text).toContain(HEADING);
     expect(result.text).toContain("new body");
-    expect(result.text).toContain(RULES_END);
+    expect(result.text).toContain("## Next Section");
     expect(result.text).toContain("Trailer");
     expect(result.text).not.toContain("old line 1");
+    expect(result.text).not.toContain("old line 2");
+    // Single blank line between payload and next heading.
+    expect(result.text).toContain("new body\n\n## Next Section");
   });
 
-  it("idempotent when content already matches", () => {
-    const text = [RULES_START, "same body", RULES_END].join("\n");
-    const result = replaceBetweenMarkers(text, RULES_START, RULES_END, "same body");
+  it("stops at a `# ` (level-1) heading", () => {
+    const text = [HEADING, "old", "# Top-Level", "kept"].join("\n");
+    const result = replaceUnderHeading(text, HEADING, "fresh");
+    expect(result.text).toContain("fresh");
+    expect(result.text).not.toContain("old");
+    expect(result.text).toContain("# Top-Level");
+    expect(result.text).toContain("kept");
+  });
+
+  it("replaces everything to EOF when heading is the last ## section", () => {
+    const text = [HEADING, "old line", "### sub", "more"].join("\n");
+    const result = replaceUnderHeading(text, HEADING, "fresh body");
+    expect(result.text).toContain("fresh body");
+    expect(result.text).not.toContain("old line");
+    expect(result.text).not.toContain("### sub");
+    expect(result.text).not.toContain("more");
+  });
+
+  it("preserves nested ### subsections inside the replaced payload", () => {
+    const text = [HEADING, "old"].join("\n");
+    const payload = "### Sub\n- item";
+    const result = replaceUnderHeading(text, HEADING, payload);
+    expect(result.text).toContain("### Sub");
+    expect(result.text).toContain("- item");
+    expect(result.text).not.toContain("old");
+  });
+
+  it("is idempotent when content already matches", () => {
+    const text = [HEADING, "same body", "", "## Next", "trail"].join("\n");
+    const result = replaceUnderHeading(text, HEADING, "same body");
     expect(result.changed).toBe(false);
     expect(result.text).toBe(text);
-  });
-
-  it("appends marker pair when only start marker is present", () => {
-    const text = [RULES_START, "dangling content"].join("\n");
-    const result = replaceBetweenMarkers(text, RULES_START, RULES_END, "fresh");
-    expect(result.appended).toBe(true);
-    expect(result.changed).toBe(true);
-    // the new markers are appended at the end, leaving the dangling start in place
-    expect(result.text.lastIndexOf(RULES_START)).toBeGreaterThan(result.text.indexOf(RULES_START));
   });
 });
 

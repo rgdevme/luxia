@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { downloadTemplate } from "giget";
@@ -55,6 +56,12 @@ async function fetchGit(
   await fs.rm(destDir, { recursive: true, force: true });
   await fs.mkdir(path.dirname(destDir), { recursive: true });
 
+  if (opts?.noCache) {
+    const tarPath = gigetTarballPath(source, ref);
+    await fs.rm(tarPath, { force: true });
+    await fs.rm(`${tarPath}.json`, { force: true });
+  }
+
   const gigetSource = ref
     ? `${source.provider}:${source.owner}/${source.repo}#${ref}`
     : `${source.provider}:${source.owner}/${source.repo}`;
@@ -83,6 +90,18 @@ async function fetchGit(
   });
 
   return { path: destDir };
+}
+
+function gigetCacheDir(): string {
+  return process.env["XDG_CACHE_HOME"]
+    ? path.resolve(process.env["XDG_CACHE_HOME"], "giget")
+    : path.resolve(os.homedir(), ".cache/giget");
+}
+
+export function gigetTarballPath(source: GitSource, ref: string | undefined): string {
+  const name = `${source.owner}-${source.repo}`.replace(/[^\da-z-]/gi, "-");
+  const version = ref ?? "main";
+  return path.join(gigetCacheDir(), source.provider, name, `${version}.tar.gz`);
 }
 
 async function dirHasFiles(p: string): Promise<boolean> {

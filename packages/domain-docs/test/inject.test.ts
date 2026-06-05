@@ -82,7 +82,7 @@ describe("runInject gating", () => {
     );
     await fs.writeFile(
       path.join(root, "AGENTS.md"),
-      "# AGENTS\n\n## Documentation Rules\n>__Documentation rules end__\n\n## Documentation Index\n>__Documentation index end__\n",
+      "# AGENTS\n\n## Documentation Rules\n\n## Documentation Index\n\n## Trailing Section\n",
     );
     await fs.mkdir(path.join(root, ".docs"), { recursive: true });
     await fs.writeFile(path.join(root, ".docs", "index.md"), "- [foo](foo.md)\n");
@@ -95,5 +95,7 @@ describe("runInject gating", () => {
     const after = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
     expect(after).toContain("- [foo](foo.md)");
     expect(after).toContain("rule line");
+    expect(after).not.toContain(">__Documentation");
+    expect(after).toContain("## Trailing Section");
   });
 });
