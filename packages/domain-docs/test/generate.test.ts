@@ -83,8 +83,8 @@ describe("runGenerate", () => {
     expect(result.docRulesChanged).toBe(true);
 
     const indexText = await fs.readFile(cfg.indexFile, "utf8");
-    expect(indexText).toContain("## Overview");
-    expect(indexText).toContain("## Getting Started");
+    expect(indexText).toContain("### Overview");
+    expect(indexText).toContain("### Getting Started");
     expect(indexText).toContain("[Auth Flow](auth-flow.md): How auth works.");
     expect(indexText).toContain("[Local setup](getting-started/local.md): Run it locally.");
 

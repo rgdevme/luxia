@@ -5,37 +5,41 @@ export interface ReplaceResult {
 }
 
 /**
- * Replace content between `startMarker` and `endMarker` lines.
- * Markers themselves are preserved verbatim.
+ * Replace the content under a `## Heading` (or `# Heading`) line.
+ * The block ends at the next sibling-or-higher heading (`## ` or `# `) or EOF.
  *
- * - If both markers are present and in correct order, replace the lines between them with `payload`.
- * - If either marker is missing, append `<blank line><startMarker>\n<payload>\n<endMarker>` at the end.
- * - Equality short-circuit: if the resulting text equals input, returns changed=false.
+ * - Heading absent: append `<blank line><heading>\n<payload>\n` at end.
+ * - Heading present: replace lines after the heading up to the boundary with
+ *   `payload`, then a single blank line before the boundary (or EOF).
+ * - Equality short-circuit: if the resulting text equals input, changed=false.
  *
- * `payload` is inserted verbatim between markers; callers strip leading/trailing whitespace as desired.
+ * Payload is inserted verbatim; callers strip leading/trailing whitespace as
+ * desired.
  */
-export function replaceBetweenMarkers(
-  text: string,
-  startMarker: string,
-  endMarker: string,
-  payload: string,
-): ReplaceResult {
+export function replaceUnderHeading(text: string, heading: string, payload: string): ReplaceResult {
   const lines = text.split(/\r?\n/);
-  const startIdx = lines.findIndex((line) => line === startMarker);
-  const endIdx =
-    startIdx >= 0 ? lines.findIndex((line, i) => i > startIdx && line === endMarker) : -1;
+  const startIdx = lines.findIndex((line) => line === heading);
 
-  if (startIdx < 0 || endIdx < 0) {
-    const trailingBlank = text.endsWith("\n") ? "" : "\n";
+  if (startIdx < 0) {
+    const trailingNewline = text.endsWith("\n") ? "" : "\n";
     const sep = text.length === 0 ? "" : "\n";
-    const newText = `${text}${trailingBlank}${sep}${startMarker}\n${payload}\n${endMarker}\n`;
+    const newText = `${text}${trailingNewline}${sep}${heading}\n${payload}\n`;
     return { text: newText, changed: true, appended: true };
+  }
+
+  let endIdx = lines.length;
+  for (let j = startIdx + 1; j < lines.length; j++) {
+    if (/^#{1,2} /.test(lines[j]!)) {
+      endIdx = j;
+      break;
+    }
   }
 
   const before = lines.slice(0, startIdx + 1);
   const after = lines.slice(endIdx);
   const payloadLines = payload.split(/\r?\n/);
-  const next = [...before, ...payloadLines, ...after].join("\n");
+  const tail = after.length === 0 ? [] : ["", ...after];
+  const next = [...before, ...payloadLines, ...tail].join("\n");
   return { text: next, changed: next !== text, appended: false };
 }
 

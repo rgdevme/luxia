@@ -114,7 +114,7 @@ function renderIndexBody(docs: DocEntry[]): string {
   });
   const lines: string[] = [];
   for (const section of sectionOrder) {
-    lines.push(`## ${section}`);
+    lines.push(`### ${section}`);
     for (const d of grouped.get(section) ?? []) {
       const desc = d.description ? `: ${d.description}` : "";
       lines.push(`- [${d.title}](${d.relativeFromRoute})${desc}`);

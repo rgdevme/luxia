@@ -39,12 +39,5 @@ export const DEFAULTS = {
   injectRules: true,
 };
 
-export const RULES_BLOCK = {
-  start: "## Documentation Rules",
-  end: ">__Documentation rules end__",
-};
-
-export const INDEX_BLOCK = {
-  start: "## Documentation Index",
-  end: ">__Documentation index end__",
-};
+export const RULES_HEADING = "## Documentation Rules";
+export const INDEX_HEADING = "## Documentation Index";

@@ -3,8 +3,8 @@ import path from "node:path";
 import type { CliCommand, ResolveContext } from "@luxia/core";
 import { readConfigOrDefault } from "@luxia/core";
 import { readEffectiveDocsConfig, type EffectiveDocsConfig } from "../effective-config.js";
-import { INDEX_BLOCK, RULES_BLOCK } from "../schema.js";
-import { replaceBetweenMarkers, stripFrontmatter } from "../inject/markers.js";
+import { INDEX_HEADING, RULES_HEADING } from "../schema.js";
+import { replaceUnderHeading, stripFrontmatter } from "../inject/markers.js";
 
 export const inject: CliCommand = {
   description: "Inject doc-rules and index into the project's rules file",
@@ -40,14 +40,14 @@ export async function runInject(
   if (cfg.injectRules) {
     const payload = await readBodyOrEmpty(cfg.docRulesFile);
     if (payload !== null) {
-      const next = replaceBetweenMarkers(text, RULES_BLOCK.start, RULES_BLOCK.end, payload);
+      const next = replaceUnderHeading(text, RULES_HEADING, payload);
       text = next.text;
     }
   }
   if (cfg.injectIndex) {
     const payload = await readBodyOrEmpty(cfg.indexFile);
     if (payload !== null) {
-      const next = replaceBetweenMarkers(text, INDEX_BLOCK.start, INDEX_BLOCK.end, payload);
+      const next = replaceUnderHeading(text, INDEX_HEADING, payload);
       text = next.text;
     }
   }
