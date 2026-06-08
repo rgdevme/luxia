@@ -51,7 +51,7 @@ export async function configExists(configPath: string): Promise<boolean> {
   }
 }
 
-const KEY_ORDER = ["$schema", "agents", "rules", "skills", "mcp", "docs"];
+const KEY_ORDER = ["$schema", "agents", "rules", "skills", "mcp", "hooks", "docs"];
 
 function orderTopLevelKeys(config: AgnosConfig): AgnosConfig {
   const out: Record<string, unknown> = {};

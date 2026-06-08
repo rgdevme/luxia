@@ -13,6 +13,7 @@ export interface AgnosConfig {
   rules?: RulesDeclaration;
   skills?: SkillsConfig;
   mcp?: McpDeclaration[];
+  hooks?: HooksDeclaration;
   [domain: string]: unknown;
 }
 
@@ -55,6 +56,38 @@ export interface McpDeclaration {
   env?: Record<string, string>;
   transport?: "stdio" | "sse" | "http";
 }
+
+// ---------- Hooks domain ----------
+
+/**
+ * A single hook handler. The structure mirrors Claude Code's hook entry — the
+ * superset across agents: `type` is required (e.g. "command") and all other
+ * fields are passed through verbatim so agent-specific keys (Codex's
+ * `command_windows`, Claude's `if`/`once`/`async`/`statusMessage`, …) survive a
+ * round-trip through the canonical registry.
+ */
+export interface HookHandler {
+  type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * A matcher group: a set of hook handlers gated by an optional `matcher`. What
+ * the matcher filters depends on the event (tool name, source, trigger type).
+ */
+export interface HookMatcherGroup {
+  matcher?: string;
+  hooks: HookHandler[];
+  [key: string]: unknown;
+}
+
+/**
+ * The canonical hooks registry stored under `agnos.json#hooks`: a map of hook
+ * event name (e.g. "PreToolUse", "SessionStart") to its matcher groups. Agents
+ * materialize this into their own native format and location (Claude Code →
+ * `.claude/settings.json#hooks`, Codex → `.codex/hooks.json`).
+ */
+export type HooksDeclaration = Record<string, HookMatcherGroup[]>;
 
 export interface ResolvedRule {
   absolutePath: string;
@@ -240,6 +273,21 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
   move?(from: string, to: string, ctx: ResolveContext): Promise<void>;
   list?(ctx: ResolveContext): Promise<TItem[]>;
 
+  /**
+   * Reverse-import merge. Given whatever this domain's agent
+   * `handles.<domain>.onImport` returned, merge it into `config` (mutating in
+   * place), validating against what's already declared so existing entries are
+   * not blindly overwritten. Returns true if `config` was modified. The
+   * orchestrator's one-time import pass calls this once per agent per project
+   * (state-gated) for any domain that defines it.
+   */
+  importMerge?(
+    imported: unknown,
+    config: AgnosConfig,
+    opts: { agentId: string; interactive: boolean },
+    ctx: ResolveContext,
+  ): Promise<boolean>;
+
   /** Optional CLI subcommands exposed under `agnos <domain-id> <subcommand>`. */
   cli?: Record<string, CliCommand>;
 
@@ -305,6 +353,20 @@ export interface SkillsEventHandlers {
   onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
+export interface HooksEventHandlers {
+  /** Materialize the canonical hooks registry into this agent's native file. */
+  onInitialize?(state: HooksDeclaration | undefined, ctx: MaterializeContext): Promise<void>;
+  /**
+   * One-time reverse-import. Read this agent's native hook config, parse it, and
+   * return a hooks registry to centralize into agnos.json. Fires once per agent
+   * per project (state-gated) on first activation. Return {} if the source is
+   * absent or unparseable — do not throw.
+   */
+  onImport?(ctx: MaterializeContext): Promise<HooksDeclaration>;
+  /** Strip this agent's hooks-domain artifacts. Runs on deactivation. */
+  onCleanup?(ctx: MaterializeContext): Promise<void>;
+}
+
 /**
  * Agents register per-domain handlers here. Built-in domains have typed keys
  * (`rules`, `mcp`, `skills`). Third-party domain plugins can add their own
@@ -331,6 +393,7 @@ export interface DomainEventHandlers {
   rules?: RulesEventHandlers;
   mcp?: McpEventHandlers;
   skills?: SkillsEventHandlers;
+  hooks?: HooksEventHandlers;
 }
 
 /**

@@ -96,6 +96,9 @@ importers:
       '@luxia/domain-docs':
         specifier: workspace:*
         version: link:../domain-docs
+      '@luxia/domain-hooks':
+        specifier: workspace:*
+        version: link:../domain-hooks
       '@luxia/domain-mcp':
         specifier: workspace:*
         version: link:../domain-mcp
@@ -161,6 +164,28 @@ importers:
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.14)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/domain-hooks:
+    dependencies:
+      '@inquirer/prompts':
+        specifier: ^7.2.1
+        version: 7.10.1(@types/node@22.19.19)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@luxia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.19

@@ -212,6 +212,10 @@ export async function buildAgentDomainStates(
 
   out["mcp"] = (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[];
 
+  // Hooks are static declarations — the canonical registry IS the resolved
+  // state. `undefined` when none are declared so agents can strip their files.
+  out["hooks"] = config.hooks && Object.keys(config.hooks).length > 0 ? config.hooks : undefined;
+
   const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
   out["skills"] = Object.keys(config.skills?.sources ?? {}).map((name) => ({
     name,
@@ -310,8 +314,75 @@ async function runDomainImportPass(
   opts: { interactive: boolean },
 ): Promise<boolean> {
   if (ctx.dryRun) return false;
-  if (dom.plugin.name !== "mcp") return false;
+  // MCP keeps its bespoke conflict-resolution flow; every other domain that
+  // supports reverse-import does so through `domain.importMerge`.
+  if (dom.plugin.name === "mcp") return runMcpImportPass(agents, dom, config, ctx, opts);
+  if (dom.plugin.importMerge) return runGenericImportPass(agents, dom, config, ctx, opts);
+  return false;
+}
 
+/**
+ * Generic one-time import pass for any domain exposing `importMerge`. For each
+ * active agent that hasn't imported this domain yet (state-gated), call its
+ * `handles.<domain>.onImport`, hand the result to the domain's `importMerge`
+ * (which merges into `config` and resolves conflicts), and persist if changed.
+ */
+async function runGenericImportPass(
+  agents: AgentPlugin[],
+  dom: RegisteredDomain,
+  config: AgnosConfig,
+  ctx: ResolveContext,
+  opts: { interactive: boolean },
+): Promise<boolean> {
+  let projectState = await readState(ctx.statePath);
+  let mutated = false;
+
+  for (const agent of agents) {
+    if (hasImported(projectState, agent.id, dom.plugin.name)) continue;
+    const handlers = handlersFor(agent, dom.plugin.name);
+    const onImport = handlers?.onImport;
+    if (!onImport) continue;
+
+    const mctx = buildMaterializeCtx(ctx, agent.id, "    ");
+    ctx.logger.info(`  -> ${agent.id}`);
+
+    let imported: unknown;
+    try {
+      imported = await onImport(mctx);
+    } catch (err) {
+      mctx.logger.warn(`${dom.plugin.name}.onImport failed: ${(err as Error).message}`);
+      imported = undefined;
+    }
+
+    try {
+      const changed = await dom.plugin.importMerge!(
+        imported,
+        config,
+        { agentId: agent.id, interactive: opts.interactive },
+        mctx,
+      );
+      if (changed) mutated = true;
+    } catch (err) {
+      mctx.logger.warn(`${dom.plugin.name} import merge failed: ${(err as Error).message}`);
+    }
+
+    projectState = markImported(projectState, agent.id, dom.plugin.name);
+    await writeState(ctx.statePath, projectState);
+  }
+
+  if (mutated) {
+    await writeConfig(buildPaths(ctx.projectRoot).configPath, config);
+  }
+  return mutated;
+}
+
+async function runMcpImportPass(
+  agents: AgentPlugin[],
+  dom: RegisteredDomain,
+  config: AgnosConfig,
+  ctx: ResolveContext,
+  opts: { interactive: boolean },
+): Promise<boolean> {
   let projectState = await readState(ctx.statePath);
   let mutated = false;
 
