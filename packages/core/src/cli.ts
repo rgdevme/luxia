@@ -114,7 +114,7 @@ async function main(): Promise<void> {
       case "rules":
         await runRules({
           cwd,
-          path: sub,
+          args: argv._.slice(1).map(String),
           yes: Boolean(argv["yes"]),
           dryRun,
           logger: effectiveLogger,

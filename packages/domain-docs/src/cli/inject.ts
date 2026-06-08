@@ -19,12 +19,13 @@ export async function runInject(
   ctx: ResolveContext,
 ): Promise<{ changed: boolean }> {
   const agnos = await readConfigOrDefault(ctx.configPath);
-  const rulesRel = agnos.rules?.source;
-  if (!rulesRel) {
-    ctx.logger.debug("no rules source configured in agnos.json — skipping inject");
+  const rules = agnos.rules;
+  if (!rules) {
+    ctx.logger.debug("no rules configured in agnos.json — skipping inject");
     return { changed: false };
   }
-  const rulesAbs = path.resolve(ctx.projectRoot, rulesRel);
+  // Injection targets only the root rule file; nested files are not touched.
+  const rulesAbs = path.resolve(ctx.projectRoot, rules.root, rules.filename);
   let text: string;
   try {
     text = await fs.readFile(rulesAbs, "utf8");

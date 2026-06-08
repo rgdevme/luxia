@@ -4,7 +4,7 @@ import os from "node:os";
 import {
   activeAgents,
   dispatchMcpAdded,
-  dispatchRulesMoved,
+  dispatchRules,
   dispatchSkillAdded,
 } from "../src/events.js";
 import type { AgentPlugin, AgnosConfig, ResolveContext } from "../src/types/public.js";
@@ -86,27 +86,24 @@ describe("events dispatch", () => {
     expect(calls).toEqual(["a:skills.onAdded:pdf", "a:mcp.onAdded:github", "b:mcp.onAdded:github"]);
   });
 
-  it("dispatchRulesMoved passes both from and to", async () => {
-    const seen: { from: string; to: string }[] = [];
+  it("dispatchRules passes the full resolved rule set to onInitialize", async () => {
+    const seen: { count: number; dirs: string[] }[] = [];
     const a: AgentPlugin = {
       id: "a",
       displayName: "A",
       handles: {
         rules: {
-          async onMoved(from, to) {
-            seen.push({ from: from.relativeSource, to: to.relativeSource });
+          async onInitialize(state) {
+            seen.push({ count: state.length, dirs: state.map((r) => r.dir) });
           },
         },
       },
     };
-    await dispatchRulesMoved(
-      { absolutePath: "/x/old.md", relativeSource: "./old.md" },
-      { absolutePath: "/x/new.md", relativeSource: "./new.md" },
-      [a],
-      {},
-      ctx,
-    );
-    expect(seen).toEqual([{ from: "./old.md", to: "./new.md" }]);
+    const config: AgnosConfig = {
+      rules: { filename: "AGENTS.md", root: ".", dirs: ["./packages/a"] },
+    };
+    await dispatchRules([a], config, ctx);
+    expect(seen).toEqual([{ count: 2, dirs: [".", "packages/a"] }]);
   });
 
   it("falls back to onInitialize when per-event handler is missing", async () => {

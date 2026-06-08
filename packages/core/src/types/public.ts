@@ -44,7 +44,12 @@ export interface LockFile {
 }
 
 export interface RulesDeclaration {
-  source: string;
+  /** Canonical basename for every rule file. Defaults to "AGENTS.md". */
+  filename: string;
+  /** Base dir for canonical sources. The root file is `<root>/<filename>`. Defaults to ".". */
+  root: string;
+  /** Additional dirs (relative to `root`) that each hold a `<filename>`. May contain "..". */
+  dirs: string[];
 }
 
 export interface McpDeclaration {
@@ -57,8 +62,17 @@ export interface McpDeclaration {
 }
 
 export interface ResolvedRule {
+  /** Absolute path to the canonical source file (`<root>/<dir>/<filename>`). */
   absolutePath: string;
+  /** Canonical path relative to the project root (for logging). */
   relativeSource: string;
+  /**
+   * The logical dir this rule belongs to, relative to `root` (and to each
+   * agent's materialization root). "." for the root file; may contain "..".
+   */
+  dir: string;
+  /** Canonical basename (`rules.filename`). */
+  filename: string;
 }
 
 export interface ResolvedSkill {
@@ -200,7 +214,9 @@ export type InitStep =
 
 export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
   name: string;
-  declarationSchema: z.ZodType<TDecl>;
+  // Input type is `any` so schemas may apply `.default()`/`.transform()` (whose
+  // parsed output is TDecl but whose input shape differs from TDecl).
+  declarationSchema: z.ZodType<TDecl, z.ZodTypeDef, any>;
 
   /**
    * Interactive setup steps. Run by `agnos init` in domain-priority order, and
@@ -273,11 +289,13 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
 // ---------- Agent plugin: per-domain event handlers ----------
 
 export interface RulesEventHandlers {
-  /** Bring this agent up to date with the rules domain. Undefined when no rules set. */
-  onInitialize?(state: ResolvedRule | undefined, ctx: MaterializeContext): Promise<void>;
-  onAdded?(decl: ResolvedRule, ctx: MaterializeContext): Promise<void>;
-  onMoved?(from: ResolvedRule, to: ResolvedRule, ctx: MaterializeContext): Promise<void>;
-  onRemoved?(decl: ResolvedRule, ctx: MaterializeContext): Promise<void>;
+  /**
+   * Bring this agent up to date with the rules domain. Receives the full set of
+   * resolved canonical rule files (one per root + each `dirs` entry). Empty when
+   * no rules are configured. The agent materializes its own filename next to (or
+   * in a parallel tree for) each canonical file and prunes its stale mirrors.
+   */
+  onInitialize?(state: ResolvedRule[], ctx: MaterializeContext): Promise<void>;
   /** Strip this agent's rules-domain artifacts. Runs on deactivation. */
   onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
@@ -341,6 +359,19 @@ export interface DomainEventHandlers {
 export interface AgentPaths {
   /** Project-relative directory the skills domain should link to `.agnos/skills/`. */
   skillsDir?: string;
+  /**
+   * This agent's own rule-file basename (e.g. "CLAUDE.md", "AGENTS.md"). The
+   * rules domain materializes a mirror at `<rulesRoot>/<dir>/<rulesFilename>`
+   * for every canonical rule file. Read by core to prune mirrors without
+   * invoking the agent.
+   */
+  rulesFilename?: string;
+  /**
+   * Project-relative base dir where this agent reads its rule files. Defaults to
+   * ".". Mirrors are materialized under this root, mirroring the canonical
+   * `dirs` structure.
+   */
+  rulesRoot?: string;
 }
 
 export interface AgentPlugin {

@@ -7,7 +7,7 @@ export const SCHEMA_URL = "https://unpkg.com/@luxia/core/schema.json";
 export const DEFAULT_CONFIG: AgnosConfig = {
   $schema: SCHEMA_URL,
   agents: [],
-  rules: { source: "./AGENTS.md" },
+  rules: { filename: "AGENTS.md", root: ".", dirs: [] },
   skills: {},
   mcp: [],
 };

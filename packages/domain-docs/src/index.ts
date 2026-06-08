@@ -25,9 +25,9 @@ async function patchDocs(patch: Partial<DocsConfig>, ctx: ResolveContext): Promi
  */
 async function hasManagedRulesFile(ctx: ResolveContext): Promise<boolean> {
   const cfg = await readConfigOrDefault(ctx.configPath);
-  const source = cfg.rules?.source;
-  if (!source) return false;
-  const abs = path.resolve(ctx.projectRoot, source);
+  const rules = cfg.rules;
+  if (!rules) return false;
+  const abs = path.resolve(ctx.projectRoot, rules.root, rules.filename);
   try {
     await fs.access(abs);
     return true;
@@ -141,7 +141,7 @@ const docsPlugin: DomainPlugin<DocsConfig, DocsConfig> = {
   async onInitialize(ctx: ResolveContext) {
     await runInit(ctx);
     const agnos = await readConfigOrDefault(ctx.configPath);
-    if (agnos.rules?.source) {
+    if (agnos.rules) {
       const cfg = await readEffectiveDocsConfig(ctx);
       if (cfg.injectIndex || cfg.injectRules) {
         await runInject(cfg, ctx);

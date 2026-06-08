@@ -9,11 +9,11 @@
 
 This plugin teaches agnos how to materialize project configuration into the files Codex reads:
 
-| Domain | File written         | Behavior                                                                                                                                                                             |
-| ------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| rules  | `AGENTS.md`          | Symlinked to the rules source. If `agnos.json#rules.source` is already `./AGENTS.md`, no link is created (the file is in place).                                                     |
-| mcp    | `.codex/config.toml` | Regenerated as TOML from `agnos.json#mcp` on every install. Supports `stdio`, `sse`, and `http` transports. Can reverse-import an existing `.codex/config.toml` on first activation. |
-| skills | `.agents/skills/`    | Symlinked to `.agnos/skills/` so Codex picks up every current and future skill through a single directory-level link.                                                                |
+| Domain | File written         | Behavior                                                                                                                                                                                                                                                                |
+| ------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| rules  | `AGENTS.md`          | Codex reads `AGENTS.md` natively. When `agnos.json#rules.root` is `.`, every canonical file is already in place and no link is created; when the canonical tree lives elsewhere (e.g. `./docs`), an `AGENTS.md` mirror is symlinked next to each materialized location. |
+| mcp    | `.codex/config.toml` | Regenerated as TOML from `agnos.json#mcp` on every install. Supports `stdio`, `sse`, and `http` transports. Can reverse-import an existing `.codex/config.toml` on first activation.                                                                                    |
+| skills | `.agents/skills/`    | Symlinked to `.agnos/skills/` so Codex picks up every current and future skill through a single directory-level link.                                                                                                                                                   |
 
 ## Install
 
@@ -31,7 +31,7 @@ Once installed, list `"codex"` in `agnos.json#agents`:
 ```json
 {
   "agents": ["codex"],
-  "rules": { "source": "./AGENTS.md" },
+  "rules": { "filename": "AGENTS.md", "root": ".", "dirs": [] },
   "mcp": [
     {
       "name": "github",
