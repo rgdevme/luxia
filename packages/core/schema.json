@@ -105,6 +105,66 @@
         "additionalProperties": false
       }
     },
+    "hooks": {
+      "type": "object",
+      "description": "Hooks registry, keyed by hook event name (e.g. \"PreToolUse\", \"SessionStart\"). Modeled on Claude Code's hook shape (the superset across agents) and intentionally permissive: a handler only needs a `type`, and unknown fields pass through so agent dialects survive. Each agent materializes this into its own format/location: Claude Code → .claude/settings.json#hooks, Codex → .codex/hooks.json (filtered to its supported events and command handlers).",
+      "propertyNames": {
+        "description": "Hook event name. Shared across agents: SessionStart, PreToolUse, PostToolUse, PermissionRequest, PreCompact, PostCompact, UserPromptSubmit, SubagentStart, SubagentStop, Stop. Claude Code adds many more (e.g. Notification, FileChanged, SessionEnd) which Codex ignores."
+      },
+      "additionalProperties": {
+        "type": "array",
+        "description": "Matcher groups for this event.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "matcher": {
+              "type": "string",
+              "description": "Filter for when the hooks fire. What it matches depends on the event: tool name (PreToolUse/PostToolUse/PermissionRequest), source (SessionStart), or trigger (PreCompact). \"\", \"*\", or omitted matches all; letters/digits/`_`/`|` are an exact or pipe-separated list; anything else is a regex."
+            },
+            "hooks": {
+              "type": "array",
+              "description": "Hook handlers run when the matcher fires.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Handler type. \"command\" is the only type portable to every agent. Claude Code also supports \"http\", \"mcp_tool\", \"prompt\", and \"agent\"; Codex supports \"command\" only and drops the rest.",
+                    "examples": ["command", "http", "mcp_tool", "prompt", "agent"]
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "For command hooks: the executable or shell line to run. Supports ${CLAUDE_PROJECT_DIR} and other placeholders on agents that resolve them."
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "For command hooks: arguments passed in exec form (no shell interpretation). Omit to run `command` through a shell."
+                  },
+                  "timeout": {
+                    "type": "number",
+                    "description": "Seconds before the handler is cancelled (default 600 on both agents)."
+                  },
+                  "statusMessage": {
+                    "type": "string",
+                    "description": "Optional UI status text shown while the handler runs."
+                  },
+                  "command_windows": {
+                    "type": "string",
+                    "description": "Codex only: Windows-specific override for `command`."
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": ["hooks"],
+          "additionalProperties": true
+        }
+      }
+    },
     "docs": {
       "type": "object",
       "description": "Docs domain configuration. Controls where documentation lives, what frontmatter metadata is required, and whether the rules/index blocks get injected back into the rules file.",

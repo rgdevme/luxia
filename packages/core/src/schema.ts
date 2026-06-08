@@ -49,6 +49,24 @@ export const mcpDeclarationSchema = z.object({
   transport: z.enum(["stdio", "sse", "http"]).optional(),
 });
 
+/**
+ * Hooks registry. Modeled on Claude Code's hook shape (the superset across
+ * agents) and intentionally permissive: each handler must carry a `type`, but
+ * all other fields pass through so agent dialects (Codex `command_windows`,
+ * Claude `if`/`once`/`async`/`statusMessage`, …) survive a round-trip.
+ */
+export const hookHandlerSchema = z.object({ type: z.string().min(1) }).passthrough();
+
+export const hookMatcherGroupSchema = z
+  .object({
+    matcher: z.string().optional(),
+    hooks: z.array(hookHandlerSchema),
+  })
+  .passthrough();
+
+/** event name (e.g. "PreToolUse") → matcher groups. */
+export const hooksConfigSchema = z.record(z.string().min(1), z.array(hookMatcherGroupSchema));
+
 export const metadataSchema = z.record(z.string(), z.string());
 
 export const docsConfigSchema = z.object({
@@ -68,6 +86,7 @@ export const agnosConfigSchema = z
     rules: rulesDeclarationSchema.optional(),
     skills: skillsConfigSchema.optional(),
     mcp: z.array(mcpDeclarationSchema).optional(),
+    hooks: hooksConfigSchema.optional(),
     docs: docsConfigSchema.optional(),
   })
   .passthrough();

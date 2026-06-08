@@ -37,6 +37,7 @@
     "@luxia/agent-codex": "workspace:*",
     "@luxia/domain-rules": "workspace:*",
     "@luxia/domain-mcp": "workspace:*",
+    "@luxia/domain-hooks": "workspace:*",
     "@luxia/domain-skills": "workspace:*",
     "@luxia/domain-docs": "workspace:*"
   }
