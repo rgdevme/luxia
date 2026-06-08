@@ -4,7 +4,6 @@ import type {
   MaterializeContext,
   ResolveContext,
   ResolvedMcp,
-  ResolvedRule,
   ResolvedSkill,
 } from "./types/public.js";
 import { resolveAgentByRef, type PluginRegistry } from "./plugin-loader.js";
@@ -221,80 +220,28 @@ export async function dispatchMcpRemoved(
   }
 }
 
-export async function dispatchRulesAdded(
-  decl: ResolvedRule,
+/**
+ * Re-materialize the rules domain for every active agent. The rules output is a
+ * set of files (root + each `dirs` entry), so there is no granular add/move/
+ * remove event — each agent's `onInitialize` receives the full resolved set and
+ * reconciles its own mirrors. Used by `agnos rules` after a config mutation.
+ */
+export async function dispatchRules(
   agents: AgentPlugin[],
   config: AgnosConfig,
   ctx: ResolveContext,
 ): Promise<void> {
-  const state: { value?: Record<string, unknown> } = {};
+  const state = await buildAgentDomainStates(config, ctx);
   for (const agent of agents) {
     const handlers = handlersFor(agent, "rules");
-    if (!handlers) continue;
-    const fn = (
-      handlers as { onAdded?: (decl: ResolvedRule, ctx: MaterializeContext) => Promise<void> }
-    ).onAdded;
-    if (fn) {
-      if (ctx.dryRun) {
-        ctx.logger.info(`would: ${agent.id}.rules.onAdded`);
-        continue;
-      }
-      await runHook(`${agent.id}.rules.onAdded`, () => fn(decl, materializeCtx(ctx, agent.id)));
+    const fn = handlers?.onInitialize;
+    if (!fn) continue;
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: ${agent.id}.rules.onInitialize`);
       continue;
     }
-    await fallbackToInit(agent, handlers, "rules", config, ctx, state);
-  }
-}
-
-export async function dispatchRulesMoved(
-  from: ResolvedRule,
-  to: ResolvedRule,
-  agents: AgentPlugin[],
-  config: AgnosConfig,
-  ctx: ResolveContext,
-): Promise<void> {
-  const state: { value?: Record<string, unknown> } = {};
-  for (const agent of agents) {
-    const handlers = handlersFor(agent, "rules");
-    if (!handlers) continue;
-    const fn = (
-      handlers as {
-        onMoved?: (from: ResolvedRule, to: ResolvedRule, ctx: MaterializeContext) => Promise<void>;
-      }
-    ).onMoved;
-    if (fn) {
-      if (ctx.dryRun) {
-        ctx.logger.info(`would: ${agent.id}.rules.onMoved`);
-        continue;
-      }
-      await runHook(`${agent.id}.rules.onMoved`, () => fn(from, to, materializeCtx(ctx, agent.id)));
-      continue;
-    }
-    await fallbackToInit(agent, handlers, "rules", config, ctx, state);
-  }
-}
-
-export async function dispatchRulesRemoved(
-  prev: ResolvedRule,
-  agents: AgentPlugin[],
-  config: AgnosConfig,
-  ctx: ResolveContext,
-): Promise<void> {
-  const state: { value?: Record<string, unknown> } = {};
-  for (const agent of agents) {
-    const handlers = handlersFor(agent, "rules");
-    if (!handlers) continue;
-    const fn = (
-      handlers as { onRemoved?: (prev: ResolvedRule, ctx: MaterializeContext) => Promise<void> }
-    ).onRemoved;
-    if (fn) {
-      if (ctx.dryRun) {
-        ctx.logger.info(`would: ${agent.id}.rules.onRemoved`);
-        continue;
-      }
-      await runHook(`${agent.id}.rules.onRemoved`, () => fn(prev, materializeCtx(ctx, agent.id)));
-      continue;
-    }
-    await fallbackToInit(agent, handlers, "rules", config, ctx, state);
+    await runHook(`${agent.id}.rules.onInitialize`, () =>
+      fn(state["rules"], materializeCtx(ctx, agent.id)),
+    );
   }
 }

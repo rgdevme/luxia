@@ -1,16 +1,18 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  AgentPlugin,
-  MaterializeContext,
-  McpDeclaration,
-  ResolvedMcp,
-  ResolvedRule,
+import type { AgentPlugin, MaterializeContext, McpDeclaration, ResolvedMcp } from "@luxia/core";
+import {
+  type AgentRuleTarget,
+  materializeRuleMirrors,
+  pruneRuleMirrors,
+  readConfigOrDefault,
+  resolveRules,
 } from "@luxia/core";
 
 const CLAUDE_RULES = "CLAUDE.md";
 const CLAUDE_MCP = ".mcp.json";
 const CLAUDE_SKILLS_DIR = path.join(".claude", "skills");
+const RULES_TARGET: AgentRuleTarget = { agentRoot: ".", agentFilename: CLAUDE_RULES };
 
 const claudeCode: AgentPlugin = {
   id: "claude-code",
@@ -21,21 +23,21 @@ const claudeCode: AgentPlugin = {
   // and that directory IS the canonical skills storage after bootstrap.
   paths: {
     skillsDir: CLAUDE_SKILLS_DIR,
+    rulesFilename: CLAUDE_RULES,
+    rulesRoot: ".",
   },
 
   handles: {
     rules: {
-      // onInitialize handles all add/move/remove via fallback in events.ts —
-      // the output is a single file (CLAUDE.md) so we just write/relink each time.
+      // Mirror every canonical rule file as a sibling `CLAUDE.md`. Receives the
+      // full resolved set, so add/move/remove all flow through here.
       async onInitialize(state, ctx) {
-        if (state) {
-          await writeRulesLink(state, ctx);
-        } else {
-          await removeRulesLink(ctx);
-        }
+        await materializeRuleMirrors(state, RULES_TARGET, ctx);
       },
       async onCleanup(ctx) {
-        await removeRulesLink(ctx);
+        const config = await readConfigOrDefault(ctx.configPath);
+        if (!config.rules) return;
+        await pruneRuleMirrors(resolveRules(config.rules, ctx), RULES_TARGET, ctx);
       },
     },
     mcp: {
@@ -55,21 +57,6 @@ const claudeCode: AgentPlugin = {
 };
 
 // ---------- single-write helpers ----------
-
-async function writeRulesLink(rule: ResolvedRule, ctx: MaterializeContext): Promise<void> {
-  const linkPath = path.join(ctx.projectRoot, CLAUDE_RULES);
-  if (path.resolve(linkPath) === path.resolve(rule.absolutePath)) return;
-  await ctx.linker.link(rule.absolutePath, linkPath, { fallback: "copy" });
-  ctx.logger.info(`CLAUDE.md → ${rule.relativeSource}`);
-}
-
-async function removeRulesLink(ctx: MaterializeContext): Promise<void> {
-  try {
-    await ctx.linker.unlink(path.join(ctx.projectRoot, CLAUDE_RULES));
-  } catch {
-    // ignore
-  }
-}
 
 async function writeMcpFile(servers: ResolvedMcp[], ctx: MaterializeContext): Promise<void> {
   const out = {

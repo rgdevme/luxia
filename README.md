@@ -57,7 +57,7 @@ A typical `agnos.json` looks like this:
 {
   "$schema": "https://unpkg.com/@luxia/core/schema.json",
   "agents": ["claude-code", "codex"],
-  "rules": { "source": "./AGENTS.md" },
+  "rules": { "filename": "AGENTS.md", "root": ".", "dirs": [] },
   "skills": {
     "sources": {
       "pdf": "github:vercel-labs/agent-skills/skills/pdf",
@@ -80,19 +80,20 @@ Run `agnos install` and the right files appear: `CLAUDE.md` symlinks to `./AGENT
 
 ## Commands at a glance
 
-| Command                     | What it does                                                |
-| --------------------------- | ----------------------------------------------------------- |
-| `agnos init`                | Set rules source plus pick agents. Idempotent.              |
-| `agnos rules [path]`        | Set or relocate the rules-source file.                      |
-| `agnos agents`              | Pick which agent plugins are active.                        |
-| `agnos agent add <id\|pkg>` | Install and activate an agent plugin.                       |
-| `agnos agent remove <id>`   | Deactivate and clean up an agent plugin's artifacts.        |
-| `agnos skill add <source>`  | Pull skills from a git repo or local directory.             |
-| `agnos skill update <name>` | Re-fetch a skill at a new commit.                           |
-| `agnos skill remove <name>` | Remove a skill.                                             |
-| `agnos mcp add <name>`      | Add an MCP server (interactive).                            |
-| `agnos mcp remove <name>`   | Remove an MCP server.                                       |
-| `agnos install`             | Re-materialize current declarations for every active agent. |
+| Command                        | What it does                                                |
+| ------------------------------ | ----------------------------------------------------------- |
+| `agnos init`                   | Set rules + pick agents. Idempotent.                        |
+| `agnos rules [path]`           | Show config, or set/relocate the root rules file.           |
+| `agnos rules add/remove <dir>` | Manage nested rule directories.                             |
+| `agnos agents`                 | Pick which agent plugins are active.                        |
+| `agnos agent add <id\|pkg>`    | Install and activate an agent plugin.                       |
+| `agnos agent remove <id>`      | Deactivate and clean up an agent plugin's artifacts.        |
+| `agnos skill add <source>`     | Pull skills from a git repo or local directory.             |
+| `agnos skill update <name>`    | Re-fetch a skill at a new commit.                           |
+| `agnos skill remove <name>`    | Remove a skill.                                             |
+| `agnos mcp add <name>`         | Add an MCP server (interactive).                            |
+| `agnos mcp remove <name>`      | Remove an MCP server.                                       |
+| `agnos install`                | Re-materialize current declarations for every active agent. |
 
 Run `agnos --help` for the full reference.
 

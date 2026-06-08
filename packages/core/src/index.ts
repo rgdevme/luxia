@@ -60,11 +60,17 @@ export {
 export { loadPlugins, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export { runDomainInitSteps, runAllDomainInitSteps } from "./commands/init-steps.js";
 export type { RunStepsOptions } from "./commands/init-steps.js";
-export { setRulesSource } from "./commands/rules.js";
-export type { SetRulesSourceOptions } from "./commands/rules.js";
+export { ensureStarterRules } from "./commands/init.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
 export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";
 export type { EnsureLinkResult } from "./fs/link.js";
+export {
+  resolveRules,
+  resolveRuleEntry,
+  materializeRuleMirrors,
+  pruneRuleMirrors,
+} from "./materialize-rules.js";
+export type { AgentRuleTarget } from "./materialize-rules.js";
 export { createRepoFetcher, gigetTarballPath } from "./resolver.js";
 export { parseSource, parseCompositeSkillRef, isProvider, SUPPORTED_PROVIDERS } from "./source.js";
 export type {
@@ -100,7 +106,6 @@ export {
   orderedDomains,
   reconcile,
   reinstate,
-  resolveRule,
   resolveSkill,
   uninstallAgent,
 } from "./orchestrator.js";
@@ -109,9 +114,7 @@ export {
   dispatchMcpAdded,
   dispatchMcpRemoved,
   dispatchMcpUpdated,
-  dispatchRulesAdded,
-  dispatchRulesMoved,
-  dispatchRulesRemoved,
+  dispatchRules,
   dispatchSkillAdded,
   dispatchSkillRemoved,
   dispatchSkillUpdated,

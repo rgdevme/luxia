@@ -21,15 +21,23 @@
     },
     "rules": {
       "type": "object",
-      "description": "Where the canonical rules file lives. Agents materialize their own rules artifacts (CLAUDE.md, AGENTS.md, etc.) by linking to this file.",
+      "description": "Where canonical rule files live. Each active agent materializes its own rule artifacts (CLAUDE.md, AGENTS.md, etc.) by mirroring every canonical file. Supports nested rule files across the directory tree.",
       "properties": {
-        "source": {
+        "filename": {
           "type": "string",
           "minLength": 1,
-          "description": "Project-relative path to the rules markdown file (default \"./AGENTS.md\")."
+          "description": "Canonical basename for every rule file (default \"AGENTS.md\"). Keep it agent-neutral — do not set it to an active agent's own output name."
+        },
+        "root": {
+          "type": "string",
+          "description": "Base directory for canonical rule sources, project-relative (default \".\"). The root rule file is <root>/<filename>. May differ from where agents read, so sources can live in e.g. ./docs while agents see mirrors at their real locations."
+        },
+        "dirs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Additional directories (relative to root) that each hold a <filename>. May contain \"..\". Defaults to [] (a single root rule file)."
         }
       },
-      "required": ["source"],
       "additionalProperties": false
     },
     "skills": {

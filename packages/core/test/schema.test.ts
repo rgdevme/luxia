@@ -17,11 +17,22 @@ describe("schemas", () => {
     expect(() => agentRefSchema.parse({ id: "zed", package: "@me/agnos-agent-zed" })).toThrow();
   });
 
-  it("rulesDeclarationSchema requires a source", () => {
-    expect(() => rulesDeclarationSchema.parse({})).toThrow();
-    expect(rulesDeclarationSchema.parse({ source: "./AGENTS.md" })).toEqual({
-      source: "./AGENTS.md",
+  it("rulesDeclarationSchema applies defaults for an empty object", () => {
+    expect(rulesDeclarationSchema.parse({})).toEqual({
+      filename: "AGENTS.md",
+      root: ".",
+      dirs: [],
     });
+  });
+
+  it("rulesDeclarationSchema accepts a full nested declaration, including '..' dirs", () => {
+    expect(
+      rulesDeclarationSchema.parse({
+        filename: "AGENTS.md",
+        root: "./docs",
+        dirs: ["./packages/a", "../shared/b"],
+      }),
+    ).toEqual({ filename: "AGENTS.md", root: "./docs", dirs: ["./packages/a", "../shared/b"] });
   });
 
   it("skillSourcesSchema accepts a name → composite-ref record", () => {

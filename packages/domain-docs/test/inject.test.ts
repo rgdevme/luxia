@@ -35,7 +35,7 @@ describe("runInject gating", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("no-ops when agnos.json#rules.source is unset", async () => {
+  it("no-ops when agnos.json#rules is unset", async () => {
     await fs.writeFile(
       path.join(root, "agnos.json"),
       JSON.stringify({ docs: { injectIndex: true, injectRules: true } }),
@@ -52,11 +52,11 @@ describe("runInject gating", () => {
     await expect(fs.access(path.join(root, "AGENTS.md"))).rejects.toThrow();
   });
 
-  it("no-ops when rules.source is set but the file does not exist", async () => {
+  it("no-ops when rules is set but the root file does not exist", async () => {
     await fs.writeFile(
       path.join(root, "agnos.json"),
       JSON.stringify({
-        rules: { source: "./AGENTS.md" },
+        rules: { filename: "AGENTS.md", root: ".", dirs: [] },
         docs: { injectIndex: true, injectRules: true },
       }),
     );
@@ -72,11 +72,11 @@ describe("runInject gating", () => {
     await expect(fs.access(path.join(root, "AGENTS.md"))).rejects.toThrow();
   });
 
-  it("injects when both rules.source is set and the file exists", async () => {
+  it("injects when rules is set and the root file exists", async () => {
     await fs.writeFile(
       path.join(root, "agnos.json"),
       JSON.stringify({
-        rules: { source: "./AGENTS.md" },
+        rules: { filename: "AGENTS.md", root: ".", dirs: [] },
         docs: { injectIndex: true, injectRules: true },
       }),
     );
@@ -97,5 +97,34 @@ describe("runInject gating", () => {
     expect(after).toContain("rule line");
     expect(after).not.toContain(">__Documentation");
     expect(after).toContain("## Trailing Section");
+  });
+
+  it("injects only into the root file with nested dirs configured", async () => {
+    await fs.writeFile(
+      path.join(root, "agnos.json"),
+      JSON.stringify({
+        rules: { filename: "AGENTS.md", root: ".", dirs: ["./packages/a"] },
+        docs: { injectIndex: true, injectRules: true },
+      }),
+    );
+    await fs.writeFile(
+      path.join(root, "AGENTS.md"),
+      "# AGENTS\n\n## Documentation Rules\n\n## Documentation Index\n",
+    );
+    const nested = path.join(root, "packages", "a", "AGENTS.md");
+    await fs.mkdir(path.dirname(nested), { recursive: true });
+    await fs.writeFile(nested, "# nested\n");
+    await fs.mkdir(path.join(root, ".docs"), { recursive: true });
+    await fs.writeFile(path.join(root, ".docs", "index.md"), "- [foo](foo.md)\n");
+    await fs.writeFile(path.join(root, ".docs", "doc-rules.md"), "rule line\n");
+
+    const ctx = ctxFor(root);
+    const cfg = await readEffectiveDocsConfig(ctx);
+    const result = await runInject(cfg, ctx);
+    expect(result.changed).toBe(true);
+
+    expect(await fs.readFile(path.join(root, "AGENTS.md"), "utf8")).toContain("- [foo](foo.md)");
+    // The nested rule file is never an injection target.
+    expect(await fs.readFile(nested, "utf8")).toBe("# nested\n");
   });
 });
