@@ -1,20 +1,24 @@
-## Branch management
-
-- `main` branch is locked.
-- When **creating a PR** Use the `GH_TOKEN` value declared in `.env.agent` in the main branch to execute the github​ cli tool `gh`.
-- Do not ever print or show the contents of any .env files.
-
 ## Coding Standards
 
-Enforced on all packages. Non-negotiable.
+Enforced repo-wide. Non-negotiable.
 
-- Package manager: `pnpm` only. Never use `npm` or `yarn`.
+### Branch management
+
+- **`main` branch is locked**: Never push to `main` directly, instead create a branch and a PR.
+- **Creating a PR**: Use the `GH_TOKEN` value declared in `.env.agent` in the main branch to execute the github​ cli tool `gh`.
+- **Using reading environmental varialbes**: Do not ever print or show the contents of any .env files or environmental variables.
+
+### Package Manager
+
+**Use `pnpm` only.**
+
+Never use other package manages, like `npm`, `yarn`, or `bun`.
 
 ### Language & module system
 
-- ESM only. Node ≥ 24.
-- Import paths use .js extension even when importing .ts (NodeNext resolution).
-- import type for types, import for runtime values. Always.
+- **ESM only**: Node ≥ 24.
+- **NodeNext resolution**: Import paths use .js extension even when importing .ts.
+- import type for types, import for runtime values.
 - No default exports except plugin entries.
 - No top-level await. No CJS.
 
@@ -23,6 +27,7 @@ Enforced on all packages. Non-negotiable.
 - End-to-end.
 - No `any` without justification.
 - Strict mode + noUncheckedIndexedAccess + verbatimModuleSyntax.
+- Interface over types.
 - Async/await throughout: no callbacks, no .then() chains.
 - Arrow functions for inline callbacks; named function declarations for module-level exports.
 - Linting & Formatting: ESLint + Prettier via shared configs. Code must be clean before committing.
@@ -30,7 +35,12 @@ Enforced on all packages. Non-negotiable.
 ### Naming
 
 - camelCase variables/functions, PascalCase types, UPPER_SNAKE constants.
-- run* for command entry points. on* for lifecycle hooks. dispatch* for event fan-out. build* for constructors. ensure* for idempotent setup. resolve* for lookups.
+- run\* for command entry points.
+- on\* for lifecycle hooks.
+- dispatch\* for event fan-out.
+- build\* for constructors.
+- ensure\* for idempotent setup.
+- resolve\* for lookups.
 - Plural names for collections (agents, not agentList).
 
 ### Comments
@@ -74,7 +84,7 @@ Enforced on all packages. Non-negotiable.
 ### Commits
 
 - Conventional multi-line messages: subject < 70 chars in imperative mood; body explains why.
-- Group related changes; split unrelated work.
+- Always group related changes logically and split unrelated work.
 - Never amend pushed commits without explicit approval. Never --no-verify.
 
 ### Principles
