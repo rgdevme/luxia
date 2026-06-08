@@ -8,11 +8,26 @@
 ## What it does
 
 - Owns the `rules` field in `agnos.json`.
-- Resolves `agnos.json#rules.source` to an absolute path and hands it to each agent's `handles.rules.onInitialize`.
-- Creates the rules file on disk if it does not exist (so a fresh project ends up with a starter `AGENTS.md`).
-- Implements `move` so `agnos rules <new-path>` can relocate the file safely.
+- Resolves the full set of canonical rule files — the root file plus every nested `dirs` entry — and hands them to each agent's `handles.rules.onInitialize` as an array.
+- Creates the root rules file on disk if it does not exist (so a fresh project ends up with a starter `AGENTS.md`); `agnos rules add <dir>` seeds nested ones.
 
-The default location is `./AGENTS.md`. Override it with `agnos rules ./docs/agents.md` or by editing `agnos.json` directly.
+Each active agent mirrors every canonical file under its own root, using its own filename — so Claude gets a `CLAUDE.md` next to each `AGENTS.md`, while Codex (which reads `AGENTS.md` natively) needs no mirror when the canonical root is `.`. Because agents walk the directory tree and concatenate what they find, agnos never concatenates — it preserves the hierarchy and mirrors each node.
+
+### Nested rules
+
+Some monorepos want rule files at several levels — `./AGENTS.md`, `./packages/a/AGENTS.md`, … List the extra directories in `dirs`. The canonical sources can also live in a separate tree (e.g. under `./docs`) to keep the codebase clean, while agents still see mirrors at the real locations:
+
+```jsonc
+{
+  "rules": {
+    "filename": "AGENTS.md",
+    "root": "./docs",
+    "dirs": ["./packages/a", "./packages/b"],
+  },
+}
+```
+
+Canonical: `./docs/packages/a/AGENTS.md`. Materialized for Codex: `./packages/a/AGENTS.md` (a symlink); for Claude: `./packages/a/CLAUDE.md`.
 
 ## Why a domain for one file?
 
@@ -30,18 +45,22 @@ pnpm add -D @luxia/domain-rules
 
 ```json
 {
-  "rules": { "source": "./AGENTS.md" }
+  "rules": { "filename": "AGENTS.md", "root": ".", "dirs": [] }
 }
 ```
 
-`source` is project-relative. The file is created on first install if missing.
+- `filename` — canonical basename for every rule file (default `AGENTS.md`). Keep it agent-neutral.
+- `root` — base directory for canonical sources (default `.`). The root file is `<root>/<filename>`.
+- `dirs` — additional directories (relative to `root`) that each hold a `<filename>`; may contain `..`. Defaults to `[]` (a single root file).
 
 ## CLI
 
-| Command              | What it does                                                                 |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `agnos rules`        | Show the current rules source.                                               |
-| `agnos rules <path>` | Set or relocate the rules source. Existing content is moved, not duplicated. |
+| Command                    | What it does                                                             |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `agnos rules`              | Show the current filename, root, and resolved rule files.                |
+| `agnos rules <path>`       | Set or relocate the **root** rule file (`root` + `filename`).            |
+| `agnos rules add <dir>`    | Add a nested rules directory, seed its `<filename>`, and re-materialize. |
+| `agnos rules remove <dir>` | Stop managing a nested directory and prune each agent's mirror for it.   |
 
 ## License
 

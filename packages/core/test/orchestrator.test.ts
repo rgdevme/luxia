@@ -322,15 +322,19 @@ describe("buildAgentDomainStates", () => {
     try {
       const ctx = stubCtx(dir);
       const config: AgnosConfig = {
-        rules: { source: "./AGENTS.md" },
+        rules: { filename: "AGENTS.md", root: ".", dirs: [] },
         mcp: [{ name: "github", command: "npx" }],
         skills: { sources: { pdf: "file:./pdf-repo/skills/pdf" } },
       };
       const state = await buildAgentDomainStates(config, ctx);
-      expect(state["rules"]).toEqual({
-        absolutePath: path.resolve(dir, "./AGENTS.md"),
-        relativeSource: "./AGENTS.md",
-      });
+      expect(state["rules"]).toEqual([
+        {
+          absolutePath: path.resolve(dir, "./AGENTS.md"),
+          relativeSource: "./AGENTS.md",
+          dir: ".",
+          filename: "AGENTS.md",
+        },
+      ]);
       expect(state["mcp"]).toEqual([{ name: "github", command: "npx" }]);
       expect((state["skills"] as { name: string }[])[0]?.name).toBe("pdf");
     } finally {
@@ -338,12 +342,12 @@ describe("buildAgentDomainStates", () => {
     }
   });
 
-  it("rules slice is undefined when no rules in config", async () => {
+  it("rules slice is an empty array when no rules in config", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-state-build-"));
     try {
       const ctx = stubCtx(dir);
       const state = await buildAgentDomainStates({}, ctx);
-      expect(state["rules"]).toBeUndefined();
+      expect(state["rules"]).toEqual([]);
       expect(state["mcp"]).toEqual([]);
       expect(state["skills"]).toEqual([]);
     } finally {

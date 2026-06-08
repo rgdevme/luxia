@@ -10,7 +10,6 @@ import type {
   McpDeclaration,
   ResolveContext,
   ResolvedMcp,
-  ResolvedRule,
   ResolvedSkill,
 } from "./types/public.js";
 import {
@@ -39,6 +38,7 @@ import { activeAgents, dispatchSkillRemoved } from "./events.js";
 import { indentedLogger } from "./logger.js";
 import { runHook } from "./hooks.js";
 import { prepareSkills } from "./skill-prepare.js";
+import { resolveRules } from "./materialize-rules.js";
 
 export interface InstallOptions {
   copyOnNoSymlink?: boolean;
@@ -204,11 +204,7 @@ export async function buildAgentDomainStates(
 ): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
 
-  if (config.rules) {
-    out["rules"] = await resolveRule(config.rules.source, ctx);
-  } else {
-    out["rules"] = undefined;
-  }
+  out["rules"] = config.rules ? resolveRules(config.rules, ctx) : [];
 
   out["mcp"] = (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[];
 
@@ -580,7 +576,7 @@ async function ensurePrivileges(
   agents: AgentPlugin[],
   opts: InstallOptions,
 ): Promise<ResolveContext | null> {
-  const needsFile = computeFileSymlinkNeed(config, agents);
+  const needsFile = computeFileSymlinkNeed(config, agents, ctx.projectRoot);
   const needsDir = computeDirSymlinkNeed(config, agents);
   const decision = await ensureSymlinkPrivileges(
     ctx,
@@ -589,13 +585,6 @@ async function ensurePrivileges(
   );
   if (!decision.proceed) return null;
   return decision.copyFallback ? rebuildContextWithCopyFallback(ctx) : ctx;
-}
-
-export async function resolveRule(source: string, ctx: ResolveContext): Promise<ResolvedRule> {
-  return {
-    absolutePath: path.resolve(ctx.projectRoot, source),
-    relativeSource: source,
-  };
 }
 
 export async function resolveSkill(name: string, ctx: ResolveContext): Promise<ResolvedSkill> {
@@ -638,6 +627,78 @@ export async function reconcile(
     await fs.rm(full, { recursive: true, force: true });
     ctx.logger.info(`reconcile: removed orphan ${path.relative(ctx.projectRoot, full)}`);
   }
+
+  await sweepRuleOrphans(config, agents, ctx);
+}
+
+const RULE_SWEEP_IGNORES = new Set(["node_modules", ".git", ".agnos", "dist"]);
+
+/**
+ * Best-effort, symlink-only pruning of stale agent rule mirrors left behind by
+ * hand edits to `agnos.json` (e.g. a `dirs` entry removed without
+ * `agnos rules remove`). For each active agent we walk its materialization root
+ * for files named after the agent's rule filename that are symlinks resolving
+ * under the canonical rules root but no longer wanted. Copy-mode mirrors are
+ * plain files and intentionally out of scope here — remove those via
+ * `agnos rules remove`.
+ */
+async function sweepRuleOrphans(
+  config: AgnosConfig,
+  agents: AgentPlugin[],
+  ctx: ResolveContext,
+): Promise<void> {
+  if (!config.rules) return;
+  const entries = resolveRules(config.rules, ctx);
+  const canonRoot = path.resolve(ctx.projectRoot, config.rules.root ?? ".");
+  for (const agent of agents) {
+    const agentFilename = agent.paths?.rulesFilename;
+    if (!agentFilename) continue;
+    const agentRoot = path.resolve(ctx.projectRoot, agent.paths?.rulesRoot ?? ".");
+    const desired = new Set(
+      entries.map((r) => path.resolve(path.join(agentRoot, r.dir, agentFilename))),
+    );
+    for (const linkPath of await findRuleMirrorSymlinks(agentRoot, agentFilename)) {
+      if (desired.has(path.resolve(linkPath))) continue;
+      let real: string;
+      try {
+        real = await fs.realpath(linkPath);
+      } catch {
+        continue; // broken link we didn't author — leave it
+      }
+      const rel = path.relative(canonRoot, real);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) continue; // not pointing into our tree
+      if (ctx.dryRun) {
+        ctx.logger.info(`would: reconcile orphan ${path.relative(ctx.projectRoot, linkPath)}`);
+        continue;
+      }
+      await ctx.linker.unlink(linkPath);
+      ctx.logger.info(`reconcile: removed orphan ${path.relative(ctx.projectRoot, linkPath)}`);
+    }
+  }
+}
+
+async function findRuleMirrorSymlinks(root: string, filename: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    let dirents;
+    try {
+      dirents = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of dirents) {
+      const full = path.join(dir, e.name);
+      if (e.isSymbolicLink()) {
+        if (e.name === filename) out.push(full);
+        continue; // never follow symlinked dirs
+      }
+      if (e.isDirectory() && !RULE_SWEEP_IGNORES.has(e.name)) {
+        await walk(full);
+      }
+    }
+  }
+  await walk(root);
+  return out;
 }
 
 async function findOrphans(dir: string, declared: ReadonlySet<string>): Promise<string[]> {
@@ -651,13 +712,26 @@ async function findOrphans(dir: string, declared: ReadonlySet<string>): Promise<
   return entries.filter((name) => !declared.has(name));
 }
 
-function computeFileSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): boolean {
-  if (agents.length === 0) return false;
-  const rulesSource = config.rules?.source ?? "./AGENTS.md";
-  const isDefault = normalize(rulesSource) === "./AGENTS.md";
+function computeFileSymlinkNeed(
+  config: AgnosConfig,
+  agents: AgentPlugin[],
+  projectRoot: string,
+): boolean {
+  if (agents.length === 0 || !config.rules) return false;
+  const { root = ".", filename = "AGENTS.md" } = config.rules;
+  const canonRoot = path.resolve(projectRoot, root);
   for (const a of agents) {
-    if (a.id === "claude-code") return true;
-    if (a.id === "codex" && !isDefault) return true;
+    const agentFilename = a.paths?.rulesFilename;
+    if (!agentFilename) {
+      // Custom rules agent that owns its own materialization — assume it may
+      // need file symlinks so we probe/prompt for the capability.
+      if (a.handles?.rules) return true;
+      continue;
+    }
+    // A mirror is a symlink whenever its path differs from the canonical, i.e.
+    // the agent's filename or root differs. (The shared `dir` cancels out.)
+    const agentRoot = path.resolve(projectRoot, a.paths?.rulesRoot ?? ".");
+    if (agentFilename !== filename || agentRoot !== canonRoot) return true;
   }
   return false;
 }
@@ -669,11 +743,6 @@ function computeDirSymlinkNeed(config: AgnosConfig, agents: AgentPlugin[]): bool
   // own their own materialization and may also need dir symlinks; we treat
   // their presence as also requiring the capability.
   return agents.some((a) => Boolean(a.paths?.skillsDir) || Boolean(a.handles?.skills));
-}
-
-function normalize(p: string): string {
-  const trimmed = p.replace(/\\/g, "/");
-  return trimmed.startsWith("./") ? trimmed : `./${trimmed}`;
 }
 
 export { resolveAgentByRef, refToId };

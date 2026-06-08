@@ -3,7 +3,18 @@ import { z } from "zod";
 export const agentRefSchema = z.string().min(1);
 
 export const rulesDeclarationSchema = z.object({
-  source: z.string().min(1),
+  /** Canonical basename for every rule file. Agent-neutral by convention. */
+  filename: z.string().min(1).default("AGENTS.md"),
+  /** Base dir for canonical sources. The root file is `<root>/<filename>`. */
+  root: z
+    .string()
+    .transform((s) => {
+      const t = s.replace(/\\/g, "/").trim();
+      return t === "" ? "." : t;
+    })
+    .default("."),
+  /** Additional dirs (relative to `root`) that each hold a `<filename>`. May contain "..". */
+  dirs: z.array(z.string().min(1)).default([]),
 });
 
 /** Local-name pattern for `agnos.json#skills` keys. */

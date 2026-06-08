@@ -26,7 +26,7 @@ describe("config", () => {
     const config = {
       $schema: "https://agnos.dev/schema/v0.json",
       agents: ["claude-code"],
-      rules: { source: "./AGENTS.md" },
+      rules: { filename: "AGENTS.md", root: ".", dirs: [] },
       skills: { sources: { pdf: "github:foo/bar/skills/pdf" } },
       mcp: [],
     };
@@ -50,7 +50,7 @@ describe("config", () => {
   it("preserves user-added custom keys", async () => {
     const config = {
       agents: [],
-      rules: { source: "./AGENTS.md" },
+      rules: { filename: "AGENTS.md", root: ".", dirs: [] },
       prompts: [{ name: "user-defined-domain", source: "file:./prompts/a.md" }],
     };
     await writeConfig(configPath, config);

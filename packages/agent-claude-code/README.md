@@ -9,11 +9,11 @@
 
 This plugin teaches agnos how to materialize project configuration into the files Claude Code reads:
 
-| Domain | File written      | Behavior                                                                                                                                                                 |
-| ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| rules  | `CLAUDE.md`       | Symlinked to the rules source declared in `agnos.json#rules.source` (defaults to `./AGENTS.md`). Falls back to a copy on systems without symlink privileges.             |
-| mcp    | `.mcp.json`       | Regenerated from `agnos.json#mcp` on every install. Supports `stdio`, `sse`, and `http` transports. Can also reverse-import an existing `.mcp.json` on first activation. |
-| skills | `.claude/skills/` | Symlinked to `.agnos/skills/` (or whatever `paths.skillsDir` resolves to) so every current and future skill is picked up through a single directory-level link.          |
+| Domain | File written      | Behavior                                                                                                                                                                                 |
+| ------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| rules  | `CLAUDE.md`       | A `CLAUDE.md` mirror is symlinked next to every canonical rule file (the root file plus each `agnos.json#rules.dirs` entry). Falls back to a copy on systems without symlink privileges. |
+| mcp    | `.mcp.json`       | Regenerated from `agnos.json#mcp` on every install. Supports `stdio`, `sse`, and `http` transports. Can also reverse-import an existing `.mcp.json` on first activation.                 |
+| skills | `.claude/skills/` | Symlinked to `.agnos/skills/` (or whatever `paths.skillsDir` resolves to) so every current and future skill is picked up through a single directory-level link.                          |
 
 ## Install
 
@@ -31,7 +31,7 @@ Once installed, list `"claude-code"` in `agnos.json#agents`:
 ```json
 {
   "agents": ["claude-code"],
-  "rules": { "source": "./AGENTS.md" },
+  "rules": { "filename": "AGENTS.md", "root": ".", "dirs": [] },
   "mcp": [
     {
       "name": "github",
