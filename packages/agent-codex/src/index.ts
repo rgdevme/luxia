@@ -11,10 +11,10 @@ import type {
 } from "@luxia/core";
 import {
   type AgentRuleTarget,
-  materializeRuleMirrors,
-  pruneRuleMirrors,
-  readConfigOrDefault,
-  resolveRules,
+  createRuleMirrorHandler,
+  importMcpServers,
+  pickEnv,
+  pickStringArray,
 } from "@luxia/core";
 
 const ROOT_AGENTS = "AGENTS.md";
@@ -51,19 +51,10 @@ const codex: AgentPlugin = {
   },
 
   handles: {
-    rules: {
-      // Codex reads AGENTS.md walking up the tree. When the canonical filename
-      // and root match (root="."), every entry is in place and no symlink is
-      // created; otherwise a sibling AGENTS.md mirror points at the canonical.
-      async onInitialize(state, ctx) {
-        await materializeRuleMirrors(state, RULES_TARGET, ctx);
-      },
-      async onCleanup(ctx) {
-        const config = await readConfigOrDefault(ctx.configPath);
-        if (!config.rules) return;
-        await pruneRuleMirrors(resolveRules(config.rules, ctx), RULES_TARGET, ctx);
-      },
-    },
+    // Codex reads AGENTS.md walking up the tree. When the canonical filename
+    // and root match (root="."), every entry is in place and no symlink is
+    // created; otherwise a sibling AGENTS.md mirror points at the canonical.
+    rules: createRuleMirrorHandler(RULES_TARGET),
     mcp: {
       async onInitialize(state, ctx) {
         await writeCodexConfig(state, ctx);
@@ -186,30 +177,13 @@ async function writeCodexConfig(servers: ResolvedMcp[], ctx: MaterializeContext)
 }
 
 async function importCodexConfig(ctx: MaterializeContext): Promise<McpDeclaration[]> {
-  const file = path.join(ctx.projectRoot, CODEX_CONFIG);
-  let raw: string;
-  try {
-    raw = await fs.readFile(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    ctx.logger.warn(`could not read ${CODEX_CONFIG}: ${(err as Error).message}`);
-    return [];
-  }
-  let parsed: unknown;
-  try {
-    parsed = TOML.parse(raw);
-  } catch {
-    ctx.logger.warn(`${CODEX_CONFIG} is not valid TOML; skipping import`);
-    return [];
-  }
-  const servers = (parsed as { mcp_servers?: unknown })?.mcp_servers;
-  if (!servers || typeof servers !== "object") return [];
-  const out: McpDeclaration[] = [];
-  for (const [name, entry] of Object.entries(servers as Record<string, unknown>)) {
-    const decl = fromCodexServer(name, entry);
-    if (decl) out.push(decl);
-  }
-  return out;
+  return await importMcpServers(ctx, {
+    relativePath: CODEX_CONFIG,
+    format: "TOML",
+    parse: (raw) => TOML.parse(raw),
+    containerKey: "mcp_servers",
+    fromEntry: fromCodexServer,
+  });
 }
 
 function fromCodexServer(name: string, entry: unknown): McpDeclaration | undefined {
@@ -226,21 +200,6 @@ function fromCodexServer(name: string, entry: unknown): McpDeclaration | undefin
   const env = pickEnv(e["env"]);
   if (env) decl.env = env;
   return decl;
-}
-
-function pickStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out = value.filter((x): x is string => typeof x === "string");
-  return out.length === value.length ? out : undefined;
-}
-
-function pickEnv(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof v === "string") out[k] = v;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function toCodexServer(decl: ResolvedMcp): Record<string, unknown> {

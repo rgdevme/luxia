@@ -9,10 +9,10 @@ import type {
 } from "@luxia/core";
 import {
   type AgentRuleTarget,
-  materializeRuleMirrors,
-  pruneRuleMirrors,
-  readConfigOrDefault,
-  resolveRules,
+  createRuleMirrorHandler,
+  importMcpServers,
+  pickEnv,
+  pickStringArray,
 } from "@luxia/core";
 
 const CLAUDE_RULES = "CLAUDE.md";
@@ -35,18 +35,9 @@ const claudeCode: AgentPlugin = {
   },
 
   handles: {
-    rules: {
-      // Mirror every canonical rule file as a sibling `CLAUDE.md`. Receives the
-      // full resolved set, so add/move/remove all flow through here.
-      async onInitialize(state, ctx) {
-        await materializeRuleMirrors(state, RULES_TARGET, ctx);
-      },
-      async onCleanup(ctx) {
-        const config = await readConfigOrDefault(ctx.configPath);
-        if (!config.rules) return;
-        await pruneRuleMirrors(resolveRules(config.rules, ctx), RULES_TARGET, ctx);
-      },
-    },
+    // Mirror every canonical rule file as a sibling `CLAUDE.md`. Receives the
+    // full resolved set, so add/move/remove all flow through here.
+    rules: createRuleMirrorHandler(RULES_TARGET),
     mcp: {
       // Same single-file regeneration story; onAdded/onUpdated/onRemoved fall
       // back to onInitialize with the full mcp[] state.
@@ -164,30 +155,13 @@ async function removeMcpFile(ctx: MaterializeContext): Promise<void> {
 }
 
 async function importMcpFile(ctx: MaterializeContext): Promise<McpDeclaration[]> {
-  const file = path.join(ctx.projectRoot, CLAUDE_MCP);
-  let raw: string;
-  try {
-    raw = await fs.readFile(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    ctx.logger.warn(`could not read ${CLAUDE_MCP}: ${(err as Error).message}`);
-    return [];
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    ctx.logger.warn(`${CLAUDE_MCP} is not valid JSON; skipping import`);
-    return [];
-  }
-  const servers = (parsed as { mcpServers?: unknown })?.mcpServers;
-  if (!servers || typeof servers !== "object") return [];
-  const out: McpDeclaration[] = [];
-  for (const [name, entry] of Object.entries(servers as Record<string, unknown>)) {
-    const decl = fromClaudeServer(name, entry);
-    if (decl) out.push(decl);
-  }
-  return out;
+  return await importMcpServers(ctx, {
+    relativePath: CLAUDE_MCP,
+    format: "JSON",
+    parse: (raw) => JSON.parse(raw),
+    containerKey: "mcpServers",
+    fromEntry: fromClaudeServer,
+  });
 }
 
 function fromClaudeServer(name: string, entry: unknown): McpDeclaration | undefined {
@@ -210,21 +184,6 @@ function fromClaudeServer(name: string, entry: unknown): McpDeclaration | undefi
   const env = pickEnv(e["env"]);
   if (env) decl.env = env;
   return decl;
-}
-
-function pickStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out = value.filter((x): x is string => typeof x === "string");
-  return out.length === value.length ? out : undefined;
-}
-
-function pickEnv(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof v === "string") out[k] = v;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function toClaudeServer(decl: ResolvedMcp): Record<string, unknown> {
