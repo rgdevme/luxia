@@ -55,10 +55,15 @@ jobs:
             major) PNPM_BUMP=major ;;
             *) echo "::error::Unknown bump type '$BUMP'"; exit 1 ;;
           esac
-          pnpm -r --filter "./packages/*" exec pnpm version "$PNPM_BUMP" --no-git-tag-version
-          VERSION=$(node -p "require('./packages/core/package.json').version")
+          # Unify every package to the SAME target version instead of bumping
+          # each from its own current version. The target is the highest
+          # version across the workspace, bumped once — so packages that drift
+          # apart in a partial release re-converge here rather than diverging
+          # further (e.g. 0.0.8 -> 0.0.9 while a sibling goes 0.0.9 -> 0.0.10).
+          VERSION=$(node packages/agnos/scripts/next-version.mjs "$PNPM_BUMP")
+          pnpm -r --filter "./packages/*" exec pnpm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Bumped to v$VERSION"
+          echo "Unified all packages to v$VERSION"
 
       - name: Refresh lockfile after version bump
         run: pnpm install --no-frozen-lockfile
@@ -95,10 +100,32 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           shopt -s nullglob
+          # Attempt every tarball, then fail once at the end. This keeps a
+          # single bad package from aborting the loop and leaving a partial
+          # release (e.g. 5 packages bumped, 3 left on the old version).
+          # Re-publishing an already-published version is treated as a skip,
+          # so a re-run after a partial failure is idempotent.
+          failed=()
           for tgz in .release-tarballs/*.tgz; do
-            echo "publishing $tgz"
-            npm publish "$tgz" --access public --provenance
+            echo "::group::publishing $tgz"
+            if out=$(pnpm publish "$tgz" --access public --provenance --no-git-checks 2>&1); then
+              echo "$out"
+              echo "published $tgz"
+            else
+              echo "$out"
+              if grep -qiE 'EPUBLISHCONFLICT|cannot publish over|previously published|already published' <<<"$out"; then
+                echo "::notice::version already on the registry — skipping $tgz"
+              else
+                echo "::error::failed to publish $tgz"
+                failed+=("$tgz")
+              fi
+            fi
+            echo "::endgroup::"
           done
+          if (( ${#failed[@]} )); then
+            echo "::error::Publish failed for: ${failed[*]}"
+            exit 1
+          fi
 
       - name: Commit, tag, and push
         env:
