@@ -75,6 +75,12 @@ export {
   pruneRuleMirrors,
 } from "./materialize-rules.js";
 export type { AgentRuleTarget } from "./materialize-rules.js";
+export {
+  createRuleMirrorHandler,
+  importMcpServers,
+  pickEnv,
+  pickStringArray,
+} from "./agent-helpers.js";
 export { createRepoFetcher, gigetTarballPath } from "./resolver.js";
 export { parseSource, parseCompositeSkillRef, isProvider, SUPPORTED_PROVIDERS } from "./source.js";
 export type {
