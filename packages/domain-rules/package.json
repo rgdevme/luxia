@@ -1,6 +1,6 @@
 {
   "name": "@luxia/domain-rules",
-  "version": "0.0.8",
+  "version": "0.0.10",
   "description": "Agnos rules domain plugin",
   "type": "module",
   "license": "MIT",
