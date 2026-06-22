@@ -108,12 +108,12 @@ jobs:
           failed=()
           for tgz in .release-tarballs/*.tgz; do
             echo "::group::publishing $tgz"
-            if out=$(npm publish "$tgz" --access public --provenance 2>&1); then
+            if out=$(pnpm publish "$tgz" --access public --provenance --no-git-checks 2>&1); then
               echo "$out"
               echo "published $tgz"
             else
               echo "$out"
-              if grep -qiE 'EPUBLISHCONFLICT|cannot publish over|previously published' <<<"$out"; then
+              if grep -qiE 'EPUBLISHCONFLICT|cannot publish over|previously published|already published' <<<"$out"; then
                 echo "::notice::version already on the registry — skipping $tgz"
               else
                 echo "::error::failed to publish $tgz"
