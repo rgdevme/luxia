@@ -83,7 +83,7 @@ export async function importMcpServers(
     return [];
   }
   const servers = (parsed as Record<string, unknown> | null)?.[opts.containerKey];
-  if (!servers || typeof servers !== "object") return [];
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) return [];
   const out: McpDeclaration[] = [];
   for (const [name, entry] of Object.entries(servers as Record<string, unknown>)) {
     const decl = opts.fromEntry(name, entry);
