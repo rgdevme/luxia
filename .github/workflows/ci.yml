@@ -2,12 +2,8 @@ name: ci
 
 on:
   pull_request:
-    paths:
-      - "packages/**"
   push:
     branches: [main]
-    paths:
-      - "packages/**"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -16,8 +12,6 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    env:
-      TURBO_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -27,15 +21,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-
-      - name: Restore turbo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-${{ github.ref_name }}-
-            turbo-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -58,7 +43,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: packages-dist
-          path: packages/*/dist
+          name: dist
+          path: dist
           if-no-files-found: ignore
           retention-days: 7

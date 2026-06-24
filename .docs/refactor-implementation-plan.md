@@ -46,16 +46,16 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** one package, one build, today's behavior unchanged. Green at the end.
 
-- [ ] Scaffold `src/` tree: `core/`, `domains/{docs,rules,skills,mcp,hooks}/`, `agents/{claude-code,codex}/` (kept as plugins for now; adapters land M3), `fs/`, plus `cli.ts`, `index.ts`, `registry.ts`, `templates/`.
-- [ ] `git mv` package sources into the tree (preserve history); commit in chunks (core, domains, agents, templates, config).
-- [ ] Rewrite the ~44 `@luxia/core`/`@luxia/core/fs` imports across ~29 files to relative paths, keeping `.js` specifiers.
-- [ ] Replace `plugin-loader.ts` node_modules scan with a static `registry.ts` (`BUILTIN_DOMAINS`, `BUILTIN_AGENTS`); keep the `loadPlugins({projectRoot,logger})` signature; assign each built-in a synthetic stable `packageName` (used by `agentsByPackage`/`resolveAgentByRef`/`refToId`). Delete `AGNOS_BUNDLE_ROOT`, `PluginManifest`, the `bundle` PluginSource, and collision-by-package machinery.
-- [ ] One root `package.json` (`name: @luxia/agnos`, `bin: ./dist/cli.js`, merged runtime deps: `@inquirer/prompts`, `@iarna/toml`, `chokidar`, `giget`, `gray-matter`, `js-yaml`, `minimist`, `picomatch`, `zod`); drop peerDeps + `workspace:*`.
-- [ ] One `tsconfig.json` (rootDir `src`, outDir `dist`, NodeNext, strict); one `tsup.config.ts` (entries `cli`+`index`, shebang on `cli`, **copy `templates/` + `schema.json` into `dist`**); one `vitest.config.ts`.
-- [ ] Delete `pnpm-workspace.yaml`, `turbo.json`, `.turbo/`, `tsup.base.ts`, all per-package `package.json`/`tsconfig.json`/`tsup.config.ts`, and `packages/agnos/{bin,scripts}` (incl. `next-version.mjs`, `check-versions.mjs`).
-- [ ] Merge `packages/*/test` → `test/`; fix `plugin-loader.test.ts` bundle/collision cases (removed concepts); resolve same-named test collisions.
-- [ ] Rewrite `ci.yml` (drop turbo cache + workspace fan-out; single install→format→lint→typecheck→test→build; update `paths:` triggers off `packages/**`) and `release.yml` (single `pnpm version <bump>` + one `pnpm publish --provenance`; remove lockstep bump, next/check-versions, per-package pack/publish loop). **No publish in M1.**
-- [ ] Add a test that exercises `getStarterContent()` (rules) and the docs template reads from the **built `dist`**, verifying `new URL("../templates/…", import.meta.url)` offsets survive the emitted layout. _(Highest-risk item.)_
+- [x] Scaffold `src/` tree: `core/`, `domains/{docs,rules,skills,mcp,hooks}/`, `agents/{claude-code,codex}/` (kept as plugins for now; adapters land M3), `fs/`, plus `cli.ts`, `index.ts`, `registry.ts`, `templates/`.
+- [x] `git mv` package sources into the tree (preserve history); commit in chunks (core, domains, agents, templates, config).
+- [x] Rewrite the ~44 `@luxia/core`/`@luxia/core/fs` imports across ~29 files to relative paths, keeping `.js` specifiers.
+- [x] Replace `plugin-loader.ts` node_modules scan with a static `registry.ts` (`BUILTIN_DOMAINS`, `BUILTIN_AGENTS`); keep the `loadPlugins({projectRoot,logger})` signature; assign each built-in a synthetic stable `packageName` (used by `agentsByPackage`/`resolveAgentByRef`/`refToId`). Delete `AGNOS_BUNDLE_ROOT`, `PluginManifest`, the `bundle` PluginSource, and collision-by-package machinery.
+- [x] One root `package.json` (`name: @luxia/agnos`, `bin: ./dist/cli.js`, merged runtime deps: `@inquirer/prompts`, `@iarna/toml`, `chokidar`, `giget`, `gray-matter`, `js-yaml`, `minimist`, `picomatch`, `zod`); drop peerDeps + `workspace:*`.
+- [x] One `tsconfig.json` (rootDir `src`, outDir `dist`, NodeNext, strict); one `tsup.config.ts` (entries `cli`+`index`, shebang on `cli`, **copy `templates/` + `schema.json` into `dist`**); one `vitest.config.ts`.
+- [x] Delete `pnpm-workspace.yaml`, `turbo.json`, `.turbo/`, `tsup.base.ts`, all per-package `package.json`/`tsconfig.json`/`tsup.config.ts`, and `packages/agnos/{bin,scripts}` (incl. `next-version.mjs`, `check-versions.mjs`).
+- [x] Merge `packages/*/test` → `test/`; fix `plugin-loader.test.ts` bundle/collision cases (removed concepts); resolve same-named test collisions.
+- [x] Rewrite `ci.yml` (drop turbo cache + workspace fan-out; single install→format→lint→typecheck→test→build; update `paths:` triggers off `packages/**`) and `release.yml` (single `pnpm version <bump>` + one `pnpm publish --provenance`; remove lockstep bump, next/check-versions, per-package pack/publish loop). **No publish in M1.**
+- [x] Add a test that exercises `getStarterContent()` (rules) and the docs template reads from the **built `dist`**, verifying `new URL("../templates/…", import.meta.url)` offsets survive the emitted layout. _(Highest-risk item.)_
 
 **Gate:** `pnpm build/typecheck/test/lint` green; `node dist/cli.js --help`, `init`, `install` behave exactly as pre-consolidation.
 
