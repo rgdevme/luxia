@@ -12,6 +12,36 @@ Key file references (current → target): `packages/core/src/*` → `src/core/*`
 
 ---
 
+## Branching protocol
+
+This refactor is executed as **stacked branches — one per milestone** — so each milestone can be reviewed in isolation. The autonomous run MUST follow this exactly.
+
+- **Base:** `refactor/single-package` holds only the spec + this plan. Never commit milestone work to it, and never touch `main`.
+- **One branch per milestone**, each branched off the **previous** milestone's branch (M1 off the base):
+
+  | Milestone | Branch                      | Branched from               |
+  | --------- | --------------------------- | --------------------------- |
+  | M1        | `refactor/m1-consolidation` | `refactor/single-package`   |
+  | M2        | `refactor/m2-schema`        | `refactor/m1-consolidation` |
+  | M3        | `refactor/m3-agents`        | `refactor/m2-schema`        |
+  | M4        | `refactor/m4-rules`         | `refactor/m3-agents`        |
+  | M5        | `refactor/m5-docs`          | `refactor/m4-rules`         |
+  | M6        | `refactor/m6-skills`        | `refactor/m5-docs`          |
+  | M7        | `refactor/m7-mcp-hooks`     | `refactor/m6-skills`        |
+  | M8        | `refactor/m8-cli-watch`     | `refactor/m7-mcp-hooks`     |
+  | M9        | `refactor/m9-release`       | `refactor/m8-cli-watch`     |
+
+- **Resume rule (run at the start of every turn):** list branches matching `refactor/m*`; the highest-numbered one is the current milestone.
+  - None exist → create `refactor/m1-consolidation` off `refactor/single-package` and start M1.
+  - Current milestone's **gate passes** → create the next milestone's branch off it and start that milestone.
+  - Otherwise → stay on the current branch and continue its unchecked checklist items.
+- **Within a milestone:** commit in logical chunks (never one giant commit); tick this plan's checkboxes on the milestone branch as items complete, committing those edits too; run the milestone **gate** before advancing.
+- **Never** rebase, squash, or merge across milestone branches (preserve reviewable per-milestone history), and **do not push** — branches stay local for review unless explicitly asked.
+- **If a gate cannot be met** after a few honest attempts, STOP and report the blocker rather than working around it or skipping ahead.
+- Review later: `git diff refactor/m{N-1}-…..refactor/mN-…` (or a PR of each branch onto its parent) shows exactly that milestone's work.
+
+---
+
 ## M1 — Single-package consolidation (behavior-preserving)
 
 **Goal:** one package, one build, today's behavior unchanged. Green at the end.
