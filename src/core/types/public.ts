@@ -9,6 +9,8 @@ export type AgentRef = string;
 
 export interface AgnosConfig {
   $schema?: string;
+  /** Required on disk (see config.ts); optional here so in-memory literals stay terse. */
+  schemaVersion?: number;
   agents?: AgentRef[];
   rules?: RulesDeclaration;
   skills?: SkillsConfig;
@@ -36,6 +38,10 @@ export interface SkillLockEntry {
   computedHash: string;
   /** ISO timestamp of when this hash was last computed. Informational. */
   resolvedAt: string;
+  /** Upstream commit the skill resolved to (used by the `version` freshness check). */
+  resolvedCommit?: string;
+  /** Tracked symbolic ref (branch/tag) the skill follows. */
+  ref?: string;
 }
 
 export interface LockFile {
@@ -45,12 +51,11 @@ export interface LockFile {
 }
 
 export interface RulesDeclaration {
-  /** Canonical basename for every rule file. Defaults to "AGENTS.md". */
-  filename: string;
-  /** Base dir for canonical sources. The root file is `<root>/<filename>`. Defaults to ".". */
-  root: string;
-  /** Additional dirs (relative to `root`) that each hold a `<filename>`. May contain "..". */
-  dirs: string[];
+  /**
+   * Map of canonical rules file → injectable fragment files. The rules domain
+   * injects each fragment as a titled section into its canonical file.
+   */
+  files: Record<string, string[]>;
 }
 
 export interface McpDeclaration {
@@ -65,34 +70,36 @@ export interface McpDeclaration {
 // ---------- Hooks domain ----------
 
 /**
- * A single hook handler. The structure mirrors Claude Code's hook entry — the
- * superset across agents: `type` is required (e.g. "command") and all other
- * fields are passed through verbatim so agent-specific keys (Codex's
- * `command_windows`, Claude's `if`/`once`/`async`/`statusMessage`, …) survive a
- * round-trip through the canonical registry.
+ * Closed, normalized vocabulary of hook events. Each agent adapter maps the
+ * subset it supports and skips the rest.
  */
-export interface HookHandler {
-  type: string;
-  [key: string]: unknown;
-}
+export type HookEvent =
+  | "PreToolUse"
+  | "PostToolUse"
+  | "UserPromptSubmit"
+  | "Notification"
+  | "Stop"
+  | "SubagentStop"
+  | "PreCompact"
+  | "SessionStart"
+  | "SessionEnd";
 
 /**
- * A matcher group: a set of hook handlers gated by an optional `matcher`. What
- * the matcher filters depends on the event (tool name, source, trigger type).
+ * A single hook entry — a flat, strict 5-field shape. Agents render it into
+ * their native format (regrouping by event/matcher as needed). `message` is
+ * user-facing status text; agents without an equivalent ignore it. Identity for
+ * dedup/removal is `(event, matcher, command)`.
  */
-export interface HookMatcherGroup {
+export interface HookEntry {
+  event: HookEvent;
   matcher?: string;
-  hooks: HookHandler[];
-  [key: string]: unknown;
+  type: "command";
+  command: string;
+  message?: string;
 }
 
-/**
- * The canonical hooks registry stored under `agnos.json#hooks`: a map of hook
- * event name (e.g. "PreToolUse", "SessionStart") to its matcher groups. Agents
- * materialize this into their own native format and location (Claude Code →
- * `.claude/settings.json#hooks`, Codex → `.codex/hooks.json`).
- */
-export type HooksDeclaration = Record<string, HookMatcherGroup[]>;
+/** The canonical hooks registry stored under `agnos.json#hooks`: a flat array. */
+export type HooksDeclaration = HookEntry[];
 
 export interface ResolvedRule {
   /** Absolute path to the canonical source file (`<root>/<dir>/<filename>`). */
@@ -458,4 +465,99 @@ export interface AgentPlugin {
 export interface PluginManifest {
   type: "agent" | "domain";
   id: string;
+}
+
+// ---------- v0.1 contracts (defined here; consumed in M3–M8) ----------
+
+export type FlagType = "boolean" | "string";
+
+/** A declared CLI flag. Global flags are declared once; commands add their own. */
+export interface FlagSpec {
+  name: string;
+  type: FlagType;
+  alias?: string;
+  description: string;
+  default?: boolean | string;
+}
+
+/** A declared positional argument. */
+export interface ArgSpec {
+  name: string;
+  required: boolean;
+  variadic?: boolean;
+  description: string;
+}
+
+/** Normalized global flags every command receives, plus any command-local flags. */
+export interface ParsedFlags {
+  dry: boolean;
+  once: boolean;
+  quiet: boolean;
+  help: boolean;
+  init: boolean;
+  yes: boolean;
+  [local: string]: unknown;
+}
+
+export interface RunContext extends ResolveContext {
+  flags: ParsedFlags;
+}
+
+export interface CommandContext extends ResolveContext {
+  args: string[];
+  flags: ParsedFlags;
+}
+
+/** A declared subcommand exposed under `agnos <domain> <name>`. */
+export interface CommandSpec {
+  name: string;
+  description: string;
+  args?: ArgSpec[];
+  flags?: FlagSpec[];
+  run(ctx: CommandContext): Promise<void>;
+}
+
+export interface DomainRunOptions {
+  dry: boolean;
+  once: boolean;
+  quiet: boolean;
+  interactive: boolean;
+}
+
+/** Handle for a running domain watch process. */
+export interface DomainRunHandle {
+  done: Promise<void>;
+  close(): Promise<void>;
+}
+
+/**
+ * A domain in the writer/reader model. Config-writer domains manage their slice
+ * of `agnos.json`; the single config-reader domain (`agents`) renders per-agent
+ * files. `run` is the watch/once process; `commands` are the subcommands.
+ */
+export interface Domain {
+  id: string;
+  description: string;
+  kind: "writer" | "reader";
+  priority: number;
+  run?(opts: DomainRunOptions, ctx: RunContext): Promise<DomainRunHandle | undefined>;
+  initSteps?: InitStep[];
+  commands?: Record<string, CommandSpec>;
+}
+
+/**
+ * A per-agent adapter owned by the `agents` domain. Renders resolved config
+ * slices into the agent's native files, scrapes them back for migrate/import,
+ * and declares the output paths it owns (for shared-artifact-aware cleanup).
+ */
+export interface AgentAdapter {
+  id: string;
+  displayName: string;
+  paths?: AgentPaths;
+  /** Render a resolved slice (keyed by domain id) into this agent's native files. */
+  render?: Record<string, (state: unknown, ctx: MaterializeContext) => Promise<void>>;
+  /** Scrape this agent's native files back into agnos.json declarations (keyed by domain id). */
+  scrape?: Record<string, (ctx: MaterializeContext) => Promise<unknown>>;
+  /** Project-relative output paths this agent owns, used to avoid deleting shared artifacts. */
+  claims?(ctx: MaterializeContext): string[] | Promise<string[]>;
 }

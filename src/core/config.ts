@@ -1,13 +1,14 @@
 import fs from "node:fs/promises";
 import type { AgnosConfig } from "./types/public.js";
-import { agnosConfigSchema } from "./schema.js";
+import { agnosConfigSchema, SCHEMA_VERSION } from "./schema.js";
 
-export const SCHEMA_URL = "https://unpkg.com/@luxia/core/schema.json";
+export const SCHEMA_URL = "https://unpkg.com/@luxia/agnos/schema.json";
 
 export const DEFAULT_CONFIG: AgnosConfig = {
   $schema: SCHEMA_URL,
+  schemaVersion: SCHEMA_VERSION,
   agents: [],
-  rules: { filename: "AGENTS.md", root: ".", dirs: [] },
+  rules: { files: {} },
   skills: {},
   mcp: [],
 };
@@ -19,6 +20,18 @@ export async function readConfig(configPath: string): Promise<AgnosConfig> {
     parsed = JSON.parse(raw);
   } catch (err) {
     throw new Error(`agnos.json is not valid JSON: ${(err as Error).message}`);
+  }
+  // A pre-v1 config (no `schemaVersion`, or a different one) is from the old
+  // schema. Reject with a clear remediation rather than a noisy zod dump.
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    (parsed as Record<string, unknown>)["schemaVersion"] !== SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `agnos.json is missing "schemaVersion": ${SCHEMA_VERSION} (or uses an older schema). ` +
+        `The agnos.json format changed in v0.1 — re-run \`agnos --init\` to regenerate it.`,
+    );
   }
   const result = agnosConfigSchema.safeParse(parsed);
   if (!result.success) {
@@ -51,7 +64,7 @@ export async function configExists(configPath: string): Promise<boolean> {
   }
 }
 
-const KEY_ORDER = ["$schema", "agents", "rules", "skills", "mcp", "hooks", "docs"];
+const KEY_ORDER = ["$schema", "schemaVersion", "agents", "rules", "skills", "mcp", "hooks", "docs"];
 
 function orderTopLevelKeys(config: AgnosConfig): AgnosConfig {
   const out: Record<string, unknown> = {};

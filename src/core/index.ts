@@ -7,8 +7,8 @@ export type {
   CliCommandArgs,
   DomainEventHandlers,
   DomainPlugin,
-  HookHandler,
-  HookMatcherGroup,
+  HookEntry,
+  HookEvent,
   HooksDeclaration,
   HooksEventHandlers,
   InitStep,
@@ -33,6 +33,19 @@ export type {
   SkillLockEntry,
   SkillsConfig,
   SkillsEventHandlers,
+} from "./types/public.js";
+export type {
+  AgentAdapter,
+  ArgSpec,
+  CommandContext,
+  CommandSpec,
+  Domain,
+  DomainRunHandle,
+  DomainRunOptions,
+  FlagSpec,
+  FlagType,
+  ParsedFlags,
+  RunContext,
 } from "./types/public.js";
 export { RESERVED_CLI_IDS } from "./types/public.js";
 
@@ -142,12 +155,14 @@ export type { AgnosState } from "./state.js";
 export {
   agentRefSchema,
   agnosConfigSchema,
-  hookHandlerSchema,
-  hookMatcherGroupSchema,
+  docsConfigSchema,
+  hookEntrySchema,
+  hookEventSchema,
   hooksConfigSchema,
   lockFileSchema,
   mcpDeclarationSchema,
   rulesDeclarationSchema,
+  SCHEMA_VERSION,
   skillLockEntrySchema,
   skillNameSchema,
   skillRefSchema,

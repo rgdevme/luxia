@@ -2,19 +2,16 @@ import { z } from "zod";
 
 export const agentRefSchema = z.string().min(1);
 
+/** Current `agnos.json` schema version. Configs without it are rejected (see config.ts). */
+export const SCHEMA_VERSION = 1;
+
+/**
+ * Rules domain. Map of canonical rules file → injectable fragment files. The
+ * rules domain injects each fragment as a titled section into its canonical
+ * file. Replaces the former `filename`/`root`/`dirs` canonical-tree model.
+ */
 export const rulesDeclarationSchema = z.object({
-  /** Canonical basename for every rule file. Agent-neutral by convention. */
-  filename: z.string().min(1).default("AGENTS.md"),
-  /** Base dir for canonical sources. The root file is `<root>/<filename>`. */
-  root: z
-    .string()
-    .transform((s) => {
-      const t = s.replace(/\\/g, "/").trim();
-      return t === "" ? "." : t;
-    })
-    .default("."),
-  /** Additional dirs (relative to `root`) that each hold a `<filename>`. May contain "..". */
-  dirs: z.array(z.string().min(1)).default([]),
+  files: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
 });
 
 /** Local-name pattern for `agnos.json#skills` keys. */
@@ -25,8 +22,6 @@ export const skillNameSchema = z
 
 /**
  * A composite skill reference, e.g. "github:vercel-labs/agent-skills/skills/pdf".
- * Validated structurally here (non-empty, no invalid chars). Full parsing happens
- * via `parseCompositeSkillRef` in `source.ts`.
  */
 export const skillRefSchema = z
   .string()
@@ -50,38 +45,56 @@ export const mcpDeclarationSchema = z.object({
 });
 
 /**
- * Hooks registry. Modeled on Claude Code's hook shape (the superset across
- * agents) and intentionally permissive: each handler must carry a `type`, but
- * all other fields pass through so agent dialects (Codex `command_windows`,
- * Claude `if`/`once`/`async`/`statusMessage`, …) survive a round-trip.
+ * Closed, normalized vocabulary of hook events. Each agent adapter maps the
+ * subset it supports and skips the rest. (Proposed set — finalize against the
+ * agents' real event names in a later milestone.)
  */
-export const hookHandlerSchema = z.object({ type: z.string().min(1) }).passthrough();
+export const hookEventSchema = z.enum([
+  "PreToolUse",
+  "PostToolUse",
+  "UserPromptSubmit",
+  "Notification",
+  "Stop",
+  "SubagentStop",
+  "PreCompact",
+  "SessionStart",
+  "SessionEnd",
+]);
 
-export const hookMatcherGroupSchema = z
+/**
+ * A single hook entry — a flat, strict 5-field shape. Agents render it into
+ * their native format (regrouping by event/matcher as needed). `message` is
+ * user-facing status text; agents without an equivalent ignore it. Identity for
+ * dedup/removal is `(event, matcher, command)`.
+ */
+export const hookEntrySchema = z
   .object({
+    event: hookEventSchema,
     matcher: z.string().optional(),
-    hooks: z.array(hookHandlerSchema),
+    type: z.literal("command"),
+    command: z.string().min(1),
+    message: z.string().optional(),
   })
-  .passthrough();
+  .strict();
 
-/** event name (e.g. "PreToolUse") → matcher groups. */
-export const hooksConfigSchema = z.record(z.string().min(1), z.array(hookMatcherGroupSchema));
+/** Hooks registry: a flat array of entries. */
+export const hooksConfigSchema = z.array(hookEntrySchema);
 
 export const metadataSchema = z.record(z.string(), z.string());
 
+/**
+ * Docs domain. Watches `root`, compiles an index. `metadata` merges onto the
+ * opinionated defaults (title/description/read_when/agent_cant).
+ */
 export const docsConfigSchema = z.object({
-  route: z.string().optional(),
+  root: z.string().min(1).default(".docs"),
   metadata: metadataSchema.optional(),
-  index: z.string().optional(),
-  content: z.union([z.string(), z.literal(false)]).optional(),
-  docRules: z.string().optional(),
-  injectIndex: z.boolean().optional(),
-  injectRules: z.boolean().optional(),
 });
 
 export const agnosConfigSchema = z
   .object({
     $schema: z.string().optional(),
+    schemaVersion: z.literal(SCHEMA_VERSION),
     agents: z.array(agentRefSchema).optional(),
     rules: rulesDeclarationSchema.optional(),
     skills: skillsConfigSchema.optional(),
@@ -96,6 +109,10 @@ export type AgnosConfigParsed = z.infer<typeof agnosConfigSchema>;
 export const skillLockEntrySchema = z.object({
   computedHash: z.string().regex(/^[a-f0-9]{64}$/, "computedHash must be a 64-char hex SHA-256"),
   resolvedAt: z.string(),
+  /** Upstream commit the skill resolved to (used by the `version` freshness check). */
+  resolvedCommit: z.string().optional(),
+  /** Tracked symbolic ref (branch/tag) the skill follows. */
+  ref: z.string().optional(),
 });
 
 export const lockFileSchema = z.object({

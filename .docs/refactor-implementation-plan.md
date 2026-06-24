@@ -65,10 +65,10 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** land the new `agnos.json` shapes and the interfaces the redesign builds on. (Branch goes non-green on old behavior here; restored incrementally.)
 
-- [ ] Rewrite `src/core/schema.ts` + `src/core/types/public.ts`: `rules.files: Record<canonical, injectable[]>`; `docs: {root, metadata}`; `hooks: Array<{event, matcher?, type, command, message?}>` (strict, no passthrough) with a **closed event enum**; add top-level `schemaVersion`. Remove the rules tree schema, docs `index/content/docRules/inject*`, and the hooks record schema.
-- [ ] Config load rejects missing/old `schemaVersion` pointing to `agnos --init` (PRD §10). Move `SCHEMA_URL` → `@luxia/agnos/schema.json` and regenerate `schema.json`.
-- [ ] Add new contracts to `src/core/types`: `Domain` (`id/description/kind/priority/run?/initSteps?/commands?`), `FlagSpec`/`ArgSpec`/`CommandSpec`, `ParsedFlags`/`RunContext`/`CommandContext`, and `AgentAdapter` (`paths`/`render`/`scrape`/`claims`). Mark `DomainEventHandlers`/`AgentPaths`/`handles` for removal in M3.
-- [ ] Extend `.agnos/lock.json` entry with `resolvedCommit` + `ref` alongside `computedHash`/`resolvedAt` (PRD §6.3, §13.5).
+- [x] Rewrite `src/core/schema.ts` + `src/core/types/public.ts`: `rules.files: Record<canonical, injectable[]>`; `docs: {root, metadata}`; `hooks: Array<{event, matcher?, type, command, message?}>` (strict, no passthrough) with a **closed event enum**; add top-level `schemaVersion`. Remove the rules tree schema, docs `index/content/docRules/inject*`, and the hooks record schema.
+- [x] Config load rejects missing/old `schemaVersion` pointing to `agnos --init` (PRD §10). Move `SCHEMA_URL` → `@luxia/agnos/schema.json` and regenerate `schema.json`.
+- [x] Add new contracts to `src/core/types`: `Domain` (`id/description/kind/priority/run?/initSteps?/commands?`), `FlagSpec`/`ArgSpec`/`CommandSpec`, `ParsedFlags`/`RunContext`/`CommandContext`, and `AgentAdapter` (`paths`/`render`/`scrape`/`claims`). Mark `DomainEventHandlers`/`AgentPaths`/`handles` for removal in M3.
+- [x] Extend `.agnos/lock.json` entry with `resolvedCommit` + `ref` alongside `computedHash`/`resolvedAt` (PRD §6.3, §13.5).
 
 **Gate:** schema parse/reject unit tests pass; `schema.ts`/types compile.
 
