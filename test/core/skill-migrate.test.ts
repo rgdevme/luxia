@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runMigrate } from "../src/commands/skill.js";
-import { DEFAULT_CONFIG } from "../src/config.js";
-import { readLock } from "../src/lock.js";
-import { hashSkillDir } from "../src/skill-hash.js";
-import { createLogger } from "../src/logger.js";
-import type { AgnosConfig, ResolveContext } from "../src/types/public.js";
+import { runMigrate } from "../../src/core/commands/skill.js";
+import { DEFAULT_CONFIG } from "../../src/core/config.js";
+import { readLock } from "../../src/core/lock.js";
+import { hashSkillDir } from "../../src/core/skill-hash.js";
+import { createLogger } from "../../src/core/logger.js";
+import type { AgnosConfig, ResolveContext } from "../../src/core/types/public.js";
 
 let root: string;
 let repoA: string;

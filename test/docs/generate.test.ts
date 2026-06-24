@@ -3,10 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import yaml from "js-yaml";
-import { createLogger } from "@luxia/core";
-import { runGenerate } from "../src/cli/generate.js";
-import type { EffectiveDocsConfig } from "../src/effective-config.js";
-import { DEFAULT_DOCS_METADATA } from "../src/schema.js";
+import { createLogger } from "../../src/core/index.js";
+import { runGenerate } from "../../src/domains/docs/cli/generate.js";
+import type { EffectiveDocsConfig } from "../../src/domains/docs/effective-config.js";
+import { DEFAULT_DOCS_METADATA } from "../../src/domains/docs/schema.js";
 
 function extractFrontmatterBlock(text: string): Record<string, string> {
   const match = /^```frontmatter[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/m.exec(text);

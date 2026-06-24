@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CliCommand, ResolveContext } from "@luxia/core";
-import { readConfigOrDefault } from "@luxia/core";
+import type { CliCommand, ResolveContext } from "../../../core/index.js";
+import { readConfigOrDefault } from "../../../core/index.js";
 import { readEffectiveDocsConfig, type EffectiveDocsConfig } from "../effective-config.js";
 import { INDEX_HEADING, RULES_HEADING } from "../schema.js";
 import { replaceUnderHeading, stripFrontmatter } from "../inject/markers.js";

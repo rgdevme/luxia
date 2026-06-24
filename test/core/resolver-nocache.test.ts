@@ -13,7 +13,7 @@ vi.mock("giget", () => ({
   downloadTemplate: (src: string, opts: { dir: string }) => downloadTemplate(src, opts),
 }));
 
-import { createRepoFetcher, gigetTarballPath, parseSource } from "../src/index.js";
+import { createRepoFetcher, gigetTarballPath, parseSource } from "../../src/core/index.js";
 
 describe("createRepoFetcher noCache", () => {
   let root: string;

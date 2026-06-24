@@ -1,6 +1,6 @@
 import path from "node:path";
-import { readConfigOrDefault } from "@luxia/core";
-import type { ResolveContext } from "@luxia/core";
+import { readConfigOrDefault } from "../../core/index.js";
+import type { ResolveContext } from "../../core/index.js";
 import {
   DEFAULTS,
   DEFAULT_DOCS_METADATA,

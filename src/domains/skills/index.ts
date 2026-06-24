@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentPlugin, AgnosConfig, DomainPlugin, ResolvedSkill } from "@luxia/core";
-import { buildPaths, ensureLink, readConfigOrDefault, writeConfig } from "@luxia/core";
+import type { AgentPlugin, AgnosConfig, DomainPlugin, ResolvedSkill } from "../../core/index.js";
+import { buildPaths, ensureLink, readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { z } from "zod";
 
 const DEFAULT_SKILLS_DIR_REL = "./.agnos/skills";
 
-export { findSkillsInRepo } from "@luxia/core";
-export type { DiscoveredSkill } from "@luxia/core";
+export { findSkillsInRepo } from "../../core/index.js";
+export type { DiscoveredSkill } from "../../core/index.js";
 
 /**
  * Per-skill declaration shape passed to plugin hooks. `agnos.json#skills.sources`

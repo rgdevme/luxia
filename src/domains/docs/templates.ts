@@ -4,11 +4,11 @@ import type { EffectiveDocsConfig } from "./effective-config.js";
 const SLOT_PATTERN = /<!--agnos:slot:([a-z_]+)-->/g;
 
 export async function readIndexTemplate(): Promise<string> {
-  return fs.readFile(new URL("../templates/index.md", import.meta.url), "utf8");
+  return fs.readFile(new URL("./templates/index.md", import.meta.url), "utf8");
 }
 
 export async function readContentTemplate(): Promise<string> {
-  return fs.readFile(new URL("../templates/content.md", import.meta.url), "utf8");
+  return fs.readFile(new URL("./templates/content.md", import.meta.url), "utf8");
 }
 
 export function renderTemplate(template: string, slots: Record<string, string>): string {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { renderTemplate, renderFrontmatter } from "../src/templates.js";
-import type { EffectiveDocsConfig } from "../src/effective-config.js";
+import { renderTemplate, renderFrontmatter } from "../../src/domains/docs/templates.js";
+import type { EffectiveDocsConfig } from "../../src/domains/docs/effective-config.js";
 
 function cfg(metadata: Record<string, string>): EffectiveDocsConfig {
   return {

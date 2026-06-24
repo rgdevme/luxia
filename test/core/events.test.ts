@@ -6,10 +6,10 @@ import {
   dispatchMcpAdded,
   dispatchRules,
   dispatchSkillAdded,
-} from "../src/events.js";
-import type { AgentPlugin, AgnosConfig, ResolveContext } from "../src/types/public.js";
-import { createLogger } from "../src/logger.js";
-import type { PluginRegistry, RegisteredAgent } from "../src/plugin-loader.js";
+} from "../../src/core/events.js";
+import type { AgentPlugin, AgnosConfig, ResolveContext } from "../../src/core/types/public.js";
+import { createLogger } from "../../src/core/logger.js";
+import type { PluginRegistry, RegisteredAgent } from "../../src/core/plugin-loader.js";
 
 function stubCtx(): ResolveContext {
   const root = os.tmpdir();

@@ -6,14 +6,14 @@ import type {
   MaterializeContext,
   McpDeclaration,
   ResolvedMcp,
-} from "@luxia/core";
+} from "../../core/index.js";
 import {
   type AgentRuleTarget,
   createRuleMirrorHandler,
   importMcpServers,
   pickEnv,
   pickStringArray,
-} from "@luxia/core";
+} from "../../core/index.js";
 
 const CLAUDE_RULES = "CLAUDE.md";
 const CLAUDE_MCP = ".mcp.json";

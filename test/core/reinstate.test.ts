@@ -3,18 +3,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { z } from "zod";
-import { reinstate } from "../src/orchestrator.js";
-import { writeConfig } from "../src/config.js";
-import { readState } from "../src/state.js";
-import { resetSymlinkDecisionCache } from "../src/context.js";
-import { createLogger } from "../src/logger.js";
+import { reinstate } from "../../src/core/orchestrator.js";
+import { writeConfig } from "../../src/core/config.js";
+import { readState } from "../../src/core/state.js";
+import { resetSymlinkDecisionCache } from "../../src/core/context.js";
+import { createLogger } from "../../src/core/logger.js";
 import type {
   AgentPlugin,
   AgnosConfig,
   DomainPlugin,
   ResolveContext,
-} from "../src/types/public.js";
-import type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "../src/plugin-loader.js";
+} from "../../src/core/types/public.js";
+import type {
+  PluginRegistry,
+  RegisteredAgent,
+  RegisteredDomain,
+} from "../../src/core/plugin-loader.js";
 
 function spyDomain(name: string, priority: number, calls: string[]): DomainPlugin {
   return {

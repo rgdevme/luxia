@@ -8,7 +8,7 @@ import {
   skillSourcesSchema,
   skillsConfigSchema,
   skillLockEntrySchema,
-} from "../src/schema.js";
+} from "../../src/core/schema.js";
 
 describe("schemas", () => {
   it("agentRefSchema accepts string ids and rejects objects", () => {

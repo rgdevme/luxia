@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { findSkillsInRepo } from "../src/skill-discovery.js";
+import { findSkillsInRepo } from "../../src/core/skill-discovery.js";
 
 let root: string;
 

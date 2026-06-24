@@ -1,7 +1,7 @@
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
-import type { CliCommand, ResolveContext } from "@luxia/core";
-import { CONFIG_FILE, readConfigOrDefault } from "@luxia/core";
+import type { CliCommand, ResolveContext } from "../../../core/index.js";
+import { CONFIG_FILE, readConfigOrDefault } from "../../../core/index.js";
 import {
   readEffectiveDocsConfig,
   initFiles,

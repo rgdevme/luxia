@@ -1,12 +1,17 @@
 import path from "node:path";
-import type { AgnosConfig, DomainPlugin, ResolvedRule, RulesDeclaration } from "@luxia/core";
+import type {
+  AgnosConfig,
+  DomainPlugin,
+  ResolvedRule,
+  RulesDeclaration,
+} from "../../core/index.js";
 import {
   ensureStarterRules,
   readConfigOrDefault,
   resolveRules,
   rulesDeclarationSchema,
   writeConfig,
-} from "@luxia/core";
+} from "../../core/index.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
 export { readDefaultRulesTemplate };

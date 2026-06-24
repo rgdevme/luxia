@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
-import type { AgnosConfig, CliCommand, ResolveContext } from "@luxia/core";
-import { readConfigOrDefault, runDomainInitSteps, writeConfig } from "@luxia/core";
+import type { AgnosConfig, CliCommand, ResolveContext } from "../../../core/index.js";
+import { readConfigOrDefault, runDomainInitSteps, writeConfig } from "../../../core/index.js";
 import { readEffectiveDocsConfig } from "../effective-config.js";
 import { DEFAULT_DOCS_METADATA } from "../schema.js";
 import { runGenerate } from "./generate.js";

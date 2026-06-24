@@ -10,7 +10,7 @@ import {
   readState,
   unmarkAgentInstalled,
   writeState,
-} from "../src/state.js";
+} from "../../src/core/state.js";
 
 describe("state", () => {
   let dir: string;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { AgnosConfig, Logger, ResolveContext } from "@luxia/core";
-import hooksPlugin from "../src/index.js";
+import type { AgnosConfig, Logger, ResolveContext } from "../../src/core/index.js";
+import hooksPlugin from "../../src/domains/hooks/index.js";
 
 function silentLogger(): Logger {
   return {

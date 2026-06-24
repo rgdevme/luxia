@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { hashSkillDir } from "../src/skill-hash.js";
+import { hashSkillDir } from "../../src/core/skill-hash.js";
 
 let root: string;
 

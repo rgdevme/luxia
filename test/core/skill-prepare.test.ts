@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { prepareSkills } from "../src/skill-prepare.js";
-import { hashSkillDir } from "../src/skill-hash.js";
-import { readLock, writeLock, upsertSkill, emptyLock } from "../src/lock.js";
-import { createLogger } from "../src/logger.js";
-import type { AgnosConfig, ResolveContext } from "../src/types/public.js";
+import { prepareSkills } from "../../src/core/skill-prepare.js";
+import { hashSkillDir } from "../../src/core/skill-hash.js";
+import { readLock, writeLock, upsertSkill, emptyLock } from "../../src/core/lock.js";
+import { createLogger } from "../../src/core/logger.js";
+import type { AgnosConfig, ResolveContext } from "../../src/core/types/public.js";
 
 let root: string;
 let repoCache: string;

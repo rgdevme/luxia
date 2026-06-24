@@ -2,13 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLogger } from "../src/logger.js";
+import { createLogger } from "../../src/core/logger.js";
 import {
   materializeRuleMirrors,
   pruneRuleMirrors,
   resolveRules,
-} from "../src/materialize-rules.js";
-import type { Linker, MaterializeContext, RulesDeclaration } from "../src/types/public.js";
+} from "../../src/core/materialize-rules.js";
+import type { Linker, MaterializeContext, RulesDeclaration } from "../../src/core/types/public.js";
 
 interface Recorder {
   ctx: MaterializeContext;

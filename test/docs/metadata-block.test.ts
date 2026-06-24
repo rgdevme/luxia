@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import yaml from "js-yaml";
-import { renderMetadataBlock, replaceFrontmatterBlock } from "../src/metadata-block.js";
+import {
+  renderMetadataBlock,
+  replaceFrontmatterBlock,
+} from "../../src/domains/docs/metadata-block.js";
 
 describe("renderMetadataBlock", () => {
   it("wraps the metadata in a ```frontmatter fenced block with a YAML body", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { parseCompositeSkillRef, parseSource } from "../src/source.js";
+import { parseCompositeSkillRef, parseSource } from "../../src/core/source.js";
 
 const projectRoot = path.resolve("/tmp/agnos-test-root");
 

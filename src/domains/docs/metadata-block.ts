@@ -42,6 +42,6 @@ export function replaceFrontmatterBlock(
  * so it works in both built and ts-source contexts.
  */
 export async function readDefaultDocRulesTemplate(): Promise<string> {
-  const url = new URL("../templates/doc-rules.md", import.meta.url);
+  const url = new URL("./templates/doc-rules.md", import.meta.url);
   return fs.readFile(url, "utf8");
 }

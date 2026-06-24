@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLinker, ensureLink } from "../src/fs/link.js";
-import { createLogger } from "../src/logger.js";
+import { createLinker, ensureLink } from "../../src/core/fs/link.js";
+import { createLogger } from "../../src/core/logger.js";
 
 describe("ensureLink", () => {
   let dir: string;

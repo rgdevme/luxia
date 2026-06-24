@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import yaml from "js-yaml";
-import { createLogger } from "@luxia/core";
-import { runInit } from "../src/cli/init.js";
+import { createLogger } from "../../src/core/index.js";
+import { runInit } from "../../src/domains/docs/cli/init.js";
 
 function extractFrontmatterBlock(text: string): Record<string, string> {
   const match = /^```frontmatter[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/m.exec(text);

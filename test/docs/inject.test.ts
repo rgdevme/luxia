@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLogger } from "@luxia/core";
-import { runInject } from "../src/cli/inject.js";
-import { readEffectiveDocsConfig } from "../src/effective-config.js";
+import { createLogger } from "../../src/core/index.js";
+import { runInject } from "../../src/domains/docs/cli/inject.js";
+import { readEffectiveDocsConfig } from "../../src/domains/docs/effective-config.js";
 
 function ctxFor(projectRoot: string) {
   return {

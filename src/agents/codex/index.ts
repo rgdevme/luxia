@@ -8,14 +8,14 @@ import type {
   MaterializeContext,
   McpDeclaration,
   ResolvedMcp,
-} from "@luxia/core";
+} from "../../core/index.js";
 import {
   type AgentRuleTarget,
   createRuleMirrorHandler,
   importMcpServers,
   pickEnv,
   pickStringArray,
-} from "@luxia/core";
+} from "../../core/index.js";
 
 const ROOT_AGENTS = "AGENTS.md";
 const CODEX_DIR = ".codex";

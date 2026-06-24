@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveGitCommit, resolveLocalCommit } from "../src/commit-resolver.js";
-import type { GitSource, LocalSource } from "../src/source.js";
+import { resolveGitCommit, resolveLocalCommit } from "../../src/core/commit-resolver.js";
+import type { GitSource, LocalSource } from "../../src/core/source.js";
 
 function gitSrc(provider: "github" | "gitlab" | "bitbucket"): GitSource {
   return {

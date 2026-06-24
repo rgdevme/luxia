@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { readConfig, readConfigOrDefault, writeConfig, DEFAULT_CONFIG } from "../src/config.js";
+import {
+  readConfig,
+  readConfigOrDefault,
+  writeConfig,
+  DEFAULT_CONFIG,
+} from "../../src/core/config.js";
 
 describe("config", () => {
   let dir: string;

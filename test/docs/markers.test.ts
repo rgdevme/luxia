@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { replaceUnderHeading, stripFrontmatter } from "../src/inject/markers.js";
+import { replaceUnderHeading, stripFrontmatter } from "../../src/domains/docs/inject/markers.js";
 
 const HEADING = "## Documentation Rules";
 

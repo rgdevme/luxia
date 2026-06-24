@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLinker } from "@luxia/core";
-import type { AgentPlugin, Linker, Logger, MaterializeContext } from "@luxia/core";
-import skillsPlugin, { findAgentsUsingSkillsDir } from "../src/index.js";
+import { createLinker } from "../../src/core/index.js";
+import type { AgentPlugin, Linker, Logger, MaterializeContext } from "../../src/core/index.js";
+import skillsPlugin, { findAgentsUsingSkillsDir } from "../../src/domains/skills/index.js";
 
 function silentLogger(): Logger {
   return {

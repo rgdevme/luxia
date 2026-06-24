@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { runDomainInitSteps, runAllDomainInitSteps } from "../src/commands/init-steps.js";
-import type { DomainPlugin, InitStep, Logger, ResolveContext } from "../src/types/public.js";
-import type { PluginRegistry, RegisteredDomain } from "../src/plugin-loader.js";
+import { runDomainInitSteps, runAllDomainInitSteps } from "../../src/core/commands/init-steps.js";
+import type {
+  DomainPlugin,
+  InitStep,
+  Logger,
+  ResolveContext,
+} from "../../src/core/types/public.js";
+import type { PluginRegistry, RegisteredDomain } from "../../src/core/plugin-loader.js";
 
 interface CapturedLog {
   level: "info" | "warn" | "error" | "debug" | "success";

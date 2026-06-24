@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { emptyLock, getSkill, readLock, removeSkill, upsertSkill, writeLock } from "../src/lock.js";
+import {
+  emptyLock,
+  getSkill,
+  readLock,
+  removeSkill,
+  upsertSkill,
+  writeLock,
+} from "../../src/core/lock.js";
 
 async function tmpRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "agnos-lock-"));

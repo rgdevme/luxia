@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgnosConfig, DomainPlugin, ResolveContext } from "@luxia/core";
-import { readConfigOrDefault, writeConfig } from "@luxia/core";
+import type { AgnosConfig, DomainPlugin, ResolveContext } from "../../core/index.js";
+import { readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { DEFAULTS, docsConfigSchema, type DocsConfig } from "./schema.js";
 import { init, runInit } from "./cli/init.js";
 import { validate } from "./cli/validate.js";

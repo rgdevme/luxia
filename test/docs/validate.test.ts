@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLogger } from "@luxia/core";
-import { runValidate } from "../src/cli/validate.js";
-import type { EffectiveDocsConfig } from "../src/effective-config.js";
-import { DEFAULT_DOCS_METADATA } from "../src/schema.js";
+import { createLogger } from "../../src/core/index.js";
+import { runValidate } from "../../src/domains/docs/cli/validate.js";
+import type { EffectiveDocsConfig } from "../../src/domains/docs/effective-config.js";
+import { DEFAULT_DOCS_METADATA } from "../../src/domains/docs/schema.js";
 
 async function makeCfg(root: string): Promise<EffectiveDocsConfig> {
   const docsRoute = path.join(root, ".docs");

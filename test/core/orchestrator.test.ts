@@ -9,15 +9,19 @@ import {
   initializeAgentsInterleaved,
   materializeAgent,
   orderedDomains,
-} from "../src/orchestrator.js";
+} from "../../src/core/orchestrator.js";
 import type {
   AgentPlugin,
   AgnosConfig,
   DomainPlugin,
   ResolveContext,
-} from "../src/types/public.js";
-import { createLogger } from "../src/logger.js";
-import type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "../src/plugin-loader.js";
+} from "../../src/core/types/public.js";
+import { createLogger } from "../../src/core/logger.js";
+import type {
+  PluginRegistry,
+  RegisteredAgent,
+  RegisteredDomain,
+} from "../../src/core/plugin-loader.js";
 
 function noopDomain(name: string, priority: number): DomainPlugin {
   return {

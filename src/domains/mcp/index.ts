@@ -1,6 +1,6 @@
 import { input, select } from "@inquirer/prompts";
-import type { DomainPlugin, McpDeclaration, ResolvedMcp } from "@luxia/core";
-import { mcpDeclarationSchema, readConfigOrDefault } from "@luxia/core";
+import type { DomainPlugin, McpDeclaration, ResolvedMcp } from "../../core/index.js";
+import { mcpDeclarationSchema, readConfigOrDefault } from "../../core/index.js";
 
 const mcpPlugin: DomainPlugin<McpDeclaration, ResolvedMcp> = {
   name: "mcp",

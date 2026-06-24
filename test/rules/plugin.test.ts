@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createLogger, readConfigOrDefault } from "@luxia/core";
-import type { InitStep, ResolveContext } from "@luxia/core";
-import rulesPlugin from "../src/index.js";
+import { createLogger, readConfigOrDefault } from "../../src/core/index.js";
+import type { InitStep, ResolveContext } from "../../src/core/index.js";
+import rulesPlugin from "../../src/domains/rules/index.js";
 
 function ctxFor(projectRoot: string): ResolveContext {
   return {

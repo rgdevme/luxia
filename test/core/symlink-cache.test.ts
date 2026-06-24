@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import path from "node:path";
 import os from "node:os";
-import { ensureSymlinkPrivileges, resetSymlinkDecisionCache } from "../src/context.js";
-import type { Linker, ResolveContext } from "../src/types/public.js";
-import { createLogger } from "../src/logger.js";
+import { ensureSymlinkPrivileges, resetSymlinkDecisionCache } from "../../src/core/context.js";
+import type { Linker, ResolveContext } from "../../src/core/types/public.js";
+import { createLogger } from "../../src/core/logger.js";
 
 function ctxWithLinker(linker: Linker): ResolveContext {
   const root = os.tmpdir();

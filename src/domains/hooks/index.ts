@@ -7,8 +7,8 @@ import type {
   HookMatcherGroup,
   HooksDeclaration,
   ResolveContext,
-} from "@luxia/core";
-import { hooksConfigSchema, readConfigOrDefault, writeConfig } from "@luxia/core";
+} from "../../core/index.js";
+import { hooksConfigSchema, readConfigOrDefault, writeConfig } from "../../core/index.js";
 import type { z } from "zod";
 
 /**
