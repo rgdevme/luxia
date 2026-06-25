@@ -19,11 +19,13 @@ const SLICES = ["rules", "mcp", "hooks", "skills"] as const;
  * config directly — this is the config-READER half of the writer/reader split.
  */
 export function resolveSlices(config: AgnosConfig, ctx: ResolveContext): Record<string, unknown> {
+  const hasSkills = Object.keys(config.skills?.sources ?? {}).length > 0;
   return {
     rules: Object.keys(config.rules?.files ?? {}),
     mcp: (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[],
     hooks: config.hooks ?? [],
-    skills: buildPaths(ctx.projectRoot, config).skillsDir,
+    // Empty string signals "no skills" → the adapter ensures the link is absent.
+    skills: hasSkills ? buildPaths(ctx.projectRoot, config).skillsDir : "",
   };
 }
 

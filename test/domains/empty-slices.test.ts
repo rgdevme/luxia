@@ -13,6 +13,7 @@ import docsDomain from "../../src/domains/docs/index.js";
 import rulesDomain from "../../src/domains/rules/index.js";
 import claudeCode from "../../src/agents/adapters/claude-code/index.js";
 import codex from "../../src/agents/adapters/codex/index.js";
+import { renderAgent } from "../../src/domains/agents/index.js";
 
 let tmp: string;
 
@@ -85,5 +86,18 @@ describe("empty slices generate no files", () => {
     // empty rules.files → resolveSlices yields [] → mirrorRules no-ops (no CLAUDE.md)
     await claudeCode.render!["rules"]!([], matCtx(tmp));
     expect(await exists("CLAUDE.md")).toBe(false);
+  });
+
+  it("skills render removes the link when there are no skills (empty marker)", async () => {
+    await fs.mkdir(path.join(tmp, ".claude", "skills"), { recursive: true });
+    await claudeCode.render!["skills"]!("", matCtx(tmp));
+    expect(await exists(".claude/skills")).toBe(false);
+  });
+
+  it("renderAgent creates no skills link when skills.sources is empty", async () => {
+    // a fully-empty config: every slice no-ops, including skills (no link)
+    await renderAgent(claudeCode, { schemaVersion: 1, agents: ["claude-code"] }, matCtx(tmp));
+    expect(await exists(".claude/skills")).toBe(false);
+    expect(await exists(".mcp.json")).toBe(false);
   });
 });

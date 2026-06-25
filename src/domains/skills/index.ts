@@ -43,6 +43,8 @@ export const skillsDomain: Domain = {
   ],
   async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
+    // No skill sources declared → nothing to fetch/verify.
+    if (Object.keys(config.skills?.sources ?? {}).length === 0) return undefined;
     await prepareSkills(config, ctx);
     return undefined;
   },

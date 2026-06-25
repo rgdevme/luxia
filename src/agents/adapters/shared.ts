@@ -58,6 +58,15 @@ export async function linkSkills(
   ctx: MaterializeContext,
 ): Promise<void> {
   const linkPath = path.resolve(ctx.projectRoot, rel);
+  // No skills declared → ensure the link/copy is absent rather than linking an empty dir.
+  if (!canonicalDir) {
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: remove ${rel} (no skills)`);
+      return;
+    }
+    await fs.rm(linkPath, { recursive: true, force: true }).catch(() => {});
+    return;
+  }
   if (ctx.dryRun) {
     ctx.logger.info(`would: link ${rel} → ${path.relative(ctx.projectRoot, canonicalDir)}`);
     return;
