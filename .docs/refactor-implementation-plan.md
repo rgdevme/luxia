@@ -119,12 +119,12 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** `fetch → version → integrity → install` as separable subcommands with bucketed reporting.
 
-- [ ] Split `skill-prepare.ts` into subcommands `fetch`/`version`/`integrity`/`install` (PRD §6.3) with **per-skill short-circuit** in that precedence; aggregate failures into `Skills need to be updated: <n> moved   <m> changed   <k> outdated` → `agnos skills update` (§13.5), halting before `install`.
-- [ ] `version` = no-cache resolve vs `resolvedCommit`/`ref`; `integrity` = hash vs `computedHash`; `install` = **copy-if-absent-or-changed** (not overwrite-always); `update` re-pins (`resolvedCommit`/`computedHash`/`resolvedAt`) + installs.
-- [ ] `skills --init` (empty + scrape + prompt) and `migrate` (`--missing/--force/--skip`; no flag → **single all-conflicts strategy prompt**); fold the skills.sh `skills-lock.json` import as a source.
-- [ ] Add skills to the scrape/reverse-import path via adapters.
+- [x] `pipeline.ts`: per-skill short-circuit in precedence order `fetch → version → integrity → install`; aggregate failures into the exact `Skills need to be updated: <n> moved   <m> changed   <k> outdated` → `agnos skills update` report (§13.5). _(Engine + `SkillSteps` seam; real step bodies wired in M8.)_
+- [ ] **[→ M8]** `version` = no-cache resolve vs `resolvedCommit`/`ref`; `integrity` = hash vs `computedHash`; `install` = **copy-if-absent-or-changed**; `update` re-pins + installs. _Real step bodies (fetcher/git/fs) + the `fetch|version|integrity|install|update` subcommands need the CLI router + fetcher integration._
+- [x] `migrate` policy reconciler (`mergeSkillSources`: `--missing/--force/--skip`, conflict = same name/different source). **[→ M8]** the `--init` scrape+prompt and skills.sh `skills-lock.json` fold need the CLI.
+- [ ] **[→ M8]** Add skills to the scrape/reverse-import path via adapters.
 
-**Gate:** pipeline bucket tests, lock-shape tests, migrate-policy tests.
+**Gate (M6):** pipeline bucket tests, migrate-policy tests, lock-shape (`resolvedCommit`/`ref`, via M2 `lockFileSchema`). **— MET** (7 tests: `test/skills/pipeline.test.ts`).
 
 ---
 
