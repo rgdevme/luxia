@@ -107,9 +107,9 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** `{root, metadata}` → one deterministic index file, surfaced via `rules.files`.
 
-- [ ] Rewrite `src/domains/docs/`: watch `root`; parse frontmatter; `metadata` **merges onto** opinionated defaults (title/description/read_when/agent_cant); compile a **deterministic, byte-stable** index (groups by dir A→Z, items by `title` A→Z; fixed formatting) into `root`; **self-exclude** the index from the scan; write a `title` into the index frontmatter so it can be listed in `rules.files`.
-- [ ] §13.6 metadata validation → **warn + continue** (exact format). Drop `content.md`/`doc-rules.md`/`injectIndex`/`injectRules` code; `route`→`root`.
-- [ ] `docs --init`: prompt `root` (default `.docs`).
+- [x] Rewrite `src/domains/docs/`: watch `root`; parse frontmatter; `metadata` **merges onto** opinionated defaults (title/description/read_when/agent_cant); compile a **deterministic, byte-stable** index (groups by dir A→Z, items by `title` A→Z; fixed formatting) into `root`; **self-exclude** the index from the scan; write a `title` into the index frontmatter so it can be listed in `rules.files`.
+- [x] §13.6 metadata validation → **warn + continue** (exact format). Drop `content.md`/`doc-rules.md`/`injectIndex`/`injectRules` code; `route`→`root`.
+- [x] `docs --init`: prompt `root` (default `.docs`).
 
 **Gate:** index-compile + metadata-merge + byte-stable-determinism unit tests.
 
