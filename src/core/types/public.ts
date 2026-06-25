@@ -7,6 +7,13 @@ import type { z } from "zod";
  */
 export type AgentRef = string;
 
+export interface DocsConfig {
+  /** Docs directory, relative to project root. Defaults to ".docs". */
+  root?: string;
+  /** Frontmatter key → description, merged onto the opinionated defaults. */
+  metadata?: Record<string, string>;
+}
+
 export interface AgnosConfig {
   $schema?: string;
   /** Required on disk (see config.ts); optional here so in-memory literals stay terse. */
@@ -16,6 +23,7 @@ export interface AgnosConfig {
   skills?: SkillsConfig;
   mcp?: McpDeclaration[];
   hooks?: HooksDeclaration;
+  docs?: DocsConfig;
   [domain: string]: unknown;
 }
 

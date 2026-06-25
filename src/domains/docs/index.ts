@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgnosConfig, Domain } from "../../core/index.js";
 import { readConfigOrDefault, writeConfig } from "../../core/index.js";
-import { DEFAULT_DOCS_ROOT } from "./compile.js";
+import { compileDocsIndex, DEFAULT_DOCS_ROOT } from "./compile.js";
 
 export * from "./compile.js";
 
@@ -31,6 +31,11 @@ export const docsDomain: Domain = {
       },
     },
   ],
+  async run(_opts, ctx) {
+    const config = await readConfigOrDefault(ctx.configPath);
+    await compileDocsIndex(config, ctx);
+    return undefined;
+  },
 };
 
 export default docsDomain;

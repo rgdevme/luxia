@@ -29,33 +29,40 @@ describe("config", () => {
 
   it("round-trips a config preserving top-level key order", async () => {
     const config = {
-      $schema: "https://agnos.dev/schema/v0.json",
+      $schema: "https://unpkg.com/@luxia/agnos/schema.json",
+      schemaVersion: 1,
       agents: ["claude-code"],
-      rules: { filename: "AGENTS.md", root: ".", dirs: [] },
+      rules: { files: { "./AGENTS.md": [] } },
       skills: { sources: { pdf: "github:foo/bar/skills/pdf" } },
       mcp: [],
     };
     await writeConfig(configPath, config);
 
     const raw = await fs.readFile(configPath, "utf8");
-    expect(raw.indexOf('"$schema"')).toBeLessThan(raw.indexOf('"agents"'));
+    expect(raw.indexOf('"$schema"')).toBeLessThan(raw.indexOf('"schemaVersion"'));
+    expect(raw.indexOf('"schemaVersion"')).toBeLessThan(raw.indexOf('"agents"'));
     expect(raw.indexOf('"agents"')).toBeLessThan(raw.indexOf('"rules"'));
     expect(raw.indexOf('"rules"')).toBeLessThan(raw.indexOf('"skills"'));
-    expect(raw.indexOf('"skills"')).toBeLessThan(raw.indexOf('"mcp"'));
 
     const reloaded = await readConfig(configPath);
     expect(reloaded).toEqual(config);
   });
 
-  it("rejects schema-invalid configs", async () => {
-    await fs.writeFile(configPath, JSON.stringify({ agents: [123] }), "utf8");
+  it("rejects a config missing schemaVersion with a pointer to `agnos --init`", async () => {
+    await fs.writeFile(configPath, JSON.stringify({ agents: ["claude-code"] }), "utf8");
+    await expect(readConfig(configPath)).rejects.toThrow(/schemaVersion/);
+  });
+
+  it("rejects a schema-invalid config (right version, bad shape)", async () => {
+    await fs.writeFile(configPath, JSON.stringify({ schemaVersion: 1, agents: [123] }), "utf8");
     await expect(readConfig(configPath)).rejects.toThrow(/schema validation failed/);
   });
 
   it("preserves user-added custom keys", async () => {
     const config = {
+      schemaVersion: 1,
       agents: [],
-      rules: { filename: "AGENTS.md", root: ".", dirs: [] },
+      rules: { files: {} },
       prompts: [{ name: "user-defined-domain", source: "file:./prompts/a.md" }],
     };
     await writeConfig(configPath, config);

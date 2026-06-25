@@ -7,7 +7,7 @@ import type {
   ResolveContext,
   ResolvedMcp,
 } from "../../core/index.js";
-import { buildPaths } from "../../core/index.js";
+import { buildPaths, readConfigOrDefault } from "../../core/index.js";
 import { adapterById, ADAPTERS } from "../../agents/adapters/index.js";
 import { removePaths } from "../../agents/adapters/shared.js";
 
@@ -90,6 +90,13 @@ export const agentsDomain: Domain = {
   description: "Render per-agent native files from agnos.json (the config reader)",
   kind: "reader",
   priority: 99,
+  async run(_opts, ctx) {
+    const config = await readConfigOrDefault(ctx.configPath);
+    for (const adapter of activeAdapters(config, ctx)) {
+      await renderAgent(adapter, config, { ...ctx, agentId: adapter.id, indent: "  " });
+    }
+    return undefined;
+  },
 };
 
 export { ADAPTERS };

@@ -1,16 +1,18 @@
 export type {
-  AgentPaths,
-  AgentPlugin,
+  AgentAdapter,
   AgentRef,
   AgnosConfig,
-  CliCommand,
-  CliCommandArgs,
-  DomainEventHandlers,
-  DomainPlugin,
+  ArgSpec,
+  CommandContext,
+  CommandSpec,
+  Domain,
+  DomainRunHandle,
+  DomainRunOptions,
+  FlagSpec,
+  FlagType,
   HookEntry,
   HookEvent,
   HooksDeclaration,
-  HooksEventHandlers,
   InitStep,
   InitStepBase,
   InitStepDefault,
@@ -20,34 +22,17 @@ export type {
   Logger,
   MaterializeContext,
   McpDeclaration,
-  McpEventHandlers,
+  ParsedFlags,
   ParsedSourceRef,
-  PluginManifest,
   RepoFetcher,
   ResolveContext,
   ResolvedMcp,
-  ResolvedRule,
   ResolvedSkill,
   RulesDeclaration,
-  RulesEventHandlers,
+  RunContext,
   SkillLockEntry,
   SkillsConfig,
-  SkillsEventHandlers,
 } from "./types/public.js";
-export type {
-  AgentAdapter,
-  ArgSpec,
-  CommandContext,
-  CommandSpec,
-  Domain,
-  DomainRunHandle,
-  DomainRunOptions,
-  FlagSpec,
-  FlagType,
-  ParsedFlags,
-  RunContext,
-} from "./types/public.js";
-export { RESERVED_CLI_IDS } from "./types/public.js";
 
 export { createLogger } from "./logger.js";
 export {
@@ -74,26 +59,14 @@ export {
   resetSymlinkDecisionCache,
   workspaceRelativePath,
 } from "./context.js";
-export { loadPlugins, refToId, resolveAgentByRef } from "./plugin-loader.js";
+export { loadPlugins, orderedDomains, refToId, resolveAgentByRef } from "./plugin-loader.js";
+export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
+export { runAll, runOne } from "./run.js";
 export { runDomainInitSteps, runAllDomainInitSteps } from "./commands/init-steps.js";
 export type { RunStepsOptions } from "./commands/init-steps.js";
-export { ensureStarterRules } from "./commands/init.js";
-export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
 export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";
 export type { EnsureLinkResult } from "./fs/link.js";
-export {
-  resolveRules,
-  resolveRuleEntry,
-  materializeRuleMirrors,
-  pruneRuleMirrors,
-} from "./materialize-rules.js";
-export type { AgentRuleTarget } from "./materialize-rules.js";
-export {
-  createRuleMirrorHandler,
-  importMcpServers,
-  pickEnv,
-  pickStringArray,
-} from "./agent-helpers.js";
+export { importMcpServers, pickEnv, pickStringArray } from "./agent-helpers.js";
 export { createRepoFetcher, gigetTarballPath } from "./resolver.js";
 export { parseSource, parseCompositeSkillRef, isProvider, SUPPORTED_PROVIDERS } from "./source.js";
 export type {
@@ -120,28 +93,6 @@ export {
   upsertSkill,
   writeLock,
 } from "./lock.js";
-export {
-  activateAgent,
-  buildAgentDomainStates,
-  cleanupAgent,
-  initializeAgentsInterleaved,
-  materializeAgent,
-  orderedDomains,
-  reconcile,
-  reinstate,
-  resolveSkill,
-  uninstallAgent,
-} from "./orchestrator.js";
-export {
-  activeAgents,
-  dispatchMcpAdded,
-  dispatchMcpRemoved,
-  dispatchMcpUpdated,
-  dispatchRules,
-  dispatchSkillAdded,
-  dispatchSkillRemoved,
-  dispatchSkillUpdated,
-} from "./events.js";
 export {
   isAgentInstalled,
   isDomainInitialized,

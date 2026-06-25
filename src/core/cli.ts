@@ -1,233 +1,119 @@
 import minimist from "minimist";
-import { createLogger } from "./logger.js";
-import { runInit } from "./commands/init.js";
-import { runRules } from "./commands/rules.js";
-import { runAgents, runAgentAdd, runAgentRemove } from "./commands/agents.js";
-import { runSkill } from "./commands/skill.js";
-import { runMcp } from "./commands/mcp.js";
-import { runInstallCommand } from "./commands/install.js";
-import { runDomainCli } from "./commands/domain-cli.js";
-import { RESERVED_CLI_IDS } from "./types/public.js";
+import {
+  buildResolveContext,
+  createLogger,
+  loadPlugins,
+  runAll,
+  runAllDomainInitSteps,
+  runOne,
+} from "./index.js";
+import type { CommandContext, DomainRunOptions, ParsedFlags, RunContext } from "./index.js";
+import { startWatch } from "./watch.js";
 
-const USAGE = `agnos - agent-agnostic project configuration manager
+const USAGE = `agnos — agent-agnostic project configuration manager
 
 Usage:
-  agnos init [-y] [--only=<ids>]        Initialize agnos (runs each domain's init steps, then picks agents)
-  agnos rules [path]                    Set the rules-source path (default ./AGENTS.md)
-  agnos agents                          Pick which agent plugins to enable
-  agnos agent add <id|pkg>              Install + activate an agent plugin
-  agnos agent remove <id>               Deactivate + uninstall an agent plugin
-  agnos skill add <source> [-p <provider>] [-s <list>]
-                                        Pick skills from a repo containing ./skills/*
-  agnos skill remove <name>             Remove a skill
-  agnos skill update <name> [--ref <r>] Re-fetch the skill (and its siblings) at a new commit
-  agnos skill migrate [path]            Import skills from a skills.sh \`skills-lock.json\` (default ./skills-lock.json)
-  agnos skill list                      List installed skills
-  agnos mcp add <name>                  Add an MCP server
-  agnos mcp remove <name>               Remove an MCP server
-  agnos mcp update <name>               Update an MCP server
-  agnos install                         Materialize current config for declared agents
+  agnos [domain] [--dry] [--once] [--quiet] [--help] [--init [-y]]
 
-Skill source forms (bare = discover + prompt; with /<path> = install that one):
-  <owner>/<repo>[/<path>]               e.g. vercel-labs/agent-skills  or  vercel-labs/agent-skills/skills/pdf
-  https://<host>/<owner>/<repo>[/tree/<ref>/<path>]
-                                        github.com, gitlab.com, bitbucket.org
-  git@<host>:<owner>/<repo>.git         SSH URL (repo only, no sub-path)
-  ./local/path | /abs/path              Local directory (the dir itself, or a repo to discover within)
+  agnos                      Watch all domains and keep agent files in sync
+  agnos --once               Run the full pipeline once and exit
+  agnos <domain>             Run one domain (docs|rules|skills|mcp|hooks|agents)
+  agnos <domain> <sub> …     Run a domain subcommand (e.g. agnos agents add)
+  agnos --init [-y]          Bootstrap all domains (or one if a domain is given)
 
-Skill flags:
-  -p, --provider <name>                 github | gitlab | bitbucket (default github)
-  -s, --skills <list>                   Comma-separated globs (e.g. "claude-*,convex-*"). "*" = all
-      --name <name>                     Rename the skill locally (only with a single -s match)
-      --ref <ref>                       For \`skill update\`: an explicit commit / branch / tag
-
-Common flags:
-  -y, --yes                             Skip prompts (non-interactive defaults)
-      --only <ids>                      For \`init\`: only run the listed domain plugins' init steps (comma-separated)
-      --no-install                      For add/remove/update: skip the trailing install
-      --no-activate                     For \`agent add\`: install but don't activate
-      --copy-on-no-symlink              Auto-copy when symlinks aren't available
-      --dry-run                         Log planned actions without invoking them
-  -q, --quiet                           Suppress info/success/debug output (errors still print)
-      --cwd <dir>                       Run as if invoked from <dir>
-      --debug                           Verbose diagnostics
-  -h, --help                            Show this help
+Flags (every command):
+  --dry        Resolve + log planned actions; write nothing (implies --once)
+  --once       Single pass, no watchers
+  --quiet      Errors only
+  --init       Run initialization (bootstrap), then exit
+  -y, --yes    Accept defaults (non-interactive)
+  --cwd <dir>  Run as if invoked from <dir>
+  -h, --help   Show this help
 `;
 
 async function main(): Promise<void> {
   const argv = minimist(process.argv.slice(2), {
-    boolean: [
-      "yes",
-      "help",
-      "debug",
-      "no-install",
-      "no-activate",
-      "copy-on-no-symlink",
-      "dry-run",
-      "quiet",
-    ],
-    alias: { y: "yes", h: "help", q: "quiet", p: "provider", s: "skills" },
-    string: ["cwd", "provider", "skills", "ref", "name", "only"],
+    boolean: ["dry", "once", "quiet", "help", "init", "yes", "debug"],
+    alias: { y: "yes", h: "help" },
+    string: ["cwd"],
   });
 
-  if (argv["help"] && argv._.length === 0) {
+  const flags: ParsedFlags = {
+    dry: Boolean(argv["dry"]),
+    once: Boolean(argv["once"]) || Boolean(argv["dry"]), // --dry implies --once
+    quiet: Boolean(argv["quiet"]),
+    help: Boolean(argv["help"]),
+    init: Boolean(argv["init"]),
+    yes: Boolean(argv["yes"]),
+  };
+
+  if (flags.help) {
     process.stdout.write(USAGE);
     return;
   }
 
+  const positional = argv._.map(String);
+  const [domainId, sub, ...rest] = positional;
   const cwd = typeof argv["cwd"] === "string" ? argv["cwd"] : process.cwd();
-  const dryRun = Boolean(argv["dry-run"]);
-  const quiet = Boolean(argv["quiet"]);
-  const logger = createLogger({ debug: Boolean(argv["debug"]), quiet });
+  const logger = createLogger({ debug: Boolean(argv["debug"]), quiet: flags.quiet });
 
-  if (dryRun && quiet) {
-    logger.warn("`--dry-run --quiet` together produces no output; dropping --quiet.");
-  }
-  const effectiveLogger =
-    dryRun && quiet ? createLogger({ debug: Boolean(argv["debug"]) }) : logger;
-
-  const [command, sub, ...rest] = argv._;
+  const opts: DomainRunOptions = {
+    dry: flags.dry,
+    once: flags.once,
+    quiet: flags.quiet,
+    interactive: !flags.yes,
+  };
 
   try {
-    switch (command) {
-      case undefined:
-        process.stdout.write(USAGE);
-        return;
-      case "init": {
-        const onlyRaw = typeof argv["only"] === "string" ? argv["only"] : undefined;
-        const onlyIds = onlyRaw
-          ? onlyRaw
-              .split(",")
-              .map((s) => s.trim())
-              .filter((s) => s.length > 0)
-          : undefined;
-        await runInit({
-          cwd,
-          yes: Boolean(argv["yes"]),
-          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-          dryRun,
-          logger: effectiveLogger,
-          onlyIds,
-        });
-        return;
-      }
-      case "rules":
-        await runRules({
-          cwd,
-          args: argv._.slice(1).map(String),
-          yes: Boolean(argv["yes"]),
-          dryRun,
-          logger: effectiveLogger,
-        });
-        return;
-      case "agents":
-        await runAgents({
-          cwd,
-          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-          dryRun,
-          logger: effectiveLogger,
-        });
-        return;
-      case "agent":
-        if (sub === "add") {
-          await runAgentAdd({
-            cwd,
-            target: rest[0],
-            noInstall: Boolean(argv["no-install"]),
-            noActivate: Boolean(argv["no-activate"]),
-            copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-            dryRun,
-            logger: effectiveLogger,
-          });
-          return;
-        }
-        if (sub === "remove") {
-          await runAgentRemove({ cwd, id: rest[0], dryRun, logger: effectiveLogger });
-          return;
-        }
-        fail(`Unknown agent subcommand: ${sub ?? "(none)"}`);
-        return;
-      case "skill":
-        await runSkill({
-          cwd,
-          sub,
-          args: rest,
-          noInstall: Boolean(argv["no-install"]),
-          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-          dryRun,
-          logger: effectiveLogger,
-          provider: typeof argv["provider"] === "string" ? argv["provider"] : undefined,
-          skills: typeof argv["skills"] === "string" ? argv["skills"] : undefined,
-          ref: typeof argv["ref"] === "string" ? argv["ref"] : undefined,
-          name: typeof argv["name"] === "string" ? argv["name"] : undefined,
-        });
-        return;
-      case "mcp":
-        await runMcp({
-          cwd,
-          sub,
-          args: rest,
-          noInstall: Boolean(argv["no-install"]),
-          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-          dryRun,
-          logger: effectiveLogger,
-        });
-        return;
-      case "install":
-        await runInstallCommand({
-          cwd,
-          copyOnNoSymlink: Boolean(argv["copy-on-no-symlink"]),
-          dryRun,
-          logger: effectiveLogger,
-        });
-        return;
-      default: {
-        if (RESERVED_CLI_IDS.includes(command as (typeof RESERVED_CLI_IDS)[number])) {
-          fail(`Unknown command: ${command}`);
-        }
-        const positional = sub === undefined ? [] : [sub, ...rest];
-        const { flags } = extractFlags(argv);
-        const handled = await runDomainCli({
-          cwd,
-          domainId: command,
-          sub,
-          positional,
-          flags,
-          logger: effectiveLogger,
-        });
-        if (!handled) fail(`Unknown command: ${command}`);
-        return;
-      }
+    const base = await buildResolveContext({ projectRoot: cwd, dryRun: flags.dry, logger });
+    const registry = await loadPlugins({ projectRoot: cwd, logger });
+    const ctx: RunContext = { ...base, flags };
+
+    if (flags.init) {
+      await runAllDomainInitSteps(
+        registry,
+        ctx,
+        { yes: flags.yes, dryRun: flags.dry },
+        domainId ? [domainId] : undefined,
+      );
+      return;
     }
+
+    if (!domainId) {
+      if (flags.once) await runAll(registry, opts, ctx);
+      else await startWatch(registry, opts, ctx);
+      return;
+    }
+
+    const dom = registry.domains.get(domainId);
+    if (!dom) {
+      fail(`unknown domain: ${domainId}`);
+      return;
+    }
+
+    if (sub) {
+      const cmd = dom.domain.commands?.[sub];
+      if (!cmd) {
+        fail(`unknown subcommand "${sub}" for ${domainId}`);
+        return;
+      }
+      const cmdCtx: CommandContext = { ...ctx, args: rest };
+      await cmd.run(cmdCtx);
+      return;
+    }
+
+    if (flags.once) await runOne(registry, domainId, opts, ctx);
+    else await startWatch(registry, opts, ctx, domainId);
   } catch (err) {
-    const e = err as Error & { cause?: unknown };
-    effectiveLogger.error(e.message);
-    if (argv["debug"]) {
-      console.error(e.stack);
-      let cause: unknown = e.cause;
-      while (cause) {
-        const c = cause as Error & { cause?: unknown };
-        console.error(`  caused by: ${c.message ?? c}`);
-        if (c.stack) console.error(c.stack);
-        cause = c.cause;
-      }
-    }
+    logger.error((err as Error).message);
+    if (argv["debug"]) console.error((err as Error).stack);
     process.exitCode = 1;
   }
 }
 
-function fail(msg: string): never {
+function fail(msg: string): void {
   process.stderr.write(`${msg}\n\n${USAGE}`);
-  process.exit(1);
-}
-
-function extractFlags(argv: minimist.ParsedArgs): { flags: Record<string, unknown> } {
-  const flags: Record<string, unknown> = {};
-  for (const key of Object.keys(argv)) {
-    if (key === "_") continue;
-    flags[key] = argv[key];
-  }
-  return { flags };
+  process.exitCode = 1;
 }
 
 void main();

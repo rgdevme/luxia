@@ -122,6 +122,11 @@ export const rulesDomain: Domain = {
       },
     },
   ],
+  async run(_opts, ctx) {
+    const config = await readConfigOrDefault(ctx.configPath);
+    await injectRules(config, ctx);
+    return undefined;
+  },
 };
 
 export default rulesDomain;

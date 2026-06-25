@@ -1,6 +1,7 @@
 import { confirm, input, select } from "@inquirer/prompts";
-import type { DomainPlugin, InitStep, ResolveContext } from "../types/public.js";
+import type { Domain, InitStep, ResolveContext } from "../types/public.js";
 import type { PluginRegistry } from "../plugin-loader.js";
+import { orderedDomains } from "../plugin-loader.js";
 
 export interface RunStepsOptions {
   yes: boolean;
@@ -8,41 +9,39 @@ export interface RunStepsOptions {
 }
 
 /**
- * Run every step in a single domain plugin's `initSteps` array. Each step
- * prompts the user (or uses its `default` under `-y`) and then invokes the
- * callback with the resolved value. A throw in one step is logged and
- * swallowed so subsequent steps still run.
+ * Run every step in a single domain's `initSteps` array. Each step prompts the
+ * user (or uses its `default` under `-y`) then invokes the callback. A throw in
+ * one step is logged and swallowed so subsequent steps still run.
  */
 export async function runDomainInitSteps(
-  plugin: DomainPlugin,
+  domain: Domain,
   ctx: ResolveContext,
   opts: RunStepsOptions,
 ): Promise<void> {
-  const steps = plugin.initSteps;
+  const steps = domain.initSteps;
   if (!steps || steps.length === 0) return;
 
   for (const step of steps) {
     try {
       if (step.when && !(await step.when(ctx))) {
-        ctx.logger.debug(`skipping ${plugin.name}.${step.id} (when predicate false)`);
+        ctx.logger.debug(`skipping ${domain.id}.${step.id} (when predicate false)`);
         continue;
       }
       const value = await resolveStepValue(step, opts, ctx);
       if (opts.dryRun) {
-        ctx.logger.info(`would: ${plugin.name}.${step.id} = ${formatValue(value)}`);
+        ctx.logger.info(`would: ${domain.id}.${step.id} = ${formatValue(value)}`);
         continue;
       }
       await invokeCallback(step, value, ctx);
     } catch (err) {
-      ctx.logger.error(`${plugin.name}.${step.id} failed: ${(err as Error).message}`);
+      ctx.logger.error(`${domain.id}.${step.id} failed: ${(err as Error).message}`);
     }
   }
 }
 
 /**
- * Run every domain's initSteps in priority order (lower priority first).
- * `onlyIds`, when provided, filters to domains whose plugin id matches.
- * Unknown ids in `onlyIds` are logged and ignored.
+ * Run every domain's initSteps in priority order. `onlyIds`, when provided,
+ * filters to domains whose id matches. Unknown ids are logged and ignored.
  */
 export async function runAllDomainInitSteps(
   registry: PluginRegistry,
@@ -50,23 +49,18 @@ export async function runAllDomainInitSteps(
   opts: RunStepsOptions,
   onlyIds?: readonly string[],
 ): Promise<void> {
-  const entries = [...registry.domains.entries()].sort(
-    ([, a], [, b]) => a.plugin.priority - b.plugin.priority,
-  );
-
   let filterSet: Set<string> | undefined;
   if (onlyIds && onlyIds.length > 0) {
     filterSet = new Set(onlyIds);
-    const known = new Set(entries.map(([id]) => id));
+    const known = new Set(registry.domains.keys());
     for (const id of filterSet) {
-      if (!known.has(id)) ctx.logger.warn(`--only: no domain plugin with id "${id}"`);
+      if (!known.has(id)) ctx.logger.warn(`--only: no domain with id "${id}"`);
     }
   }
 
-  for (const [id, dom] of entries) {
-    if (filterSet && !filterSet.has(id)) continue;
-    if (!dom.plugin.initSteps || dom.plugin.initSteps.length === 0) continue;
-    await runDomainInitSteps(dom.plugin, ctx, opts);
+  for (const dom of orderedDomains(registry)) {
+    if (filterSet && !filterSet.has(dom.domain.id)) continue;
+    await runDomainInitSteps(dom.domain, ctx, opts);
   }
 }
 
@@ -80,29 +74,15 @@ async function resolveStepValue(
   switch (step.type) {
     case "text": {
       const def = await resolveDefault<string>(step.default, ctx);
-      const value = await input({
-        message: step.message,
-        default: def,
-        validate: step.validate,
-      });
-      return value;
+      return await input({ message: step.message, default: def, validate: step.validate });
     }
     case "boolean": {
       const def = (await resolveDefault<boolean>(step.default, ctx)) ?? false;
-      const value = await confirm({
-        message: step.message,
-        default: def,
-      });
-      return value;
+      return await confirm({ message: step.message, default: def });
     }
     case "select": {
       const def = await resolveDefault<string>(step.default, ctx);
-      const value = await select<string>({
-        message: step.message,
-        choices: step.choices,
-        default: def,
-      });
-      return value;
+      return await select<string>({ message: step.message, choices: step.choices, default: def });
     }
   }
 }

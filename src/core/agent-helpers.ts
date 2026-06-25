@@ -1,36 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readConfigOrDefault } from "./config.js";
-import {
-  type AgentRuleTarget,
-  materializeRuleMirrors,
-  pruneRuleMirrors,
-  resolveRules,
-} from "./materialize-rules.js";
-import type { MaterializeContext, McpDeclaration, RulesEventHandlers } from "./types/public.js";
-
-// ---------- rules ----------
-
-/**
- * Build the standard rules handler for an agent that mirrors every canonical
- * rule file under a fixed target (its own filename + root). The whole block is
- * identical across agents — only `target` differs — so plugins just call
- * `createRuleMirrorHandler(RULES_TARGET)` instead of repeating it.
- */
-export function createRuleMirrorHandler(target: AgentRuleTarget): RulesEventHandlers {
-  return {
-    async onInitialize(state, ctx) {
-      await materializeRuleMirrors(state, target, ctx);
-    },
-    async onCleanup(ctx) {
-      const config = await readConfigOrDefault(ctx.configPath);
-      if (!config.rules) return;
-      await pruneRuleMirrors(resolveRules(config.rules, ctx), target, ctx);
-    },
-  };
-}
-
-// ---------- MCP declaration parsing ----------
+import type { MaterializeContext, McpDeclaration } from "./types/public.js";
 
 /** Coerce a value to a `string[]` only if every element is a string. */
 export function pickStringArray(value: unknown): string[] | undefined {
@@ -52,9 +22,8 @@ export function pickEnv(value: unknown): Record<string, string> | undefined {
 /**
  * Read an agent's native MCP config file and return the centralizable
  * declarations. Handles the shared skeleton — missing file → [], read/parse
- * errors → warn + [] (never throws, per the `onImport` contract) — leaving each
- * agent only its parser (`parse`), container key, and per-entry mapper
- * (`fromEntry`).
+ * errors → warn + [] (never throws) — leaving each agent only its parser, the
+ * container key, and a per-entry mapper.
  */
 export async function importMcpServers(
   ctx: MaterializeContext,
