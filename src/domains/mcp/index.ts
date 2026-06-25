@@ -1,5 +1,8 @@
-import type { Domain, McpDeclaration } from "../../core/index.js";
+import type { CommandSpec, Domain, McpDeclaration } from "../../core/index.js";
+import { readConfigOrDefault } from "../../core/index.js";
 import { jsonEqual, mergeByIdentity, type ArrayMergeResult, type MergePolicy } from "../merge.js";
+import { MIGRATE_FLAGS, policyFromFlags, reqArg, writeChange } from "../cli-helpers.js";
+import { scrapeActive } from "../agents/index.js";
 
 /** Identity of an MCP declaration for dedup/removal: its name. */
 export const mcpIdentity = (m: McpDeclaration): string => m.name;
@@ -18,17 +21,103 @@ export function removeMcp(existing: McpDeclaration[], name: string): McpDeclarat
   return existing.filter((m) => m.name !== name);
 }
 
+function declFrom(name: string, command: string, args: string[]): McpDeclaration {
+  const decl: McpDeclaration = { name, command, transport: "stdio" };
+  if (args.length > 0) decl.args = args;
+  return decl;
+}
+
+const commands: Record<string, CommandSpec> = {
+  add: {
+    name: "add",
+    description: "Add a stdio MCP server",
+    args: [
+      { name: "name", required: true, description: "server name" },
+      { name: "command", required: true, description: "executable to run" },
+      { name: "args", required: false, variadic: true, description: "command arguments" },
+    ],
+    async run(ctx) {
+      const name = reqArg(ctx, 0, "name");
+      const command = reqArg(ctx, 1, "command");
+      const config = await readConfigOrDefault(ctx.configPath);
+      const mcp = config.mcp ?? [];
+      if (mcp.some((m) => m.name === name)) {
+        throw new Error(`mcp server "${name}" already exists (use \`agnos mcp update\`)`);
+      }
+      await writeChange(ctx, `added mcp server "${name}"`, {
+        ...config,
+        mcp: [...mcp, declFrom(name, command, ctx.args.slice(2))],
+      });
+    },
+  },
+  update: {
+    name: "update",
+    description: "Replace an existing stdio MCP server",
+    args: [
+      { name: "name", required: true, description: "server name" },
+      { name: "command", required: true, description: "executable to run" },
+      { name: "args", required: false, variadic: true, description: "command arguments" },
+    ],
+    async run(ctx) {
+      const name = reqArg(ctx, 0, "name");
+      const command = reqArg(ctx, 1, "command");
+      const config = await readConfigOrDefault(ctx.configPath);
+      const mcp = config.mcp ?? [];
+      if (!mcp.some((m) => m.name === name)) throw new Error(`mcp server "${name}" not found`);
+      const next = declFrom(name, command, ctx.args.slice(2));
+      await writeChange(ctx, `updated mcp server "${name}"`, {
+        ...config,
+        mcp: mcp.map((m) => (m.name === name ? next : m)),
+      });
+    },
+  },
+  remove: {
+    name: "remove",
+    description: "Remove an MCP server by name",
+    args: [{ name: "name", required: true, description: "server name" }],
+    async run(ctx) {
+      const name = reqArg(ctx, 0, "name");
+      const config = await readConfigOrDefault(ctx.configPath);
+      const mcp = config.mcp ?? [];
+      if (!mcp.some((m) => m.name === name)) throw new Error(`mcp server "${name}" not found`);
+      await writeChange(ctx, `removed mcp server "${name}"`, {
+        ...config,
+        mcp: removeMcp(mcp, name),
+      });
+    },
+  },
+  migrate: {
+    name: "migrate",
+    description: "Import MCP servers from the active agents' native config",
+    flags: MIGRATE_FLAGS,
+    async run(ctx) {
+      const discovered = (await scrapeActive("mcp", ctx)) as McpDeclaration[];
+      const config = await readConfigOrDefault(ctx.configPath);
+      const res = mergeMcp(config.mcp ?? [], discovered, policyFromFlags(ctx));
+      if (res.aborted) {
+        throw new Error(
+          `mcp migrate aborted: ${res.conflicts} conflict(s). Re-run with --force or --missing.`,
+        );
+      }
+      await writeChange(ctx, `mcp migrate: +${res.added} added, ${res.overwritten} overwritten`, {
+        ...config,
+        mcp: res.items,
+      });
+    },
+  },
+};
+
 /**
  * The mcp domain: a config writer. It owns `agnos.json#mcp`; the agents domain
- * renders each declaration into per-agent native files (`.mcp.json` /
- * `.codex/config.toml`). The `add`/`remove`/`update`/`migrate` subcommands are
- * wired in M8 (CLI); the reconcilers above are their data layer.
+ * renders each declaration into per-agent native files. Subcommands mutate the
+ * config; the agents domain materializes on the next run.
  */
 export const mcpDomain: Domain = {
   id: "mcp",
   description: "Manage MCP servers in agnos.json (rendered per-agent by the agents domain)",
   kind: "writer",
   priority: 40,
+  commands,
 };
 
 export default mcpDomain;

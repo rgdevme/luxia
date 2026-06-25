@@ -1,11 +1,58 @@
 import fs from "node:fs/promises";
-import type { AgnosConfig, Domain } from "../../core/index.js";
-import { buildPaths, prepareSkills, readConfigOrDefault, writeConfig } from "../../core/index.js";
+import type { AgnosConfig, CommandSpec, Domain } from "../../core/index.js";
+import {
+  buildPaths,
+  prepareSkills,
+  readConfigOrDefault,
+  skillNameSchema,
+  skillRefSchema,
+  writeConfig,
+} from "../../core/index.js";
+import { reqArg, writeChange } from "../cli-helpers.js";
 
 export * from "./pipeline.js";
 export * from "./migrate.js";
 
 const DEFAULT_SKILLS_DIR = "./.agnos/skills";
+
+const commands: Record<string, CommandSpec> = {
+  add: {
+    name: "add",
+    description: "Add a skill source (name → composite ref)",
+    args: [
+      { name: "name", required: true, description: "local skill name" },
+      { name: "ref", required: true, description: "e.g. github:owner/repo/skills/pdf" },
+    ],
+    async run(ctx) {
+      const name = skillNameSchema.parse(reqArg(ctx, 0, "name"));
+      const ref = skillRefSchema.parse(reqArg(ctx, 1, "ref"));
+      const config = await readConfigOrDefault(ctx.configPath);
+      const sources = { ...(config.skills?.sources ?? {}) };
+      if (name in sources) throw new Error(`skill "${name}" already exists`);
+      sources[name] = ref;
+      await writeChange(ctx, `added skill "${name}"`, {
+        ...config,
+        skills: { ...config.skills, sources },
+      });
+    },
+  },
+  remove: {
+    name: "remove",
+    description: "Remove a skill source by name",
+    args: [{ name: "name", required: true, description: "local skill name" }],
+    async run(ctx) {
+      const name = reqArg(ctx, 0, "name");
+      const config = await readConfigOrDefault(ctx.configPath);
+      const all = config.skills?.sources ?? {};
+      if (!(name in all)) throw new Error(`skill "${name}" not found`);
+      const { [name]: _removed, ...sources } = all;
+      await writeChange(ctx, `removed skill "${name}"`, {
+        ...config,
+        skills: { ...config.skills, sources },
+      });
+    },
+  },
+};
 
 /**
  * The skills domain: a config writer that also prepares the canonical skill
@@ -19,6 +66,7 @@ export const skillsDomain: Domain = {
   description: "Fetch + verify skills into the canonical skills dir (linked per-agent by agents)",
   kind: "writer",
   priority: 10,
+  commands,
   initSteps: [
     {
       id: "route",

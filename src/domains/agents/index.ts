@@ -2,6 +2,8 @@ import path from "node:path";
 import type {
   AgentAdapter,
   AgnosConfig,
+  CommandContext,
+  CommandSpec,
   Domain,
   MaterializeContext,
   ResolveContext,
@@ -10,6 +12,7 @@ import type {
 import { buildPaths, readConfigOrDefault } from "../../core/index.js";
 import { adapterById, ADAPTERS } from "../../agents/adapters/index.js";
 import { removePaths } from "../../agents/adapters/shared.js";
+import { reqArg, writeChange } from "../cli-helpers.js";
 
 /** The per-agent render slices, in dependency order. */
 const SLICES = ["rules", "mcp", "hooks", "skills"] as const;
@@ -82,16 +85,82 @@ export async function cleanupAgent(
 }
 
 /**
+ * Scrape a slice ("mcp" | "hooks") from every active agent's native files —
+ * the discovery half of `agnos <domain> migrate`. Lives here because this is
+ * where the active adapters are resolved.
+ */
+export async function scrapeActive(
+  slice: "mcp" | "hooks",
+  ctx: CommandContext,
+): Promise<unknown[]> {
+  const config = await readConfigOrDefault(ctx.configPath);
+  const out: unknown[] = [];
+  for (const adapter of activeAdapters(config, ctx)) {
+    const fn = adapter.scrape?.[slice];
+    if (!fn) continue;
+    const got = await fn({ ...ctx, agentId: adapter.id, indent: "" });
+    if (Array.isArray(got)) out.push(...got);
+  }
+  return out;
+}
+
+const commands: Record<string, CommandSpec> = {
+  add: {
+    name: "add",
+    description: "Enable an agent (its files render on the next `agnos` run)",
+    args: [{ name: "agent", required: true, description: "agent id (claude-code | codex)" }],
+    async run(ctx) {
+      const id = reqArg(ctx, 0, "agent");
+      if (!adapterById(id)) {
+        throw new Error(`unknown agent "${id}" (known: ${ADAPTERS.map((a) => a.id).join(", ")})`);
+      }
+      const config = await readConfigOrDefault(ctx.configPath);
+      const agents = config.agents ?? [];
+      if (agents.includes(id)) {
+        ctx.logger.info(`agent "${id}" is already enabled`);
+        return;
+      }
+      await writeChange(ctx, `enabled agent "${id}"`, { ...config, agents: [...agents, id] });
+    },
+  },
+  remove: {
+    name: "remove",
+    description: "Remove an agent's rendered files, then disable it",
+    args: [{ name: "agent", required: true, description: "agent id" }],
+    async run(ctx) {
+      const id = reqArg(ctx, 0, "agent");
+      const config = await readConfigOrDefault(ctx.configPath);
+      const agents = config.agents ?? [];
+      if (!agents.includes(id)) throw new Error(`agent "${id}" is not enabled`);
+      // §13.2: delete the agent's owned files first, then edit the config.
+      const removed = adapterById(id);
+      if (removed) {
+        const remaining = agents
+          .filter((a) => a !== id)
+          .map((a) => adapterById(a))
+          .filter((a): a is AgentAdapter => Boolean(a));
+        await cleanupAgent(removed, remaining, { ...ctx, agentId: id, indent: "  " });
+      }
+      await writeChange(ctx, `removed agent "${id}"`, {
+        ...config,
+        agents: agents.filter((a) => a !== id),
+      });
+    },
+  },
+};
+
+/**
  * The agents domain: the sole config-reader. Highest priority so it renders
- * after every writer domain has produced its canonical outputs. (CLI `run`
- * and `add`/`remove` commands are wired in M8; M3 provides the render/cleanup
- * machinery above, exercised by unit tests.)
+ * after every writer domain has produced its canonical outputs. `add`/`remove`
+ * toggle `agnos.json#agents` (remove also cleans the agent's files); `run`
+ * renders every active agent.
  */
 export const agentsDomain: Domain = {
   id: "agents",
   description: "Render per-agent native files from agnos.json (the config reader)",
   kind: "reader",
   priority: 99,
+  commands,
   async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
     for (const adapter of activeAdapters(config, ctx)) {

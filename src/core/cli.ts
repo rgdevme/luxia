@@ -13,7 +13,7 @@ import { USAGE, commandHelp, domainHelp } from "./help.js";
 
 async function main(): Promise<void> {
   const argv = minimist(process.argv.slice(2), {
-    boolean: ["dry", "once", "quiet", "help", "init", "yes", "debug"],
+    boolean: ["dry", "once", "quiet", "help", "init", "yes", "debug", "missing", "force", "skip"],
     alias: { y: "yes", h: "help" },
     string: ["cwd"],
   });
@@ -26,6 +26,10 @@ async function main(): Promise<void> {
     init: Boolean(argv["init"]),
     yes: Boolean(argv["yes"]),
   };
+  // Carry command-local flags (e.g. --force/--missing/--skip) through to commands.
+  for (const [k, v] of Object.entries(argv)) {
+    if (k !== "_" && !(k in flags)) flags[k] = v;
+  }
 
   const positional = argv._.map(String);
   const [domainId, sub, ...rest] = positional;

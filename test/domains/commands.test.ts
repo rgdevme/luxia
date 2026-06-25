@@ -1,0 +1,97 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import type { CommandContext, Domain } from "../../src/core/index.js";
+import { createLogger, readConfigOrDefault } from "../../src/core/index.js";
+import mcpDomain from "../../src/domains/mcp/index.js";
+import hooksDomain from "../../src/domains/hooks/index.js";
+import skillsDomain from "../../src/domains/skills/index.js";
+import { agentsDomain } from "../../src/domains/agents/index.js";
+
+let tmp: string;
+
+const ctxFor = (args: string[], extra: Record<string, unknown> = {}): CommandContext => ({
+  agnosRoot: tmp,
+  projectRoot: tmp,
+  cacheDir: path.join(tmp, ".agnos", "cache"),
+  configPath: path.join(tmp, "agnos.json"),
+  statePath: path.join(tmp, ".agnos", "state.json"),
+  logger: createLogger({ quiet: true }),
+  fetcher: {} as never,
+  linker: {} as never,
+  dryRun: false,
+  args,
+  flags: { dry: false, once: true, quiet: true, help: false, init: false, yes: true, ...extra },
+});
+
+const writeCfg = (c: object) =>
+  fs.writeFile(path.join(tmp, "agnos.json"), JSON.stringify({ schemaVersion: 1, ...c }));
+const readCfg = () => readConfigOrDefault(path.join(tmp, "agnos.json"));
+const run = (d: Domain, name: string, args: string[], extra?: Record<string, unknown>) =>
+  d.commands![name]!.run(ctxFor(args, extra));
+
+beforeEach(async () => {
+  tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-cmd-"));
+  await writeCfg({});
+});
+afterEach(async () => {
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
+describe("mcp subcommands", () => {
+  it("add appends a server; a duplicate add throws", async () => {
+    await run(mcpDomain, "add", ["gh", "npx", "-y", "s"]);
+    expect((await readCfg()).mcp).toEqual([
+      { name: "gh", command: "npx", args: ["-y", "s"], transport: "stdio" },
+    ]);
+    await expect(run(mcpDomain, "add", ["gh", "x"])).rejects.toThrow(/already exists/);
+  });
+
+  it("remove drops a server; removing a missing one throws", async () => {
+    await run(mcpDomain, "add", ["gh", "npx"]);
+    await run(mcpDomain, "remove", ["gh"]);
+    expect((await readCfg()).mcp).toEqual([]);
+    await expect(run(mcpDomain, "remove", ["nope"])).rejects.toThrow(/not found/);
+  });
+
+  it("migrate imports servers from an active agent's native config", async () => {
+    await writeCfg({ agents: ["claude-code"] });
+    await fs.writeFile(
+      path.join(tmp, ".mcp.json"),
+      JSON.stringify({ mcpServers: { gh: { command: "npx", args: ["s"] } } }),
+    );
+    await run(mcpDomain, "migrate", [], { missing: true });
+    expect((await readCfg()).mcp?.map((m) => m.name)).toEqual(["gh"]);
+  });
+});
+
+describe("hooks subcommands", () => {
+  it("add appends a hook; an unknown event throws; remove drops it", async () => {
+    await run(hooksDomain, "add", ["PreToolUse", "echo hi", "git"]);
+    expect((await readCfg()).hooks).toHaveLength(1);
+    await expect(run(hooksDomain, "add", ["Nope", "x"])).rejects.toThrow(/unknown hook event/);
+    await run(hooksDomain, "remove", ["PreToolUse", "echo hi", "git"]);
+    expect((await readCfg()).hooks).toEqual([]);
+  });
+});
+
+describe("skills subcommands", () => {
+  it("add a source; an invalid name throws; remove drops it", async () => {
+    await run(skillsDomain, "add", ["pdf", "github:o/r/skills/pdf"]);
+    expect((await readCfg()).skills?.sources).toEqual({ pdf: "github:o/r/skills/pdf" });
+    await expect(run(skillsDomain, "add", ["Bad Name", "github:o/r/x"])).rejects.toThrow();
+    await run(skillsDomain, "remove", ["pdf"]);
+    expect((await readCfg()).skills?.sources).toEqual({});
+  });
+});
+
+describe("agents subcommands", () => {
+  it("add enables a known agent; unknown throws; remove disables it", async () => {
+    await run(agentsDomain, "add", ["claude-code"]);
+    expect((await readCfg()).agents).toEqual(["claude-code"]);
+    await expect(run(agentsDomain, "add", ["zed"])).rejects.toThrow(/unknown agent/);
+    await run(agentsDomain, "remove", ["claude-code"]);
+    expect((await readCfg()).agents).toEqual([]);
+  });
+});
