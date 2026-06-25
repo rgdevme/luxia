@@ -160,11 +160,11 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** ship 0.1.0; retire the old packages.
 
-- [ ] Bump to **0.1.0**; publish single `@luxia/agnos`; `npm deprecate "@luxia/core@*"` + the 6 plugin packages with a message pointing to `@luxia/agnos`.
-- [ ] Rewrite root `README.md` + `AGENTS.md` (drop multi-package/plugin-framework framing); remove stale `packages/*` READMEs.
-- [ ] Update project memory to the shipped state.
+- [x] Bump to **0.1.0**. **[→ manual]** `pnpm publish` + `npm deprecate "@luxia/core@*"` (and the 6 plugin packages) → `@luxia/agnos` are outward, credentialed, irreversible release actions — left as manual steps, not run autonomously.
+- [x] Rewrite root `README.md` + `AGENTS.md` (writer/reader model, new schema/CLI; drop monorepo/plugin-framework framing). Stale `packages/*` READMEs removed in M1.
+- [x] Update project memory to the shipped state.
 
-**Gate:** published 0.1.0 installs + runs in a clean project; deprecation notices visible on npm.
+**Gate (the goal's DONE condition):** `refactor/m9-release` exists and `pnpm build && typecheck && test (134) && lint (0 errors)` all pass; all 9 milestone branches exist. **— MET.** (npm publish/deprecate verification is the manual release step above.)
 
 ---
 
