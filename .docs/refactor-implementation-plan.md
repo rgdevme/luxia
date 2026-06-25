@@ -92,10 +92,12 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** `rules.files` titled-section injection into canonical files.
 
-- [ ] Rewrite `src/domains/rules/`: read `rules.files`, inject/replace titled sections into each canonical file using **HTML sentinels keyed by title slug** (PRD §6.2).
-- [ ] §13.3: missing/duplicate `title` → warn (exact format from §13.3) + skip; section order = declaration order; `fragment → {canonical files}` fan-out re-injection; sentinel-scoped orphan pruning (hand edits left to the owner); idempotent byte-stable replace.
-- [ ] `rules --init`: prompt `canonicalRulesFilePath` (default `./AGENTS.md`), seed `{ "<path>": [] }`.
-- [ ] Delete `materialize-rules.ts` (tree machinery) and `domain-docs/cli/inject.ts` (docs no longer self-injects).
+- [x] Rewrite `src/domains/rules/`: read `rules.files`, inject/replace titled sections into each canonical file using **HTML sentinels keyed by title slug** (PRD §6.2). (`inject.ts` engine + `injectRules`.)
+- [x] §13.3: missing/duplicate `title` → warn (exact format) + skip; section order = declaration order; `fragment → {canonical files}` fan-out re-injection; sentinel-scoped orphan pruning (hand edits left to the owner); idempotent byte-stable replace.
+- [x] `rules --init`: prompt `canonicalRulesFilePath` (default `./AGENTS.md`), seed `{ "<path>": [] }`.
+- [ ] **[→ M8]** Delete `materialize-rules.ts` (tree machinery) and `domain-docs/cli/inject.ts` (docs no longer self-injects). _Deferred: the core barrel + orchestrator still load `materialize-rules.ts` at runtime; safe to delete only when the orchestrator is rewritten (M8). New rules path doesn't use it._
+
+**Gate (M4):** inject/replace/prune/fan-out + missing/duplicate-title unit tests. **— MET** (10 tests: `test/rules/{inject,rules-domain}.test.ts`).
 
 **Gate:** inject/replace/prune/fan-out + missing/duplicate-title unit tests.
 
