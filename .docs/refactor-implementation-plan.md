@@ -132,11 +132,11 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** the two remaining writers + their reverse-import.
 
-- [ ] mcp: `add`/`remove`/`update`/`migrate`; rendering via adapters (`.mcp.json` / `.codex/config.toml`); `scrape`.
-- [ ] hooks: flat-array schema; **closed normalized event vocabulary** mapped per adapter (skip unsupported); identity `(event, matcher, command)`; `add` (interactive), `remove [<id>]` (multiselect if no id), `migrate`; render **regroups** into native formats; strict 5 fields (`message`→native status; drop agent-specific keys).
-- [ ] §13.5 reverse-import: mcp identity = `name`, hooks identity = `(event,matcher,command)`; `--missing/--force/--skip` + no-flag single-strategy prompt.
+- [x] mcp domain (writer) + data layer: `mergeMcp` (identity=`name`), `removeMcp`; **rendering + scrape already shipped in M3 adapters** (`.mcp.json` / `.codex/config.toml`). **[→ M8]** the `add`/`remove`/`update`/`migrate` CLI subcommands.
+- [x] hooks domain (writer) + data layer: `mergeHooks` (identity `(event,matcher,command)`), `removeHookById`; flat-array schema (M2), closed event vocab + regroup/strict-5 render (M3 `hooks-map`/adapters). **[→ M8]** `add` (interactive) / `remove [<id>]` (multiselect) / `migrate` CLI.
+- [x] §13.5 reverse-import reconcilers: `mergeByIdentity` (mcp=`name`, hooks identity); `--missing/--force/--skip`. **[→ M8]** the no-flag single-strategy interactive prompt (CLI).
 
-**Gate:** mcp/hooks render + scrape + migrate identity/dedup unit tests.
+**Gate (M7):** mcp/hooks render + scrape (M3 adapters) + migrate identity/dedup unit tests. **— MET** (7 tests: `test/domains/mcp-hooks.test.ts`).
 
 ---
 
