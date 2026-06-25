@@ -1,22 +1,13 @@
-import type { AgentPlugin, DomainPlugin, Logger } from "./types/public.js";
-
-/**
- * Origin of a registered plugin. In the single-package build every plugin is a
- * built-in, but the field is retained so existing call sites (e.g. the agents
- * picker) keep type-checking without change.
- */
-export type PluginSource = "project" | "bundle";
+import type { AgentAdapter, Domain, Logger } from "./types/public.js";
 
 export interface RegisteredAgent {
-  plugin: AgentPlugin;
+  adapter: AgentAdapter;
   packageName: string;
-  source: PluginSource;
 }
 
 export interface RegisteredDomain {
-  plugin: DomainPlugin;
+  domain: Domain;
   packageName: string;
-  source: PluginSource;
 }
 
 export interface PluginRegistry {
@@ -32,13 +23,9 @@ interface LoaderOptions {
 }
 
 /**
- * Build the plugin registry from the static set of built-ins.
- *
- * The built-in list lives in `../registry.js` and is imported lazily here: the
- * core barrel (`./index.js`) re-exports this module, and the built-in plugins
- * import that barrel, so a static import would form an initialization cycle.
- * Loading the registry at call time — after all module bodies have run —
- * sidesteps it.
+ * Build the plugin registry from the static set of built-ins. Loaded lazily
+ * from `../registry.js` (see the note in registry.ts) to avoid an init cycle
+ * with the core barrel.
  */
 export async function loadPlugins(_opts: LoaderOptions): Promise<PluginRegistry> {
   const { BUILTIN_AGENTS, BUILTIN_DOMAINS } = await import("../registry.js");
@@ -48,20 +35,17 @@ export async function loadPlugins(_opts: LoaderOptions): Promise<PluginRegistry>
   const domains = new Map<string, RegisteredDomain>();
 
   for (const reg of BUILTIN_AGENTS) {
-    agents.set(reg.plugin.id, reg);
+    agents.set(reg.adapter.id, reg);
     agentsByPackage.set(reg.packageName, reg);
   }
   for (const reg of BUILTIN_DOMAINS) {
-    domains.set(reg.plugin.name, reg);
+    domains.set(reg.domain.id, reg);
   }
 
   return { agents, agentsByPackage, domains, collisions: [] };
 }
 
-/**
- * Look up an agent by `agnos.json.agents` entry. Tries id first, then package
- * name (the package name is synthetic for built-ins but kept for parity).
- */
+/** Look up an agent by id or by synthetic package name. */
 export function resolveAgentByRef(
   registry: PluginRegistry,
   ref: string,
@@ -69,11 +53,13 @@ export function resolveAgentByRef(
   return registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
 }
 
-/**
- * Resolve the canonical agent id for a ref. Falls back to the ref itself when
- * not found (caller will discover this is a missing plugin later).
- */
+/** Resolve the canonical agent id for a ref; falls back to the ref itself. */
 export function refToId(registry: PluginRegistry, ref: string): string {
   const reg = registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
-  return reg ? reg.plugin.id : ref;
+  return reg ? reg.adapter.id : ref;
+}
+
+/** Ordered domains by ascending priority (the run-pipeline order). */
+export function orderedDomains(registry: PluginRegistry): RegisteredDomain[] {
+  return [...registry.domains.values()].sort((a, b) => a.domain.priority - b.domain.priority);
 }
