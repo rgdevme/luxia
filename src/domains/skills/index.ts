@@ -1,8 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgnosConfig, CommandSpec, Domain, ResolveContext } from "../../core/index.js";
+import type {
+  AgnosConfig,
+  CommandSpec,
+  CompositeSkillRef,
+  Domain,
+  ResolveContext,
+} from "../../core/index.js";
 import {
   buildPaths,
+  parseCompositeSkillRef,
   prepareSkills,
   readConfigOrDefault,
   skillNameSchema,
@@ -18,6 +25,12 @@ export * from "./pipeline.js";
 export * from "./migrate.js";
 
 const DEFAULT_SKILLS_DIR = "./.agnos/skills";
+
+/** Default skill name from a ref: the last sub-path segment (git) or dir basename (local). */
+function deriveSkillName(parsed: CompositeSkillRef): string {
+  if (parsed.source.kind === "local") return path.basename(parsed.source.absolutePath);
+  return parsed.subPath.split("/").filter(Boolean).pop() ?? "";
+}
 
 /** Run a single read-only step over every declared skill and report failures. */
 async function diagnose(
@@ -49,19 +62,35 @@ async function diagnose(
 const commands: Record<string, CommandSpec> = {
   add: {
     name: "add",
-    description: "Add a skill source (name → composite ref)",
+    description: "Add a skill source; the name is derived from the ref unless given",
     args: [
-      { name: "name", required: true, description: "local skill name" },
-      { name: "ref", required: true, description: "e.g. github:owner/repo/skills/pdf" },
+      {
+        name: "ref",
+        required: true,
+        description: "github:owner/repo/path | owner/repo/path | https://… | ./path",
+      },
+      { name: "name", required: false, description: "local name (default: last path segment)" },
     ],
     async run(ctx) {
-      const name = skillNameSchema.parse(reqArg(ctx, 0, "name"));
-      const ref = skillRefSchema.parse(reqArg(ctx, 1, "ref"));
+      // Parse first so a non-concrete or malformed ref fails with a clear message
+      // (not "skill name must be alphanumeric/dash" from mis-reading the ref).
+      const parsed = parseCompositeSkillRef(reqArg(ctx, 0, "ref"), {
+        projectRoot: ctx.projectRoot,
+      });
+      const candidate = ctx.args[1] ?? deriveSkillName(parsed);
+      const named = skillNameSchema.safeParse(candidate);
+      if (!named.success) {
+        throw new Error(
+          `could not derive a valid skill name from "${parsed.composite}" ` +
+            `(got "${candidate}"). Pass one explicitly: agnos skills add <ref> <name>`,
+        );
+      }
+      const name = named.data;
       const config = await readConfigOrDefault(ctx.configPath);
       const sources = { ...(config.skills?.sources ?? {}) };
       if (name in sources) throw new Error(`skill "${name}" already exists`);
-      sources[name] = ref;
-      await writeChange(ctx, `added skill "${name}"`, {
+      sources[name] = parsed.composite;
+      await writeChange(ctx, `added skill "${name}" → ${parsed.composite}`, {
         ...config,
         skills: { ...config.skills, sources },
       });

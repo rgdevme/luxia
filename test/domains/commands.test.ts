@@ -77,12 +77,20 @@ describe("hooks subcommands", () => {
 });
 
 describe("skills subcommands", () => {
-  it("add a source; an invalid name throws; remove drops it", async () => {
-    await run(skillsDomain, "add", ["pdf", "github:o/r/skills/pdf"]);
+  it("add derives the name from the ref; bad explicit name and non-concrete refs throw", async () => {
+    await run(skillsDomain, "add", ["github:o/r/skills/pdf"]); // name derived: "pdf"
     expect((await readCfg()).skills?.sources).toEqual({ pdf: "github:o/r/skills/pdf" });
-    await expect(run(skillsDomain, "add", ["Bad Name", "github:o/r/x"])).rejects.toThrow();
+    // bare owner/repo (defaults to github) is canonicalized + name derived from the path
+    await run(skillsDomain, "add", ["o/r/skills/lint"]);
+    expect((await readCfg()).skills?.sources["lint"]).toBe("github:o/r/skills/lint");
+    // explicit invalid name → clear error (not a zod dump)
+    await expect(run(skillsDomain, "add", ["github:o/r/skills/x", "Bad Name"])).rejects.toThrow(
+      /skill name/,
+    );
+    // non-concrete git ref (no in-repo path) → clear parse error
+    await expect(run(skillsDomain, "add", ["o/r"])).rejects.toThrow(/in-repo path/);
     await run(skillsDomain, "remove", ["pdf"]);
-    expect((await readCfg()).skills?.sources).toEqual({});
+    expect((await readCfg()).skills?.sources["pdf"]).toBeUndefined();
   });
 });
 
