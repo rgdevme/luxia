@@ -33,6 +33,8 @@ export const docsDomain: Domain = {
   ],
   async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
+    // Nothing to do unless a docs root is configured (empty/undefined → skip).
+    if (!config.docs?.root) return undefined;
     await compileDocsIndex(config, ctx);
     return undefined;
   },

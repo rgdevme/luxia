@@ -124,6 +124,8 @@ export const rulesDomain: Domain = {
   ],
   async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
+    // No canonical files declared (empty/undefined `rules.files`) → skip.
+    if (Object.keys(config.rules?.files ?? {}).length === 0) return undefined;
     await injectRules(config, ctx);
     return undefined;
   },

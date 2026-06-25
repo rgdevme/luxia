@@ -114,8 +114,17 @@ async function writeClaudeHooks(entries: HookEntry[], ctx: MaterializeContext): 
 // ---------- mcp (.mcp.json) ----------
 
 async function writeMcpFile(servers: ResolvedMcp[], ctx: MaterializeContext): Promise<void> {
-  const out = { mcpServers: Object.fromEntries(servers.map((m) => [m.name, toClaudeServer(m)])) };
   const file = path.join(ctx.projectRoot, CLAUDE_MCP);
+  // No servers declared → ensure the file is absent rather than writing an empty one.
+  if (servers.length === 0) {
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: remove ${CLAUDE_MCP} (no mcp servers)`);
+      return;
+    }
+    await fs.rm(file, { force: true }).catch(() => {});
+    return;
+  }
+  const out = { mcpServers: Object.fromEntries(servers.map((m) => [m.name, toClaudeServer(m)])) };
   if (ctx.dryRun) {
     ctx.logger.info(`would: write ${CLAUDE_MCP} (${servers.length} servers)`);
     return;

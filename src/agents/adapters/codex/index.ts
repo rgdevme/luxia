@@ -104,10 +104,19 @@ async function readCodexHooks(ctx: MaterializeContext): Promise<unknown> {
 // ---------- mcp (.codex/config.toml) ----------
 
 async function writeCodexConfig(servers: ResolvedMcp[], ctx: MaterializeContext): Promise<void> {
+  const file = path.join(ctx.projectRoot, CODEX_CONFIG);
+  // No servers declared → ensure the file is absent rather than writing an empty one.
+  if (servers.length === 0) {
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: remove ${CODEX_CONFIG} (no mcp servers)`);
+      return;
+    }
+    await fs.rm(file, { force: true }).catch(() => {});
+    return;
+  }
   const tomlObj: Record<string, unknown> = {
     mcp_servers: Object.fromEntries(servers.map((m) => [m.name, toCodexServer(m)])),
   };
-  const file = path.join(ctx.projectRoot, CODEX_CONFIG);
   if (ctx.dryRun) {
     ctx.logger.info(`would: write ${CODEX_CONFIG} (${servers.length} servers)`);
     return;
