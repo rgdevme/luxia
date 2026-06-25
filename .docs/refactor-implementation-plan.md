@@ -78,13 +78,13 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 
 **Goal:** one renderer. Replace per-domain `handles.<domain>` with per-agent adapters driven by the `agents` domain.
 
-- [ ] Create `src/domains/agents/` (config-reader, highest priority / runs last) and `src/agents/adapters/{claude-code,codex}/` implementing `AgentAdapter`: `paths`; `render` per slice (rules-mirror → CLAUDE.md/AGENTS.md, mcp → `.mcp.json`/`.codex/config.toml`, hooks → `.claude/settings.json`/`.codex/hooks.json`, skills → link `.agnos/skills`); `scrape` per slice; `claims`.
-- [ ] Replace `orchestrator.initializeAgentsInterleaved` (domain-outer/agent-inner) + `buildAgentDomainStates` with **agent-outer / slice-inner** rendering reading resolved config + canonical outputs. Retire `handles.<domain>`, `DomainEventHandlers`, `AgentPaths`.
-- [ ] §13.1: render **atomic per slice**, slice failure **warns + continues**; idempotent byte-stable writes (deterministic key order, trailing newline); pre-existing non-agnos target → **warn + point to `agnos <domain> migrate`**, never overwrite.
-- [ ] §13.2 remove/cleanup: **delete files first, then edit config**; `claims`-based retention (delete only the removed agent's paths not claimed by any _remaining_ agent); canonical rules files never claimed; user-edited rendered files still deleted.
-- [ ] `agnos.json#agents` schema; `agents add [<agent>]` (bare → picker; **no npm install**) and `remove <agent>`. Move `commands/agents.ts` picker → agents `initSteps`/`commands`. Refit/retire `reinstate`/`activateAgent`/`cleanupAgent`.
+- [x] Create `src/domains/agents/` (config-reader, highest priority / runs last) and `src/agents/adapters/{claude-code,codex}/` implementing `AgentAdapter`: `paths`; `render` per slice (rules-mirror → CLAUDE.md/AGENTS.md, mcp → `.mcp.json`/`.codex/config.toml`, hooks → `.claude/settings.json`/`.codex/hooks.json`, skills → link `.agnos/skills`); `scrape` per slice; `claims`.
+- [ ] **[→ M8]** Replace `orchestrator.initializeAgentsInterleaved` (domain-outer/agent-inner) + `buildAgentDomainStates` with **agent-outer / slice-inner** rendering reading resolved config + canonical outputs. Retire `handles.<domain>`, `DomainEventHandlers`, `AgentPaths`. _Relocated to M8: the render machinery (`renderAgent`) is built and unit-tested here, but swapping the orchestrator + retiring `handles` breaks `commands/*` callers that only compile after the CLI cutover._
+- [x] §13.1: render **atomic per slice**, slice failure **warns + continues** (idempotent byte-stable writes and the pre-existing-non-agnos-target guard land with the M8 wiring).
+- [x] §13.2 remove/cleanup: **delete files first, then edit config**; `claims`-based retention (delete only the removed agent's paths not claimed by any _remaining_ agent); canonical rules files never claimed; user-edited rendered files still deleted.
+- [ ] **[→ M8]** `agnos.json#agents` schema; `agents add [<agent>]` (bare → picker; **no npm install**) and `remove <agent>`. Move `commands/agents.ts` picker → agents `initSteps`/`commands`. Refit/retire `reinstate`/`activateAgent`/`cleanupAgent`. _Relocated to M8 (CLI cutover): schema exists (M2); the commands/picker require the new router._
 
-**Gate:** adapter `render`/`scrape`/`claims` round-trip unit tests for claude-code + codex; cleanup/claims tests.
+**Gate:** adapter `render`/`scrape`/`claims` round-trip unit tests for claude-code + codex; cleanup/claims tests. **— MET** (17 tests: `test/agents/{hooks-map,adapters,cleanup}.test.ts`).
 
 ---
 
@@ -147,6 +147,8 @@ This refactor is executed as **stacked branches — one per milestone** — so e
 - [ ] Supervisor watches `agnos.json` → **debounced full teardown→rebuild** (§13.4); per-domain watchers: rules (injectable files, incl. the docs index), docs (`docs.root`), agents (derived canonical outputs); skills/mcp/hooks have no watch loop; structural **feedback-loop guard** (agents only link canonical rules files, never overwrite).
 - [ ] `--init` / `--init --y`: full + scoped bootstrap via `initSteps` in priority order.
 - [ ] §13.7: `--dry` gates **every** write across all pipelines.
+- [ ] **(from M3)** Replace `orchestrator.initializeAgentsInterleaved` + `buildAgentDomainStates` with the agent-outer `renderAgent` loop; retire `handles.<domain>`/`DomainEventHandlers`/`AgentPaths`; add idempotent byte-stable writes + the pre-existing-non-agnos-target guard (§13.1).
+- [ ] **(from M3)** `agents add [<agent>]` (picker, no npm install) and `remove <agent>` via the agents domain; move `commands/agents.ts` picker → `initSteps`/`commands`; refit/retire `reinstate`/`activateAgent`/`cleanupAgent`.
 
 **Gate:** PRD §12 e2e smoke green; watch cascade settles (no infinite re-render); `pnpm build/typecheck/test/lint` green.
 
