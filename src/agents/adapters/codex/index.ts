@@ -11,7 +11,7 @@ import type {
 } from "../../../core/index.js";
 import { importMcpServers, pickEnv, pickStringArray } from "../../../core/index.js";
 import { flattenHooks, groupHooks } from "../hooks-map.js";
-import { linkSkills, mirrorRules, removePaths } from "../shared.js";
+import { linkSkills, mirrorRules, removePaths, writeIfChanged } from "../shared.js";
 
 const CODEX_RULES = "AGENTS.md";
 const CODEX_DIR = ".codex";
@@ -77,12 +77,13 @@ async function writeCodexHooks(entries: HookEntry[], ctx: MaterializeContext): P
     if (!ctx.dryRun) await fs.rm(file, { force: true }).catch(() => {});
     return;
   }
-  if (ctx.dryRun) {
-    ctx.logger.info(`would: write ${CODEX_HOOKS} (${Object.keys(hooks).length} hook events)`);
-    return;
-  }
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify({ hooks }, null, 2) + "\n", "utf8");
+  const content = JSON.stringify({ hooks }, null, 2) + "\n";
+  await writeIfChanged(
+    file,
+    content,
+    ctx,
+    `${CODEX_HOOKS} (${Object.keys(hooks).length} hook events)`,
+  );
 }
 
 async function readCodexHooks(ctx: MaterializeContext): Promise<unknown> {
@@ -117,12 +118,8 @@ async function writeCodexConfig(servers: ResolvedMcp[], ctx: MaterializeContext)
   const tomlObj: Record<string, unknown> = {
     mcp_servers: Object.fromEntries(servers.map((m) => [m.name, toCodexServer(m)])),
   };
-  if (ctx.dryRun) {
-    ctx.logger.info(`would: write ${CODEX_CONFIG} (${servers.length} servers)`);
-    return;
-  }
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, TOML.stringify(tomlObj as TOML.JsonMap), "utf8");
+  const content = TOML.stringify(tomlObj as TOML.JsonMap);
+  await writeIfChanged(file, content, ctx, `${CODEX_CONFIG} (${servers.length} servers)`);
 }
 
 async function importCodexConfig(ctx: MaterializeContext): Promise<McpDeclaration[]> {

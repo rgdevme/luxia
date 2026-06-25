@@ -14,7 +14,13 @@ import {
   readConfigOrDefault,
 } from "../../../core/index.js";
 import { flattenHooks, groupHooks } from "../hooks-map.js";
-import { linkSkills, mirrorRules, removePaths, ruleMirrorPaths } from "../shared.js";
+import {
+  linkSkills,
+  mirrorRules,
+  removePaths,
+  ruleMirrorPaths,
+  writeIfChanged,
+} from "../shared.js";
 
 const CLAUDE_RULES = "CLAUDE.md";
 const CLAUDE_MCP = ".mcp.json";
@@ -103,12 +109,13 @@ async function writeClaudeHooks(entries: HookEntry[], ctx: MaterializeContext): 
     if (!settings.existed || !("hooks" in settings.data)) return;
     delete settings.data["hooks"];
   }
-  if (ctx.dryRun) {
-    ctx.logger.info(`would: write ${CLAUDE_SETTINGS} (${Object.keys(hooks).length} hook events)`);
-    return;
-  }
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify(settings.data, null, 2) + "\n", "utf8");
+  const content = JSON.stringify(settings.data, null, 2) + "\n";
+  await writeIfChanged(
+    file,
+    content,
+    ctx,
+    `${CLAUDE_SETTINGS} (${Object.keys(hooks).length} hook events)`,
+  );
 }
 
 // ---------- mcp (.mcp.json) ----------
@@ -125,11 +132,8 @@ async function writeMcpFile(servers: ResolvedMcp[], ctx: MaterializeContext): Pr
     return;
   }
   const out = { mcpServers: Object.fromEntries(servers.map((m) => [m.name, toClaudeServer(m)])) };
-  if (ctx.dryRun) {
-    ctx.logger.info(`would: write ${CLAUDE_MCP} (${servers.length} servers)`);
-    return;
-  }
-  await fs.writeFile(file, JSON.stringify(out, null, 2) + "\n", "utf8");
+  const content = JSON.stringify(out, null, 2) + "\n";
+  await writeIfChanged(file, content, ctx, `${CLAUDE_MCP} (${servers.length} servers)`);
 }
 
 async function importMcpFile(ctx: MaterializeContext): Promise<McpDeclaration[]> {

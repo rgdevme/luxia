@@ -128,6 +128,17 @@ export async function ensureLink(
   }
 
   if (lstat && (lstat.isDirectory() || lstat.isFile())) {
+    // A prior copy-fallback materialization is a real file (not a symlink). If it
+    // already matches the target byte-for-byte, it's effectively in place — skip,
+    // so copy mode is idempotent too. A differing real file is a genuine conflict
+    // (a user file we must not clobber).
+    if (lstat.isFile()) {
+      const [cur, tgt] = await Promise.all([
+        fs.readFile(linkPath).catch(() => null),
+        fs.readFile(absTarget).catch(() => null),
+      ]);
+      if (cur && tgt && cur.equals(tgt)) return { kind: "already-linked" };
+    }
     const err = new Error(
       `cannot link ${linkPath}: a ${lstat.isDirectory() ? "directory" : "file"} already exists there`,
     ) as NodeJS.ErrnoException;

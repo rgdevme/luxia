@@ -79,6 +79,29 @@ export async function linkSkills(
   }
 }
 
+/**
+ * Write `content` to `absPath` only if it differs from what's already there.
+ * Returns whether a write happened. Skipping unchanged writes keeps renders
+ * idempotent — no mtime churn, so the watch cascade doesn't re-fire (PRD §13.1).
+ * Honors dry-run (logs the would-be write only when content would change).
+ */
+export async function writeIfChanged(
+  absPath: string,
+  content: string,
+  ctx: MaterializeContext,
+  label: string,
+): Promise<boolean> {
+  const existing = await fs.readFile(absPath, "utf8").catch(() => null);
+  if (existing === content) return false;
+  if (ctx.dryRun) {
+    ctx.logger.info(`would: write ${label}`);
+    return true;
+  }
+  await fs.mkdir(path.dirname(absPath), { recursive: true });
+  await fs.writeFile(absPath, content, "utf8");
+  return true;
+}
+
 /** Best-effort removal of a list of owned paths (used by claims-based cleanup). */
 export async function removePaths(paths: string[], ctx: MaterializeContext): Promise<void> {
   for (const p of paths) {
