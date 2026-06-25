@@ -10,7 +10,6 @@ import type {
 import {
   buildPaths,
   parseCompositeSkillRef,
-  prepareSkills,
   readConfigOrDefault,
   skillNameSchema,
   skillRefSchema,
@@ -212,10 +211,12 @@ const commands: Record<string, CommandSpec> = {
 
 /**
  * The skills domain: a config writer that also prepares the canonical skill
- * bytes. `run` fetches + hash-verifies every declared skill into the canonical
- * `.agnos/skills/` (via `prepareSkills`); the agents domain links that dir
- * per-agent. The `migrate`/`fetch`/`version`/`integrity`/`install` subcommands
- * are wired in the CLI; their data layer lives in pipeline.ts / migrate.ts.
+ * bytes. `run` executes the prep pipeline (fetch → version → integrity →
+ * install) over every declared skill, bucketing failures as moved/changed/
+ * outdated and installing the clean ones into `.agnos/skills/` (linked per-agent
+ * by the agents domain). The `fetch`/`version`/`integrity`/`install`/`update`/
+ * `migrate` subcommands expose the same engine; data layer in pipeline.ts /
+ * migrate.ts / steps.ts.
  */
 export const skillsDomain: Domain = {
   id: "skills",
@@ -247,9 +248,15 @@ export const skillsDomain: Domain = {
   ],
   async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
+    const sources = config.skills?.sources ?? {};
     // No skill sources declared → nothing to fetch/verify.
-    if (Object.keys(config.skills?.sources ?? {}).length === 0) return undefined;
-    await prepareSkills(config, ctx);
+    if (Object.keys(sources).length === 0) return undefined;
+    // Run the prep pipeline (fetch → version → integrity → install). Failures are
+    // bucketed and reported as "Skills need to be updated: …" without throwing,
+    // so the overall run continues (§13.1).
+    const handle = await createSkillSteps(config, ctx);
+    await runSkillPipeline(sources, handle.steps, ctx.logger);
+    await handle.flush();
     return undefined;
   },
 };

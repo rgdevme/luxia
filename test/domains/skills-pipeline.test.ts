@@ -91,6 +91,40 @@ describe("skills prep pipeline (steps)", () => {
   });
 });
 
+describe("skills domain run", () => {
+  it("reports drifted skills as 'changed' (aggregated) without throwing", async () => {
+    await fs.writeFile(path.join(tmp, "agnos.json"), JSON.stringify(cfg()));
+    // pin the skill, then drift its content
+    const pin = ctxFor();
+    const h = await createSkillSteps(cfg(), pin);
+    await runSkillPipeline(SOURCES, h.steps, pin.logger);
+    await h.flush();
+    await fs.writeFile(path.join(tmp, "skill-src", "SKILL.md"), "# Changed\n");
+
+    const warns: string[] = [];
+    const ctx = {
+      ...ctxFor(),
+      logger: {
+        info() {},
+        warn: (m: string) => warns.push(m),
+        error() {},
+        debug() {},
+        success() {},
+      },
+      flags: { dry: false, once: true, quiet: false, help: false, init: false, yes: true },
+    };
+    await skillsDomain.run!(
+      { dry: false, once: true, quiet: false, interactive: false },
+      ctx as never,
+    );
+
+    const out = warns.join("\n");
+    expect(out).toContain("Skills need to be updated:");
+    expect(out).toContain("1 changed");
+    expect(out).toContain("Please run: agnos skills update");
+  });
+});
+
 describe("skills migrate command", () => {
   it("imports name → ref from a lock file", async () => {
     await fs.writeFile(path.join(tmp, "agnos.json"), JSON.stringify({ schemaVersion: 1 }));
