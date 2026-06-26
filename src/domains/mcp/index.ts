@@ -1,7 +1,13 @@
 import type { CommandSpec, Domain, McpDeclaration } from "../../core/index.js";
 import { readConfigOrDefault } from "../../core/index.js";
 import { jsonEqual, mergeByIdentity, type ArrayMergeResult, type MergePolicy } from "../merge.js";
-import { MIGRATE_FLAGS, policyFromFlags, reqArg, writeChange } from "../cli-helpers.js";
+import {
+  MIGRATE_FLAGS,
+  multiSelect,
+  policyFromFlags,
+  reqArg,
+  writeChange,
+} from "../cli-helpers.js";
 import { scrapeActive } from "../agents/index.js";
 
 /** Identity of an MCP declaration for dedup/removal: its name. */
@@ -73,16 +79,44 @@ const commands: Record<string, CommandSpec> = {
   },
   remove: {
     name: "remove",
-    description: "Remove an MCP server by name",
-    args: [{ name: "name", required: true, description: "server name" }],
+    description: "Remove MCP servers (multiselect prompt when no name is given)",
+    args: [
+      {
+        name: "names",
+        required: false,
+        variadic: true,
+        description: "server names (omit to pick)",
+      },
+    ],
     async run(ctx) {
-      const name = reqArg(ctx, 0, "name");
       const config = await readConfigOrDefault(ctx.configPath);
       const mcp = config.mcp ?? [];
-      if (!mcp.some((m) => m.name === name)) throw new Error(`mcp server "${name}" not found`);
-      await writeChange(ctx, `removed mcp server "${name}"`, {
+      if (mcp.length === 0) {
+        ctx.logger.info("no mcp servers to remove");
+        return;
+      }
+      let targets = ctx.args;
+      if (targets.length === 0) {
+        targets = await multiSelect(
+          ctx,
+          "Select MCP servers to remove:",
+          mcp.map((m) => ({
+            name: `${m.name}  (${m.command ?? m.transport ?? "stdio"})`,
+            value: m.name,
+          })),
+          "specify server name(s) to remove, or run in a terminal to pick them",
+        );
+      }
+      if (targets.length === 0) {
+        ctx.logger.info("nothing selected");
+        return;
+      }
+      const present = new Set(mcp.map((m) => m.name));
+      const missing = targets.filter((n) => !present.has(n));
+      if (missing.length > 0) throw new Error(`mcp server(s) not found: ${missing.join(", ")}`);
+      await writeChange(ctx, `removed ${targets.length} mcp server(s): ${targets.join(", ")}`, {
         ...config,
-        mcp: removeMcp(mcp, name),
+        mcp: mcp.filter((m) => !targets.includes(m.name)),
       });
     },
   },

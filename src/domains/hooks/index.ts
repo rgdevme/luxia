@@ -2,7 +2,13 @@ import type { CommandSpec, Domain, HookEntry, HookEvent } from "../../core/index
 import { hookEventSchema, readConfigOrDefault } from "../../core/index.js";
 import { jsonEqual, mergeByIdentity, type ArrayMergeResult, type MergePolicy } from "../merge.js";
 import { hookIdentity } from "../../agents/adapters/hooks-map.js";
-import { MIGRATE_FLAGS, policyFromFlags, reqArg, writeChange } from "../cli-helpers.js";
+import {
+  MIGRATE_FLAGS,
+  multiSelect,
+  policyFromFlags,
+  reqArg,
+  writeChange,
+} from "../cli-helpers.js";
 import { scrapeActive } from "../agents/index.js";
 
 export { hookIdentity };
@@ -53,21 +59,46 @@ const commands: Record<string, CommandSpec> = {
   },
   remove: {
     name: "remove",
-    description: "Remove a command hook by (event, command, [matcher])",
+    description: "Remove command hooks (multiselect prompt when no args are given)",
     args: [
-      { name: "event", required: true, description: "hook event" },
-      { name: "command", required: true, description: "shell command" },
+      { name: "event", required: false, description: "hook event" },
+      { name: "command", required: false, description: "shell command" },
       { name: "matcher", required: false, description: "optional event matcher" },
     ],
     async run(ctx) {
-      const id = hookIdentity(
-        buildEntry(reqArg(ctx, 0, "event"), reqArg(ctx, 1, "command"), ctx.args[2]),
-      );
       const config = await readConfigOrDefault(ctx.configPath);
       const hooks = config.hooks ?? [];
-      const next = removeHookById(hooks, id);
+      if (hooks.length === 0) {
+        ctx.logger.info("no hooks to remove");
+        return;
+      }
+      let ids: string[];
+      if (ctx.args.length === 0) {
+        ids = await multiSelect(
+          ctx,
+          "Select hooks to remove:",
+          hooks.map((h) => ({
+            name: `${h.event}${h.matcher ? ` [${h.matcher}]` : ""} → ${h.command}`,
+            value: hookIdentity(h),
+          })),
+          "specify <event> <command> [matcher] to remove, or run in a terminal to pick them",
+        );
+      } else {
+        ids = [
+          hookIdentity(buildEntry(reqArg(ctx, 0, "event"), reqArg(ctx, 1, "command"), ctx.args[2])),
+        ];
+      }
+      if (ids.length === 0) {
+        ctx.logger.info("nothing selected");
+        return;
+      }
+      const idset = new Set(ids);
+      const next = hooks.filter((h) => !idset.has(hookIdentity(h)));
       if (next.length === hooks.length) throw new Error(`no matching hook to remove`);
-      await writeChange(ctx, `removed hook`, { ...config, hooks: next });
+      await writeChange(ctx, `removed ${hooks.length - next.length} hook(s)`, {
+        ...config,
+        hooks: next,
+      });
     },
   },
   migrate: {

@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { checkbox } from "@inquirer/prompts";
 import type {
   AgnosConfig,
   CommandSpec,
@@ -16,7 +15,13 @@ import {
   skillRefSchema,
   writeConfig,
 } from "../../core/index.js";
-import { MIGRATE_FLAGS, policyFromFlags, reqArg, writeChange } from "../cli-helpers.js";
+import {
+  MIGRATE_FLAGS,
+  multiSelect,
+  policyFromFlags,
+  reqArg,
+  writeChange,
+} from "../cli-helpers.js";
 import { runSkillPipeline } from "./pipeline.js";
 import { mergeSkillSources } from "./migrate.js";
 import { createSkillSteps, updateSkills } from "./steps.js";
@@ -118,15 +123,12 @@ const commands: Record<string, CommandSpec> = {
 
       let targets = ctx.args;
       if (targets.length === 0) {
-        // No names → interactive multiselect. Refuse when there's no TTY (or -y),
-        // so the command never hangs in scripts/CI.
-        if (ctx.flags["yes"] || !process.stdin.isTTY) {
-          throw new Error("specify skill name(s) to remove, or run in a terminal to pick them");
-        }
-        targets = await checkbox({
-          message: "Select skills to remove:",
-          choices: declared.map((n) => ({ name: `${n}  (${all[n]})`, value: n })),
-        });
+        targets = await multiSelect(
+          ctx,
+          "Select skills to remove:",
+          declared.map((n) => ({ name: `${n}  (${all[n]})`, value: n })),
+          "specify skill name(s) to remove, or run in a terminal to pick them",
+        );
       }
 
       if (targets.length === 0) {

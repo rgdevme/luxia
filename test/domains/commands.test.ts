@@ -48,11 +48,14 @@ describe("mcp subcommands", () => {
     await expect(run(mcpDomain, "add", ["gh", "x"])).rejects.toThrow(/already exists/);
   });
 
-  it("remove drops a server; removing a missing one throws", async () => {
+  it("remove drops named servers; missing throws; no-arg is guarded", async () => {
     await run(mcpDomain, "add", ["gh", "npx"]);
-    await run(mcpDomain, "remove", ["gh"]);
-    expect((await readCfg()).mcp).toEqual([]);
+    await run(mcpDomain, "add", ["fs", "npx"]);
     await expect(run(mcpDomain, "remove", ["nope"])).rejects.toThrow(/not found/);
+    // no names + non-interactive (yes flag / no TTY) → guarded, doesn't prompt
+    await expect(run(mcpDomain, "remove", [])).rejects.toThrow(/specify server/i);
+    await run(mcpDomain, "remove", ["gh", "fs"]);
+    expect((await readCfg()).mcp).toEqual([]);
   });
 
   it("migrate imports servers from an active agent's native config", async () => {
@@ -73,6 +76,11 @@ describe("hooks subcommands", () => {
     await expect(run(hooksDomain, "add", ["Nope", "x"])).rejects.toThrow(/unknown hook event/);
     await run(hooksDomain, "remove", ["PreToolUse", "echo hi", "git"]);
     expect((await readCfg()).hooks).toEqual([]);
+  });
+
+  it("remove with no args in non-interactive mode is guarded (no prompt)", async () => {
+    await run(hooksDomain, "add", ["Stop", "echo bye"]);
+    await expect(run(hooksDomain, "remove", [])).rejects.toThrow(/terminal|specify/i);
   });
 });
 

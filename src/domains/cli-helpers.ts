@@ -1,6 +1,27 @@
+import { checkbox } from "@inquirer/prompts";
 import type { AgnosConfig, CommandContext, FlagSpec } from "../core/index.js";
 import { writeConfig } from "../core/index.js";
 import type { MergePolicy } from "./merge.js";
+
+export interface PickChoice {
+  name: string;
+  value: string;
+}
+
+/**
+ * Interactive multi-select used by the `remove` subcommands when no target is
+ * given. Refuses (throwing `hint`) when non-interactive (`-y` or no TTY) so a
+ * command never hangs on a prompt in scripts/CI.
+ */
+export async function multiSelect(
+  ctx: CommandContext,
+  message: string,
+  choices: PickChoice[],
+  hint: string,
+): Promise<string[]> {
+  if (ctx.flags["yes"] || !process.stdin.isTTY) throw new Error(hint);
+  return checkbox({ message, choices });
+}
 
 /** Conflict-policy flags shared by the `migrate` subcommands. */
 export const MIGRATE_FLAGS: FlagSpec[] = [
