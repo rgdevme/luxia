@@ -1,6 +1,6 @@
 {
   "name": "@luxia/agnos",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Agent-agnostic project-level configuration manager",
   "type": "module",
   "license": "MIT",
