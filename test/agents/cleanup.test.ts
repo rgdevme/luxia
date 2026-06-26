@@ -91,10 +91,10 @@ describe("renderAgent", () => {
     const config: AgnosConfig = {
       schemaVersion: 1,
       agents: ["claude-code"],
-      mcp: [{ name: "fs", command: "npx" }],
+      mcp: [{ name: "fs", command: "pnpx" }],
     };
     await renderAgent(claudeCode, config, ctx);
     const written = JSON.parse(await fs.readFile(path.join(tmp, ".mcp.json"), "utf8"));
-    expect(written.mcpServers.fs.command).toBe("npx");
+    expect(written.mcpServers.fs.command).toBe("pnpx");
   });
 });

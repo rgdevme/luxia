@@ -13,18 +13,20 @@ import { fileURLToPath } from "node:url";
 const TEMPLATE_DIRS = ["src/domains/rules/templates", "src/domains/docs/templates"];
 
 async function main() {
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const destDir = path.join(repoRoot, "dist", "templates");
-  await mkdir(destDir, { recursive: true });
-  for (const rel of TEMPLATE_DIRS) {
-    const dir = path.join(repoRoot, rel);
-    for (const name of await readdir(dir)) {
-      await cp(path.join(dir, name), path.join(destDir, name), { recursive: true });
+  try {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const destDir = path.join(repoRoot, "dist", "templates");
+    await mkdir(destDir, { recursive: true });
+    for (const rel of TEMPLATE_DIRS) {
+      const dir = path.join(repoRoot, rel);
+      for (const name of await readdir(dir)) {
+        await cp(path.join(dir, name), path.join(destDir, name), { recursive: true });
+      }
     }
+  } catch (err) {
+    console.error(err);
+    process.exitCode = 1;
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+void main();

@@ -91,7 +91,13 @@ export async function writeIfChanged(
   ctx: MaterializeContext,
   label: string,
 ): Promise<boolean> {
-  const existing = await fs.readFile(absPath, "utf8").catch(() => null);
+  let existing: string | null;
+  try {
+    existing = await fs.readFile(absPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    existing = null;
+  }
   if (existing === content) return false;
   if (ctx.dryRun) {
     ctx.logger.info(`would: write ${label}`);

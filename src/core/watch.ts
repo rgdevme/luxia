@@ -39,8 +39,11 @@ export async function startWatch(
   ctx.logger.info(`watching ${ctx.configPath} (Ctrl-C to stop)`);
 
   await new Promise<void>((resolve) => {
-    const stop = (): void => void watcher.close().then(resolve);
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
+    const stop = async (): Promise<void> => {
+      await watcher.close();
+      resolve();
+    };
+    process.once("SIGINT", () => void stop());
+    process.once("SIGTERM", () => void stop());
   });
 }
