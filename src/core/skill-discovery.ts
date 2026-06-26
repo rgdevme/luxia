@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
+import matter from "gray-matter";
 
 const SKILL_MARKER = "SKILL.md";
 
@@ -41,6 +42,8 @@ export interface DiscoveredSkill {
   defaultName: string;
   /** First markdown heading in SKILL.md, if present (trimmed, leading "# " stripped). */
   title?: string;
+  /** `description` field from the SKILL.md frontmatter, if present (trimmed). */
+  description?: string;
 }
 
 /**
@@ -73,8 +76,8 @@ async function walk(
     const rel = toPosix(path.relative(repoRoot, dir));
     if (rel === "") return; // SKILL.md at repo root is not a "skill" per se
     const defaultName = path.basename(dir);
-    const title = await readTitle(marker);
-    out.push({ path: rel, defaultName, title });
+    const { title, description } = await readSkillMeta(marker);
+    out.push({ path: rel, defaultName, title, description });
     return;
   }
 
@@ -102,21 +105,28 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-async function readTitle(skillMd: string): Promise<string | undefined> {
+/**
+ * Read the human-facing metadata from a SKILL.md: the `description` frontmatter
+ * field and the first markdown heading in the body. Best-effort — any read or
+ * parse failure yields an empty result rather than aborting discovery.
+ */
+async function readSkillMeta(skillMd: string): Promise<{ title?: string; description?: string }> {
   try {
-    const fd = await fs.open(skillMd, "r");
-    try {
-      const buf = Buffer.alloc(512);
-      const { bytesRead } = await fd.read(buf, 0, 512, 0);
-      const head = buf.toString("utf8", 0, bytesRead);
-      const firstLine = head.split(/\r?\n/, 1)[0]?.trim() ?? "";
-      if (firstLine.startsWith("#")) return firstLine.replace(/^#+\s*/, "").trim() || undefined;
-      return undefined;
-    } finally {
-      await fd.close();
-    }
+    const raw = await fs.readFile(skillMd, "utf8");
+    const parsed = matter(raw);
+    const rawDesc = parsed.data?.["description"];
+    const description = typeof rawDesc === "string" ? rawDesc.trim() || undefined : undefined;
+    const firstLine =
+      parsed.content
+        .split(/\r?\n/)
+        .find((l) => l.trim() !== "")
+        ?.trim() ?? "";
+    const title = firstLine.startsWith("#")
+      ? firstLine.replace(/^#+\s*/, "").trim() || undefined
+      : undefined;
+    return { title, description };
   } catch {
-    return undefined;
+    return {};
   }
 }
 

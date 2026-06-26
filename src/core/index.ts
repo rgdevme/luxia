@@ -34,7 +34,7 @@ export type {
   SkillsConfig,
 } from "./types/public.js";
 
-export { createLogger } from "./logger.js";
+export { createLogger, dim, withSpinner } from "./logger.js";
 export {
   buildPaths,
   ensureDir,

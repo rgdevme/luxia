@@ -3,23 +3,29 @@ import path from "node:path";
 import type {
   AgnosConfig,
   CommandSpec,
-  CompositeSkillRef,
+  DiscoveredSkill,
   Domain,
+  ParsedSource,
   ResolveContext,
 } from "../../core/index.js";
 import {
   buildPaths,
+  dim,
+  findSkillsInRepo,
+  isProvider,
   parseCompositeSkillRef,
+  parseSource,
   readConfigOrDefault,
   skillNameSchema,
   skillRefSchema,
+  withSpinner,
   writeConfig,
 } from "../../core/index.js";
 import {
+  confirmPrompt,
   MIGRATE_FLAGS,
   multiSelect,
   policyFromFlags,
-  reqArg,
   writeChange,
 } from "../cli-helpers.js";
 import { runSkillPipeline } from "./pipeline.js";
@@ -31,10 +37,31 @@ export * from "./migrate.js";
 
 const DEFAULT_SKILLS_DIR = "./.agnos/skills";
 
-/** Default skill name from a ref: the last sub-path segment (git) or dir basename (local). */
-function deriveSkillName(parsed: CompositeSkillRef): string {
-  if (parsed.source.kind === "local") return path.basename(parsed.source.absolutePath);
-  return parsed.subPath.split("/").filter(Boolean).pop() ?? "";
+/**
+ * Build the repo-level (subPath-less) source for a `[provider] address` pair.
+ * `file` forces local parsing so a bare relative path like `my/dir` isn't
+ * mis-read as `owner/repo`; git providers prefix the address so a bare
+ * `owner/repo` parses (parseSource, unlike parseCompositeSkillRef, allows no
+ * in-repo path = the whole repo, which is what discovery wants).
+ */
+function repoSource(
+  provider: string | undefined,
+  address: string,
+  projectRoot: string,
+): ParsedSource {
+  if (provider === "file") return parseSource(`file:${address}`, { projectRoot });
+  return parseSource(provider ? `${provider}:${address}` : address, { projectRoot });
+}
+
+/** Concrete composite ref for a discovered skill — the same shape `add` has always stored. */
+function compositeFor(
+  source: ParsedSource,
+  localRoot: string,
+  skillPath: string,
+  projectRoot: string,
+): string {
+  if (source.kind === "git") return `${source.canonical}/${skillPath}`;
+  return parseSource(`file:${path.join(localRoot, skillPath)}`, { projectRoot }).canonical;
 }
 
 /** Run a single read-only step over every declared skill and report failures. */
@@ -67,35 +94,120 @@ async function diagnose(
 const commands: Record<string, CommandSpec> = {
   add: {
     name: "add",
-    description: "Add a skill source; the name is derived from the ref unless given",
+    description: "Add skills from a source; discovers skills and prompts when no name is given",
     args: [
       {
-        name: "ref",
-        required: true,
-        description: "github:owner/repo/path | owner/repo/path | https://… | ./path",
+        name: "provider",
+        required: false,
+        description: "github (default) | gitlab | bitbucket | file",
       },
-      { name: "name", required: false, description: "local name (default: last path segment)" },
+      {
+        name: "skills_address",
+        required: true,
+        description: "owner/repo (git) or a directory path (file)",
+      },
+      {
+        name: "skill_name",
+        required: false,
+        description: "a single skill to add (omit to multi-select)",
+      },
     ],
     async run(ctx) {
-      // Parse first so a non-concrete or malformed ref fails with a clear message
-      // (not "skill name must be alphanumeric/dash" from mis-reading the ref).
-      const parsed = parseCompositeSkillRef(reqArg(ctx, 0, "ref"), {
-        projectRoot: ctx.projectRoot,
-      });
-      const candidate = ctx.args[1] ?? deriveSkillName(parsed);
-      const named = skillNameSchema.safeParse(candidate);
-      if (!named.success) {
-        throw new Error(
-          `could not derive a valid skill name from "${parsed.composite}" ` +
-            `(got "${candidate}"). Pass one explicitly: agnos skills add <ref> <name>`,
-        );
+      // Provider is an optional leading positional. A real <skills_address> is
+      // always owner/repo or a path (contains "/"), never a bare provider word,
+      // so membership detection is unambiguous (needs an address after it).
+      const tokens = [...ctx.args];
+      let provider: string | undefined;
+      if (tokens.length >= 2 && (isProvider(tokens[0]!) || tokens[0] === "file")) {
+        provider = tokens.shift();
       }
-      const name = named.data;
+      const address = tokens[0];
+      if (!address) throw new Error("missing argument <skills_address>");
+      const skillName = tokens[1];
+
+      // Fetch the whole source and discover the skills inside it (spinner while we wait).
+      const source = repoSource(provider, address, ctx.projectRoot);
+      const { fetched, discovered } = await withSpinner(
+        `Loading skills from ${address}…`,
+        async () => {
+          const fetched = await ctx.fetcher.fetch(source);
+          return { fetched, discovered: await findSkillsInRepo(fetched.path) };
+        },
+        { quiet: ctx.flags.quiet },
+      );
+      if (discovered.length === 0) {
+        throw new Error(`no skills found under "${address}" (looked for SKILL.md in the source)`);
+      }
+
       const config = await readConfigOrDefault(ctx.configPath);
-      const sources = { ...(config.skills?.sources ?? {}) };
-      if (name in sources) throw new Error(`skill "${name}" already exists`);
-      sources[name] = parsed.composite;
-      await writeChange(ctx, `added skill "${name}" → ${parsed.composite}`, {
+      const existing = config.skills?.sources ?? {};
+
+      // Pick the skills to add.
+      let chosen: DiscoveredSkill[];
+      if (skillName) {
+        const match = discovered.find((d) => d.defaultName === skillName);
+        if (!match) {
+          throw new Error(
+            `skill "${skillName}" not found. Available: ${discovered
+              .map((d) => d.defaultName)
+              .join(", ")}`,
+          );
+        }
+        if (match.defaultName in existing) {
+          const ok = await confirmPrompt(ctx, "This skill is already installed. Overwrite it?");
+          if (!ok) {
+            ctx.logger.info("aborted; no changes made");
+            return;
+          }
+        }
+        chosen = [match];
+      } else {
+        const anyInstalled = discovered.some((d) => d.defaultName in existing);
+        const message = anyInstalled
+          ? "Select skills to add:\n[!] This skill is already installed. Selecting it will overwrite it."
+          : "Select skills to add:";
+        const choices = discovered.map((d) => {
+          const desc = d.description?.trim();
+          const blurb = desc ? " " + dim(desc.length > 60 ? `${desc.slice(0, 60)}…` : desc) : "";
+          const label = `${d.defaultName}${blurb}`;
+          return {
+            name: d.defaultName in existing ? `[!] ${label}` : label,
+            value: d.defaultName,
+          };
+        });
+        const picked = await multiSelect(
+          ctx,
+          message,
+          choices,
+          "specify a <skill_name> to add, or run in a terminal to pick interactively",
+        );
+        if (picked.length === 0) {
+          ctx.logger.info("nothing selected");
+          return;
+        }
+        chosen = discovered.filter((d) => picked.includes(d.defaultName));
+      }
+
+      // Expand each pick into a concrete per-skill composite ref. Storage shape
+      // is identical to before — one entry per skill — so installs stay reproducible.
+      const sources = { ...existing };
+      const added: string[] = [];
+      for (const d of chosen) {
+        const named = skillNameSchema.safeParse(d.defaultName);
+        if (!named.success) {
+          throw new Error(
+            `"${d.defaultName}" (from ${d.path}) is not a valid skill name; ` +
+              `skill directory names must be alphanumeric/dash`,
+          );
+        }
+        const composite = compositeFor(source, fetched.path, d.path, ctx.projectRoot);
+        // Defensive: the stored value must parse back to a concrete skill ref.
+        parseCompositeSkillRef(composite, { projectRoot: ctx.projectRoot });
+        sources[named.data] = composite;
+        added.push(`${named.data} → ${composite}`);
+      }
+
+      await writeChange(ctx, `added ${added.length} skill(s): ${added.join(", ")}`, {
         ...config,
         skills: { ...config.skills, sources },
       });

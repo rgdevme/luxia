@@ -14,6 +14,40 @@ function paint(color: keyof typeof COLORS, msg: string): string {
   return `${COLORS[color]}${msg}${COLORS.reset}`;
 }
 
+/** Dim/grey secondary text (e.g. an inline description). No-op off a TTY. */
+export function dim(msg: string): string {
+  return paint("gray", msg);
+}
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/**
+ * Run `fn` while an animated spinner ticks on stderr. Skipped (so `fn` just
+ * runs) when stderr isn't a TTY or `quiet` is set, keeping scripts, CI, and the
+ * test suite free of escape codes.
+ */
+export async function withSpinner<T>(
+  message: string,
+  fn: () => Promise<T>,
+  opts: { quiet?: boolean } = {},
+): Promise<T> {
+  if (opts.quiet || !process.stderr.isTTY) return fn();
+  let frame = 0;
+  const render = (): void => {
+    const glyph = SPINNER_FRAMES[frame++ % SPINNER_FRAMES.length];
+    process.stderr.write(`\r${COLORS.cyan}${glyph}${COLORS.reset} ${message}`);
+  };
+  process.stderr.write("\x1b[?25l"); // hide cursor
+  render();
+  const timer = setInterval(render, 80);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+    process.stderr.write("\r\x1b[2K\x1b[?25h"); // clear line + restore cursor
+  }
+}
+
 export interface CreateLoggerOptions {
   debug?: boolean;
   quiet?: boolean;

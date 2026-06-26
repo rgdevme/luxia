@@ -76,4 +76,17 @@ describe("findSkillsInRepo", () => {
     expect(byPath["skills/with-title"]?.title).toBe("A Catchy Title");
     expect(byPath["skills/no-title"]?.title).toBeUndefined();
   });
+
+  it("extracts description from the SKILL.md frontmatter", async () => {
+    await placeSkill(
+      "skills/pdf",
+      "---\nname: pdf\ndescription: Read and edit PDF files.\n---\n# PDF\n\nBody",
+    );
+    await placeSkill("skills/no-fm", "# No frontmatter\n\nBody");
+    const out = await findSkillsInRepo(root);
+    const byPath = Object.fromEntries(out.map((d) => [d.path, d]));
+    expect(byPath["skills/pdf"]?.description).toBe("Read and edit PDF files.");
+    expect(byPath["skills/pdf"]?.title).toBe("PDF");
+    expect(byPath["skills/no-fm"]?.description).toBeUndefined();
+  });
 });

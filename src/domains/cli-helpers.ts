@@ -1,4 +1,4 @@
-import { checkbox } from "@inquirer/prompts";
+import { checkbox, confirm } from "@inquirer/prompts";
 import type { AgnosConfig, CommandContext, FlagSpec } from "../core/index.js";
 import { writeConfig } from "../core/index.js";
 import type { MergePolicy } from "./merge.js";
@@ -21,6 +21,19 @@ export async function multiSelect(
 ): Promise<string[]> {
   if (ctx.flags["yes"] || !process.stdin.isTTY) throw new Error(hint);
   return checkbox({ message, choices });
+}
+
+/**
+ * Interactive yes/no confirmation. Non-interactive (`-y` or no TTY) resolves to
+ * `true` so a scripted/CI run proceeds without hanging on a prompt.
+ */
+export async function confirmPrompt(
+  ctx: CommandContext,
+  message: string,
+  def = true,
+): Promise<boolean> {
+  if (ctx.flags["yes"] || !process.stdin.isTTY) return true;
+  return confirm({ message, default: def });
 }
 
 /** Conflict-policy flags shared by the `migrate` subcommands. */

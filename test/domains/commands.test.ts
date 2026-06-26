@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import type { CommandContext, Domain } from "../../src/core/index.js";
-import { createLogger, readConfigOrDefault } from "../../src/core/index.js";
+import { createLogger, createRepoFetcher, readConfigOrDefault } from "../../src/core/index.js";
 import mcpDomain from "../../src/domains/mcp/index.js";
 import hooksDomain from "../../src/domains/hooks/index.js";
 import skillsDomain from "../../src/domains/skills/index.js";
@@ -18,7 +18,9 @@ const ctxFor = (args: string[], extra: Record<string, unknown> = {}): CommandCon
   configPath: path.join(tmp, "agnos.json"),
   statePath: path.join(tmp, ".agnos", "state.json"),
   logger: createLogger({ quiet: true }),
-  fetcher: {} as never,
+  // Real fetcher: for `file:` (local) sources it just returns the absolute path,
+  // so skills `add` discovery works without any network access.
+  fetcher: createRepoFetcher({ projectRoot: tmp, cacheDir: path.join(tmp, ".agnos", "cache") }),
   linker: {} as never,
   dryRun: false,
   args,
@@ -85,28 +87,54 @@ describe("hooks subcommands", () => {
 });
 
 describe("skills subcommands", () => {
-  it("add derives the name from the ref; bad explicit name and non-concrete refs throw", async () => {
-    await run(skillsDomain, "add", ["github:o/r/skills/pdf"]); // name derived: "pdf"
-    expect((await readCfg()).skills?.sources).toEqual({ pdf: "github:o/r/skills/pdf" });
-    // bare owner/repo (defaults to github) is canonicalized + name derived from the path
-    await run(skillsDomain, "add", ["o/r/skills/lint"]);
-    expect((await readCfg()).skills?.sources["lint"]).toBe("github:o/r/skills/lint");
-    // explicit invalid name → clear error (not a zod dump)
-    await expect(run(skillsDomain, "add", ["github:o/r/skills/x", "Bad Name"])).rejects.toThrow(
-      /skill name/,
+  // Build a local source dir with a few skills (each a dir containing SKILL.md).
+  const makeSkillSource = async (rel: string, names: string[]) => {
+    for (const n of names) {
+      const dir = path.join(tmp, rel, "skills", n);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, "SKILL.md"), `# ${n} skill\n`);
+    }
+  };
+
+  it("add (file + name) discovers the skill and writes a concrete per-skill entry", async () => {
+    await makeSkillSource("src-skills", ["pdf", "lint"]);
+    await run(skillsDomain, "add", ["file", "./src-skills", "pdf"]);
+    expect((await readCfg()).skills?.sources).toEqual({ pdf: "file:./src-skills/skills/pdf" });
+  });
+
+  it("add with no skill_name + non-interactive errors instead of prompting", async () => {
+    await makeSkillSource("src-skills", ["pdf", "lint"]);
+    await expect(run(skillsDomain, "add", ["file", "./src-skills"])).rejects.toThrow(
+      /skill_name|terminal/i,
     );
-    // non-concrete git ref (no in-repo path) → clear parse error
-    await expect(run(skillsDomain, "add", ["o/r"])).rejects.toThrow(/in-repo path/);
-    await run(skillsDomain, "remove", ["pdf"]);
-    expect((await readCfg()).skills?.sources["pdf"]).toBeUndefined();
+  });
+
+  it("add with an unknown skill_name throws and lists what's available", async () => {
+    await makeSkillSource("src-skills", ["pdf", "lint"]);
+    await expect(run(skillsDomain, "add", ["file", "./src-skills", "ghost"])).rejects.toThrow(
+      /not found.*pdf|not found.*lint/,
+    );
+  });
+
+  it("add of an already-declared skill overwrites it under -y (no prompt)", async () => {
+    await makeSkillSource("src-skills", ["pdf"]);
+    await writeCfg({ skills: { sources: { pdf: "file:./stale/skills/pdf" } } });
+    await run(skillsDomain, "add", ["file", "./src-skills", "pdf"]);
+    expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./src-skills/skills/pdf");
+  });
+
+  it("add reports a clear error when the source has no skills", async () => {
+    await fs.mkdir(path.join(tmp, "empty"), { recursive: true });
+    await expect(run(skillsDomain, "add", ["file", "./empty"])).rejects.toThrow(/no skills found/);
   });
 
   it("remove deletes multiple named skills; no-name + non-interactive errors", async () => {
-    await run(skillsDomain, "add", ["github:o/r/skills/a"]);
-    await run(skillsDomain, "add", ["github:o/r/skills/b"]);
+    await writeCfg({
+      skills: { sources: { a: "github:o/r/skills/a", b: "github:o/r/skills/b" } },
+    });
     await run(skillsDomain, "remove", ["a", "b"]);
     expect((await readCfg()).skills?.sources ?? {}).toEqual({});
-    await run(skillsDomain, "add", ["github:o/r/skills/c"]);
+    await writeCfg({ skills: { sources: { c: "github:o/r/skills/c" } } });
     // no names + non-interactive (yes flag) → errors instead of hanging on a prompt
     await expect(run(skillsDomain, "remove", [])).rejects.toThrow(/specify skill/i);
   });
