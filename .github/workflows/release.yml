@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump applied in lockstep to all 8 packages."
+        description: "Version bump for @luxia/agnos."
         required: true
         type: choice
-        default: bump
+        default: patch
         options:
-          - bump
+          - patch
           - minor
           - major
 
@@ -44,88 +44,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Bump all packages in lockstep
+      - name: Bump version
         env:
           BUMP: ${{ inputs.bump }}
         run: |
-          # Map the user-facing "bump" label to pnpm's "patch" keyword.
-          case "$BUMP" in
-            bump)  PNPM_BUMP=patch ;;
-            minor) PNPM_BUMP=minor ;;
-            major) PNPM_BUMP=major ;;
-            *) echo "::error::Unknown bump type '$BUMP'"; exit 1 ;;
-          esac
-          # Unify every package to the SAME target version instead of bumping
-          # each from its own current version. The target is the highest
-          # version across the workspace, bumped once — so packages that drift
-          # apart in a partial release re-converge here rather than diverging
-          # further (e.g. 0.0.8 -> 0.0.9 while a sibling goes 0.0.9 -> 0.0.10).
-          VERSION=$(node packages/agnos/scripts/next-version.mjs "$PNPM_BUMP")
-          pnpm -r --filter "./packages/*" exec pnpm version "$VERSION" --no-git-tag-version --allow-same-version
+          VERSION=$(pnpm version "$BUMP" --no-git-tag-version | tail -1 | sed 's/^v//')
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Unified all packages to v$VERSION"
+          echo "Bumped @luxia/agnos to v$VERSION"
 
       - name: Refresh lockfile after version bump
         run: pnpm install --no-frozen-lockfile
 
-      # lint / format / typecheck / test are intentionally skipped — main is
-      # gated by ci.yml on every push, and a version-only bump can't affect
-      # any of those checks. The only invariants the bump itself can break
-      # are caught below: the build must still succeed, and the meta-package
-      # lockstep-version check must still pass.
-
-      - name: Build (produces dist/ for tarballs)
+      # lint / format / typecheck / test are gated by ci.yml on every push; a
+      # version-only bump can't affect them. The build must still succeed.
+      - name: Build
         run: pnpm build
 
-      - name: Verify lockstep versions across packages
-        # Normally this runs via `prepublishOnly`, but `npm publish <tarball>`
-        # doesn't fire that hook, so we invoke the check explicitly here.
-        run: node packages/agnos/scripts/check-versions.mjs
-
-      - name: Pack tarballs
-        # pnpm pack is per-package (no -r), so use `exec` to run it inside
-        # each workspace package. Tarballs land in $GITHUB_WORKSPACE/.release-tarballs.
-        run: |
-          mkdir -p .release-tarballs
-          pnpm -r --filter "./packages/*" exec pnpm pack --pack-destination "$GITHUB_WORKSPACE/.release-tarballs"
-
       - name: Publish to npm with provenance
-        # NPM_TOKEN is only needed for the very first publish of each package
-        # (npm requires a package to exist before a trusted publisher can be
-        # added). Once all 8 packages exist and OIDC trusted publishers are
-        # configured on npmjs.com, delete the NPM_TOKEN secret and OIDC will
-        # take over automatically (NODE_AUTH_TOKEN becomes empty, npm CLI
-        # falls back to the OIDC token exchange).
+        # NPM_TOKEN is only needed until an OIDC trusted publisher is configured
+        # on npmjs.com; afterwards NODE_AUTH_TOKEN can be empty and the npm CLI
+        # falls back to the OIDC token exchange.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          shopt -s nullglob
-          # Attempt every tarball, then fail once at the end. This keeps a
-          # single bad package from aborting the loop and leaving a partial
-          # release (e.g. 5 packages bumped, 3 left on the old version).
-          # Re-publishing an already-published version is treated as a skip,
-          # so a re-run after a partial failure is idempotent.
-          failed=()
-          for tgz in .release-tarballs/*.tgz; do
-            echo "::group::publishing $tgz"
-            if out=$(pnpm publish "$tgz" --access public --provenance --no-git-checks 2>&1); then
-              echo "$out"
-              echo "published $tgz"
-            else
-              echo "$out"
-              if grep -qiE 'EPUBLISHCONFLICT|cannot publish over|previously published|already published' <<<"$out"; then
-                echo "::notice::version already on the registry — skipping $tgz"
-              else
-                echo "::error::failed to publish $tgz"
-                failed+=("$tgz")
-              fi
-            fi
-            echo "::endgroup::"
-          done
-          if (( ${#failed[@]} )); then
-            echo "::error::Publish failed for: ${failed[*]}"
-            exit 1
-          fi
+        run: pnpm publish --access public --provenance --no-git-checks
 
       - name: Commit, tag, and push
         env:
@@ -134,9 +75,8 @@ jobs:
         run: |
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
-          git add packages/*/package.json pnpm-lock.yaml
+          git add package.json pnpm-lock.yaml
           git commit -m "chore: release v$VERSION"
-          # Annotated tag (-a) so `git push --follow-tags` actually pushes it.
           git tag -a "v$VERSION" -m "Release v$VERSION"
           git push origin HEAD:${{ github.ref_name }} --follow-tags
 

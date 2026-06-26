@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unpkg.com/@luxia/agnos/schema.json",
+  "title": "agnos.json",
+  "description": "Single source of truth for an agnos project: which agents are active, how rules are composed, what skills/MCP servers/hooks are configured, and how docs are managed.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of this JSON schema. Recommended so editors can validate and autocomplete agnos.json."
+    },
+    "schemaVersion": {
+      "const": 1,
+      "description": "agnos.json schema version. Must be 1; older/absent values are rejected — re-run `agnos --init`."
+    },
+    "agents": {
+      "type": "array",
+      "description": "Active agent ids (e.g. \"claude-code\", \"codex\").",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "rules": {
+      "type": "object",
+      "description": "Rules domain. Maps each canonical rules file to the injectable fragment files whose titled sections are injected into it.",
+      "properties": {
+        "files": {
+          "type": "object",
+          "description": "Map of canonical rules file path → array of injectable fragment file paths.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "description": "Skills domain configuration: where canonical content lives and which skills to install.",
+      "properties": {
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical skills directory, project-relative. Defaults to \".agnos/skills\". Agents link their own skills dir to this path."
+        },
+        "sources": {
+          "type": "object",
+          "description": "Map of local skill name → composite source ref. Grammar: \"github:<owner>/<repo>/<in-repo-path>\" (or gitlab:/bitbucket:), or \"file:<path-to-skill-dir>\".",
+          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "additionalProperties": { "type": "string", "minLength": 1, "pattern": "^[^\\r\\n]+$" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcp": {
+      "type": "array",
+      "description": "MCP server declarations, rendered into per-agent MCP config (.mcp.json for Claude Code, .codex/config.toml for Codex).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Local name for this MCP server."
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional source ref for the server package."
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Executable to run (stdio transport)."
+          },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Arguments passed to `command`."
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables. Values may contain ${VAR} references resolved at render time.",
+            "additionalProperties": { "type": "string" }
+          },
+          "transport": {
+            "type": "string",
+            "enum": ["stdio", "sse", "http"],
+            "description": "Transport protocol the agent uses to talk to this server."
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "description": "Hooks registry: a flat array of command hooks. Agents render each entry into their native format (regrouping by event/matcher), mapping `message` to native status text and skipping unsupported events.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "PreToolUse",
+              "PostToolUse",
+              "UserPromptSubmit",
+              "Notification",
+              "Stop",
+              "SubagentStop",
+              "PreCompact",
+              "SessionStart",
+              "SessionEnd"
+            ],
+            "description": "Normalized hook event name."
+          },
+          "matcher": {
+            "type": "string",
+            "description": "Optional filter for when the hook fires (meaning depends on the event)."
+          },
+          "type": {
+            "const": "command",
+            "description": "Handler type. Only \"command\" is supported in v0.1."
+          },
+          "command": { "type": "string", "minLength": 1, "description": "Shell command to run." },
+          "message": {
+            "type": "string",
+            "description": "User-facing status text shown while the hook runs."
+          }
+        },
+        "required": ["event", "type", "command"],
+        "additionalProperties": false
+      }
+    },
+    "docs": {
+      "type": "object",
+      "description": "Docs domain configuration. Watches `root`, compiles an index from the docs' frontmatter metadata.",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Directory where doc files live (default \".docs\")."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Map of frontmatter key → natural-language description, merged onto the opinionated defaults (title/description/read_when/agent_cant).",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

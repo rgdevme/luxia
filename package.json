@@ -1,21 +1,49 @@
 {
-  "name": "agnos-workspace",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@luxia/agnos",
+  "version": "0.1.0",
   "description": "Agent-agnostic project-level configuration manager",
   "type": "module",
+  "license": "MIT",
   "packageManager": "pnpm@10.10.0",
   "engines": {
     "node": ">=24"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rgdevme/luxia.git"
+  },
+  "bugs": "https://github.com/rgdevme/luxia/issues",
+  "homepage": "https://github.com/rgdevme/luxia#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "bin": {
+    "agnos": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fs": {
+      "types": "./dist/fs/index.d.ts",
+      "default": "./dist/fs/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "schema.json"
+  ],
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "build": "tsup && node scripts/copy-templates.mjs",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "turbo run lint",
-    "lint:fix": "turbo run lint -- --fix",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
@@ -34,9 +62,23 @@
       "esbuild"
     ]
   },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@inquirer/prompts": "^7.2.1",
+    "chokidar": "^4.0.1",
+    "giget": "^1.2.3",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0",
+    "minimist": "^1.2.8",
+    "picomatch": "^4.0.2",
+    "zod": "^3.24.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/minimist": "^1.2.5",
     "@types/node": "^22.10.5",
+    "@types/picomatch": "^3.0.1",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "globals": "^15.14.0",
@@ -44,7 +86,6 @@
     "lint-staged": "^15.3.0",
     "prettier": "^3.4.2",
     "tsup": "^8.3.5",
-    "turbo": "^2.3.3",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.19.1",
     "vitest": "^2.1.8"

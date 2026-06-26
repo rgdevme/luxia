@@ -16,4 +16,7 @@ scratch/
 
 # AGENTS
 .claude
-.agnos
+.agnos/
+
+# scratch test dir (manual-testing guide)
+temp-test/

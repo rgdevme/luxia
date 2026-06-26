@@ -67,10 +67,10 @@ Never use other package manages, like `npm`, `yarn`, or `bun`.
 ### File organization
 
 - One concept per file.
-- Public surface via src/index.ts re-exports.
-- Shared types in src/types/public.ts.
-- CLI commands under src/commands/<verb>.ts.
-- Tests in packages/<name>/test/<concept>.test.ts.
+- Single package (`@luxia/agnos`): core under `src/core/`, domains under `src/domains/<id>/`, agent adapters under `src/agents/adapters/<id>/`.
+- Public surface via `src/core/index.ts` re-exports.
+- Shared types in `src/core/types/public.ts`.
+- Tests in `test/<area>/<concept>.test.ts`.
 
 ### Testing
 
@@ -94,4 +94,4 @@ Never use other package manages, like `npm`, `yarn`, or `bun`.
 - No abstractions for hypothetical needs. Build for what's asked; symmetry over flexibility when adding hooks (if there's onAdded, there's probably onRemoved).
 - No backward-compat shims when redesigning: Clean cutover, migrate built-ins in the same change.
 - Read existing patterns before inventing one. Codebase is small; grep first.
-- No duplication: Before writing new logic, check `packages/shared`. Shared logic, types, and configs live there.
+- No duplication: Before writing new logic, check `src/core` (shared utils/types) and `src/domains/merge.ts` (shared reconcilers).
