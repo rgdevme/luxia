@@ -92,6 +92,16 @@ describe("skills subcommands", () => {
     await run(skillsDomain, "remove", ["pdf"]);
     expect((await readCfg()).skills?.sources["pdf"]).toBeUndefined();
   });
+
+  it("remove deletes multiple named skills; no-name + non-interactive errors", async () => {
+    await run(skillsDomain, "add", ["github:o/r/skills/a"]);
+    await run(skillsDomain, "add", ["github:o/r/skills/b"]);
+    await run(skillsDomain, "remove", ["a", "b"]);
+    expect((await readCfg()).skills?.sources ?? {}).toEqual({});
+    await run(skillsDomain, "add", ["github:o/r/skills/c"]);
+    // no names + non-interactive (yes flag) → errors instead of hanging on a prompt
+    await expect(run(skillsDomain, "remove", [])).rejects.toThrow(/specify skill/i);
+  });
 });
 
 describe("agents subcommands", () => {

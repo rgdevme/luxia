@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { checkbox } from "@inquirer/prompts";
 import type {
   AgnosConfig,
   CommandSpec,
@@ -97,15 +98,46 @@ const commands: Record<string, CommandSpec> = {
   },
   remove: {
     name: "remove",
-    description: "Remove a skill source by name",
-    args: [{ name: "name", required: true, description: "local skill name" }],
+    description: "Remove skill sources (multiselect prompt when no name is given)",
+    args: [
+      {
+        name: "names",
+        required: false,
+        variadic: true,
+        description: "skills to remove (omit to pick)",
+      },
+    ],
     async run(ctx) {
-      const name = reqArg(ctx, 0, "name");
       const config = await readConfigOrDefault(ctx.configPath);
       const all = config.skills?.sources ?? {};
-      if (!(name in all)) throw new Error(`skill "${name}" not found`);
-      const { [name]: _removed, ...sources } = all;
-      await writeChange(ctx, `removed skill "${name}"`, {
+      const declared = Object.keys(all);
+      if (declared.length === 0) {
+        ctx.logger.info("no skills to remove");
+        return;
+      }
+
+      let targets = ctx.args;
+      if (targets.length === 0) {
+        // No names → interactive multiselect. Refuse when there's no TTY (or -y),
+        // so the command never hangs in scripts/CI.
+        if (ctx.flags["yes"] || !process.stdin.isTTY) {
+          throw new Error("specify skill name(s) to remove, or run in a terminal to pick them");
+        }
+        targets = await checkbox({
+          message: "Select skills to remove:",
+          choices: declared.map((n) => ({ name: `${n}  (${all[n]})`, value: n })),
+        });
+      }
+
+      if (targets.length === 0) {
+        ctx.logger.info("nothing selected");
+        return;
+      }
+      const missing = targets.filter((n) => !(n in all));
+      if (missing.length > 0) throw new Error(`skill(s) not found: ${missing.join(", ")}`);
+
+      const sources = Object.fromEntries(Object.entries(all).filter(([n]) => !targets.includes(n)));
+      await writeChange(ctx, `removed ${targets.length} skill(s): ${targets.join(", ")}`, {
         ...config,
         skills: { ...config.skills, sources },
       });
