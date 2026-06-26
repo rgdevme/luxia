@@ -24,15 +24,17 @@ export async function multiSelect(
 }
 
 /**
- * Interactive yes/no confirmation. Non-interactive (`-y` or no TTY) resolves to
- * `true` so a scripted/CI run proceeds without hanging on a prompt.
+ * Interactive yes/no confirmation. `-y` is an explicit approval and resolves to
+ * `true`. Without it, a non-TTY run can't ask — so it resolves to `false` rather
+ * than silently approving a destructive action (re-run with `-y` to confirm).
  */
 export async function confirmPrompt(
   ctx: CommandContext,
   message: string,
   def = true,
 ): Promise<boolean> {
-  if (ctx.flags["yes"] || !process.stdin.isTTY) return true;
+  if (ctx.flags["yes"]) return true;
+  if (!process.stdin.isTTY) return false;
   return confirm({ message, default: def });
 }
 

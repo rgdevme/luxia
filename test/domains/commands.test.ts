@@ -123,6 +123,14 @@ describe("skills subcommands", () => {
     expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./src-skills/skills/pdf");
   });
 
+  it("add of an already-declared skill does NOT overwrite non-interactively without -y", async () => {
+    await makeSkillSource("src-skills", ["pdf"]);
+    await writeCfg({ skills: { sources: { pdf: "file:./stale/skills/pdf" } } });
+    // non-TTY + no --yes → the overwrite confirmation declines; config is untouched
+    await run(skillsDomain, "add", ["file", "./src-skills", "pdf"], { yes: false });
+    expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./stale/skills/pdf");
+  });
+
   it("add reports a clear error when the source has no skills", async () => {
     await fs.mkdir(path.join(tmp, "empty"), { recursive: true });
     await expect(run(skillsDomain, "add", ["file", "./empty"])).rejects.toThrow(/no skills found/);

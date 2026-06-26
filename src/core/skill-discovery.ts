@@ -105,15 +105,29 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
+/** Cap how much of a SKILL.md we read for metadata — frontmatter + first heading
+ * always live near the top, so reading the whole file would scale cost with body
+ * size for no benefit. */
+const META_PREFIX_BYTES = 16 * 1024;
+
 /**
  * Read the human-facing metadata from a SKILL.md: the `description` frontmatter
- * field and the first markdown heading in the body. Best-effort — any read or
- * parse failure yields an empty result rather than aborting discovery.
+ * field and the first markdown heading in the body. Reads only a bounded prefix.
+ * Best-effort — any read or parse failure yields an empty result rather than
+ * aborting discovery.
  */
 async function readSkillMeta(skillMd: string): Promise<{ title?: string; description?: string }> {
   try {
-    const raw = await fs.readFile(skillMd, "utf8");
-    const parsed = matter(raw);
+    const fd = await fs.open(skillMd, "r");
+    let head: string;
+    try {
+      const buf = Buffer.alloc(META_PREFIX_BYTES);
+      const { bytesRead } = await fd.read(buf, 0, META_PREFIX_BYTES, 0);
+      head = buf.toString("utf8", 0, bytesRead);
+    } finally {
+      await fd.close();
+    }
+    const parsed = matter(head);
     const rawDesc = parsed.data?.["description"];
     const description = typeof rawDesc === "string" ? rawDesc.trim() || undefined : undefined;
     const firstLine =
