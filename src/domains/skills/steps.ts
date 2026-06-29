@@ -41,7 +41,7 @@ async function resolveCommit(composite: string, ctx: ResolveContext): Promise<st
   try {
     const res =
       ref.source.kind === "git"
-        ? await resolveGitCommit(ref.source)
+        ? await resolveGitCommit(ref.source, ref.source.ref)
         : await resolveLocalCommit(ref.source);
     return res.commit ?? undefined;
   } catch {

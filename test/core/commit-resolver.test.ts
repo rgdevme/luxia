@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveGitCommit, resolveLocalCommit } from "../../src/core/commit-resolver.js";
+import {
+  resolveDefaultBranch,
+  resolveGitCommit,
+  resolveLocalCommit,
+} from "../../src/core/commit-resolver.js";
 import type { GitSource, LocalSource } from "../../src/core/source.js";
 
 function gitSrc(provider: "github" | "gitlab" | "bitbucket"): GitSource {
@@ -73,6 +77,50 @@ describe("resolveGitCommit", () => {
       json: async () => ({ message: "rate limit" }),
     })) as unknown as typeof fetch;
     await expect(resolveGitCommit(gitSrc("github"))).rejects.toThrow(/rate-limited/);
+  });
+});
+
+describe("resolveDefaultBranch", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("reads github/gitlab default_branch", async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ default_branch: "develop" }),
+    })) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+    expect(await resolveDefaultBranch(gitSrc("github"))).toBe("develop");
+    expect((fetchSpy as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe(
+      "https://api.github.com/repos/owner/repo",
+    );
+  });
+
+  it("reads bitbucket mainbranch.name", async () => {
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({ mainbranch: { name: "master" } }),
+    })) as unknown as typeof fetch;
+    expect(await resolveDefaultBranch(gitSrc("bitbucket"))).toBe("master");
+  });
+
+  it("returns null when no branch is exposed", async () => {
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({}),
+    })) as unknown as typeof fetch;
+    expect(await resolveDefaultBranch(gitSrc("github"))).toBeNull();
+  });
+
+  it("throws on a failed request", async () => {
+    globalThis.fetch = (async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ message: "Not Found" }),
+    })) as unknown as typeof fetch;
+    await expect(resolveDefaultBranch(gitSrc("github"))).rejects.toThrow(/Not Found/);
   });
 });
 
