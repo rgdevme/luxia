@@ -14,8 +14,8 @@ import { USAGE, commandHelp, domainHelp } from "./help.js";
 async function main(): Promise<void> {
   const argv = minimist(process.argv.slice(2), {
     boolean: ["dry", "once", "quiet", "help", "init", "yes", "debug", "missing", "force", "skip"],
-    alias: { y: "yes", h: "help" },
-    string: ["cwd"],
+    alias: { y: "yes", h: "help", p: "provider", s: "skills" },
+    string: ["cwd", "provider", "skills"],
   });
 
   const flags: ParsedFlags = {

@@ -26,7 +26,17 @@ function flagsBlock(): string {
 }
 
 function argUsage(cmd: CommandSpec): string {
-  return (cmd.args ?? []).map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`)).join(" ");
+  return (cmd.args ?? [])
+    .map((a) => {
+      const name = a.variadic ? `${a.name}...` : a.name;
+      return a.required ? `<${name}>` : `[${name}]`;
+    })
+    .join(" ");
+}
+
+/** Render a flag's invocation, e.g. `-p, --provider` or `--force`. */
+function flagUsage(f: { name: string; alias?: string }): string {
+  return f.alias ? `-${f.alias}, --${f.name}` : `--${f.name}`;
 }
 
 /** Help for `agnos <domain> --help`: description, how to run it, its subcommands, flags. */
@@ -45,7 +55,7 @@ export function domainHelp(domain: Domain): string {
       const usage = argUsage(c);
       out.push(`  ${`${c.name}${usage ? ` ${usage}` : ""}`.padEnd(22)} ${c.description}`);
       for (const f of c.flags ?? []) {
-        out.push(`    ${`--${f.name}`.padEnd(20)} ${f.description}`);
+        out.push(`    ${flagUsage(f).padEnd(20)} ${f.description}`);
       }
     }
   }
@@ -70,7 +80,7 @@ export function commandHelp(domainId: string, cmd: CommandSpec): string {
   const flags = cmd.flags ?? [];
   if (flags.length > 0) {
     out.push("", "Flags:");
-    for (const f of flags) out.push(`  ${`--${f.name}`.padEnd(14)} ${f.description}`);
+    for (const f of flags) out.push(`  ${flagUsage(f).padEnd(14)} ${f.description}`);
   }
   out.push("", flagsBlock());
   return `${out.join("\n")}\n`;
