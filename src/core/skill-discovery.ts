@@ -46,17 +46,20 @@ export interface DiscoveredSkill {
   description?: string;
 }
 
+/** Conventional top-level directory that holds a repo's skills. */
+const SKILLS_DIR = "skills";
+
 /**
- * Walk `repoRoot` for any directory containing a `SKILL.md` file. Skips the
- * standard build/VCS directories. Doesn't descend into a skill directory after
- * finding its SKILL.md (skills are atomic units; nested skills are not a thing).
- *
- * Returns a stable order (sorted by path) so the interactive prompt and any
- * collision-suffixing are deterministic.
+ * Discover skills under the repo's conventional top-level `skills/` directory —
+ * the only place we look, by convention, so a huge repo doesn't cost a full-tree
+ * walk. Returns `[]` when there's no `skills/` dir. Within it, every directory
+ * containing a `SKILL.md` is a skill; we don't descend past a skill's marker
+ * (skills are atomic units). Returned paths are repo-root-relative (`skills/x`),
+ * in a stable sorted order so the prompt and collision-suffixing are deterministic.
  */
 export async function findSkillsInRepo(repoRoot: string): Promise<DiscoveredSkill[]> {
   const out: DiscoveredSkill[] = [];
-  await walk(repoRoot, repoRoot, 0, out);
+  await walk(repoRoot, path.join(repoRoot, SKILLS_DIR), 0, out);
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }
@@ -116,7 +119,9 @@ const META_PREFIX_BYTES = 16 * 1024;
  * Best-effort — any read or parse failure yields an empty result rather than
  * aborting discovery.
  */
-async function readSkillMeta(skillMd: string): Promise<{ title?: string; description?: string }> {
+export async function readSkillMeta(
+  skillMd: string,
+): Promise<{ title?: string; description?: string }> {
   try {
     const fd = await fs.open(skillMd, "r");
     let head: string;

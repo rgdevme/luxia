@@ -161,7 +161,7 @@ export interface RepoFetcher {
   fetch(
     source: ParsedSourceRef,
     opts?: { ref?: string; noCache?: boolean },
-  ): Promise<{ path: string }>;
+  ): Promise<{ path: string; ref?: string }>;
 }
 
 /**

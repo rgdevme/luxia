@@ -166,7 +166,7 @@ describe("skills subcommands", () => {
   it("add reports a clear error when the source has no skills", async () => {
     await fs.mkdir(path.join(tmp, "empty"), { recursive: true });
     await expect(run(skillsDomain, "add", ["./empty"], { provider: "file" })).rejects.toThrow(
-      /no skills found/,
+      /No skills found in \.\/empty/,
     );
   });
 

@@ -2,107 +2,128 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { execFile } from "node:child_process";
 
-const downloadTemplate = vi.fn(async (_src: string, opts: { dir: string }) => {
-  await fs.mkdir(opts.dir, { recursive: true });
-  await fs.writeFile(path.join(opts.dir, "marker.txt"), "ok");
-  return { dir: opts.dir };
-});
+// The fetcher clones via `git` (ls-remote + sparse clone) through
+// promisify(execFile). Mock the module and simulate the side effects: ls-remote
+// reports a default branch; `clone` materializes the requested subtree on disk.
+vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
 
-vi.mock("giget", () => ({
-  downloadTemplate: (src: string, opts: { dir: string }) => downloadTemplate(src, opts),
-}));
+import { createRepoFetcher, parseSource } from "../../src/core/index.js";
 
-import { createRepoFetcher, gigetTarballPath, parseSource } from "../../src/core/index.js";
+const mockExec = vi.mocked(execFile);
 
-describe("createRepoFetcher noCache", () => {
+/** Record of git invocations as `[file, ...args]` for assertions. */
+let calls: string[][] = [];
+
+function installGitMock(): void {
+  mockExec.mockImplementation(((...args: unknown[]) => {
+    const cb = args[args.length - 1] as (
+      e: Error | null,
+      r?: { stdout: string; stderr: string },
+    ) => void;
+    const gitArgs = args[1] as string[];
+    calls.push([args[0] as string, ...gitArgs]);
+    void (async () => {
+      try {
+        if (gitArgs[0] === "ls-remote") {
+          cb(null, { stdout: "ref: refs/heads/main\tHEAD\n", stderr: "" });
+          return;
+        }
+        if (gitArgs[0] === "clone") {
+          // dest is the last positional arg; drop a SKILL.md so the dir is non-empty.
+          const dest = gitArgs[gitArgs.length - 1]!;
+          await fs.mkdir(path.join(dest, "skills", "demo"), { recursive: true });
+          await fs.writeFile(path.join(dest, "skills", "demo", "SKILL.md"), "# Demo\n");
+        }
+        cb(null, { stdout: "", stderr: "" });
+      } catch (e) {
+        cb(e as Error);
+      }
+    })();
+  }) as unknown as typeof execFile);
+}
+
+describe("createRepoFetcher (sparse git clone)", () => {
   let root: string;
-  let cacheHome: string;
-  let originalXdg: string | undefined;
-  const originalFetch = globalThis.fetch;
 
   beforeEach(async () => {
-    downloadTemplate.mockClear();
-    // Default-branch inference hits the provider API on a cache miss; stub it so
-    // the fetcher stays offline and deterministic.
-    globalThis.fetch = (async () => ({
-      ok: true,
-      json: async () => ({ default_branch: "main" }),
-    })) as unknown as typeof fetch;
+    mockExec.mockReset();
+    calls = [];
+    installGitMock();
     root = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-resolver-"));
-    cacheHome = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-xdg-"));
-    originalXdg = process.env["XDG_CACHE_HOME"];
-    process.env["XDG_CACHE_HOME"] = cacheHome;
   });
 
   afterEach(async () => {
-    globalThis.fetch = originalFetch;
-    if (originalXdg === undefined) delete process.env["XDG_CACHE_HOME"];
-    else process.env["XDG_CACHE_HOME"] = originalXdg;
     await fs.rm(root, { recursive: true, force: true });
-    await fs.rm(cacheHome, { recursive: true, force: true });
   });
 
-  it("wipes giget's cached tarball before fetching when noCache is set", async () => {
-    const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
-    if (source.kind !== "git") throw new Error("expected git source");
-
-    const tarPath = gigetTarballPath(source, undefined);
-    await fs.mkdir(path.dirname(tarPath), { recursive: true });
-    await fs.writeFile(tarPath, "stale-tarball");
-    await fs.writeFile(`${tarPath}.json`, JSON.stringify({ etag: "old" }));
-
-    const fetcher = createRepoFetcher({
+  function fetcher() {
+    return createRepoFetcher({
       projectRoot: root,
       cacheDir: path.join(root, ".agnos", "cache"),
     });
-    await fetcher.fetch(source, { noCache: true });
+  }
 
-    await expect(fs.access(tarPath)).rejects.toThrow();
-    await expect(fs.access(`${tarPath}.json`)).rejects.toThrow();
-    expect(downloadTemplate).toHaveBeenCalledOnce();
-  });
-
-  it("rejects refs that escape the source's cache directory", async () => {
+  it("clones only the skills/ subtree at the resolved default branch", async () => {
     const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
     if (source.kind !== "git") throw new Error("expected git source");
 
-    const sentinelDir = path.join(cacheHome, "giget", "github", "other-repo");
-    await fs.mkdir(sentinelDir, { recursive: true });
-    const sentinel = path.join(sentinelDir, "main.tar.gz");
-    await fs.writeFile(sentinel, "sibling-tarball");
+    const res = await fetcher().fetch(source);
 
-    expect(() => gigetTarballPath(source, "../../other-repo/main")).toThrow(/escapes/);
-
-    const fetcher = createRepoFetcher({
-      projectRoot: root,
-      cacheDir: path.join(root, ".agnos", "cache"),
-    });
+    expect(res.ref).toBe("main"); // from the mocked ls-remote symref
     await expect(
-      fetcher.fetch(source, { ref: "../../other-repo/main", noCache: true }),
-    ).rejects.toThrow(/escapes/);
+      fs.access(path.join(res.path, "skills", "demo", "SKILL.md")),
+    ).resolves.toBeUndefined();
 
-    // The sibling tarball must not have been touched.
-    const sibling = await fs.readFile(sentinel, "utf8");
-    expect(sibling).toBe("sibling-tarball");
-    expect(downloadTemplate).not.toHaveBeenCalled();
+    const clone = calls.find((c) => c[1] === "clone")!;
+    expect(clone).toContain("--filter=blob:none");
+    expect(clone).toContain("--branch");
+    expect(clone[clone.indexOf("--branch") + 1]).toBe("main");
+    expect(clone).toContain("https://github.com/vercel-labs/agent-skills.git");
+
+    const sparse = calls.find((c) => c.includes("sparse-checkout"))!;
+    expect(sparse[sparse.length - 1]).toBe("skills");
   });
 
-  it("leaves giget's cached tarball untouched when noCache is not set", async () => {
+  it("scopes the clone to the source's in-repo path when one is given", async () => {
+    const source = parseSource("github:vercel-labs/agent-skills/skills/pdf", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
+
+    await fetcher().fetch(source);
+    const sparse = calls.find((c) => c.includes("sparse-checkout"))!;
+    expect(sparse[sparse.length - 1]).toBe("skills/pdf");
+  });
+
+  it("reuses the cached clone on a second fetch", async () => {
     const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
     if (source.kind !== "git") throw new Error("expected git source");
 
-    const tarPath = gigetTarballPath(source, undefined);
-    await fs.mkdir(path.dirname(tarPath), { recursive: true });
-    await fs.writeFile(tarPath, "stale-tarball");
+    await fetcher().fetch(source);
+    const clonesAfterFirst = calls.filter((c) => c[1] === "clone").length;
+    await fetcher().fetch(source);
+    const clonesAfterSecond = calls.filter((c) => c[1] === "clone").length;
+    expect(clonesAfterFirst).toBe(1);
+    expect(clonesAfterSecond).toBe(1); // no re-clone
+  });
 
-    const fetcher = createRepoFetcher({
-      projectRoot: root,
-      cacheDir: path.join(root, ".agnos", "cache"),
-    });
-    await fetcher.fetch(source);
+  it("re-clones when noCache is set", async () => {
+    const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
 
-    const stillThere = await fs.readFile(tarPath, "utf8");
-    expect(stillThere).toBe("stale-tarball");
+    await fetcher().fetch(source);
+    await fetcher().fetch(source, { noCache: true });
+    expect(calls.filter((c) => c[1] === "clone").length).toBe(2);
+  });
+
+  it("uses the explicit ref and skips default-branch resolution", async () => {
+    const source = parseSource("github:vercel-labs/agent-skills#canary", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
+
+    const res = await fetcher().fetch(source);
+    expect(res.ref).toBe("canary");
+    expect(calls.some((c) => c[1] === "ls-remote")).toBe(false);
+    const clone = calls.find((c) => c[1] === "clone")!;
+    expect(clone[clone.indexOf("--branch") + 1]).toBe("canary");
   });
 });

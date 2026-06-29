@@ -5,9 +5,9 @@ export type Provider = "github" | "gitlab" | "bitbucket";
 export const SUPPORTED_PROVIDERS: readonly Provider[] = ["github", "gitlab", "bitbucket"];
 
 /**
- * Branch the fetcher falls back to when a source omits a `#<ref>` and the
- * provider's default branch can't be resolved (offline / rate-limited). The
- * normal path infers the real default branch instead — see the resolver.
+ * Conventional default branch name. The fetcher resolves the real default
+ * branch via `git ls-remote` (see the resolver / commit-resolver); this is only
+ * a last-resort label for messaging when that resolution yields nothing.
  */
 export const FALLBACK_REF = "main";
 

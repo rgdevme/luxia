@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import colors from "yoctocolors-cjs";
 import type {
   AgnosConfig,
   CommandSpec,
@@ -14,6 +15,7 @@ import {
   parseCompositeSkillRef,
   parseSource,
   readConfigOrDefault,
+  readSkillMeta,
   skillNameSchema,
   skillRefSchema,
   withSpinner,
@@ -21,7 +23,6 @@ import {
 } from "../../core/index.js";
 import {
   MIGRATE_FLAGS,
-  multiSelect,
   multiSelectExclusive,
   policyFromFlags,
   writeChange,
@@ -68,6 +69,8 @@ interface Repo {
   address: string;
   source: ParsedSource;
   localRoot: string;
+  /** Git ref actually fetched (explicit `#ref` or the resolved default branch). */
+  ref?: string;
   /** Index in the original `add a b c` order — the tiebreaker for same-named skills. */
   order: number;
 }
@@ -80,7 +83,9 @@ interface Candidate {
   name: string;
 }
 
-const DESC_MAX = 80;
+// Effectively uncapped — the description renders on its own line, so it no
+// longer needs to fit a single row. Kept as a knob to tune later if needed.
+const DESC_MAX = 10000;
 
 /** Origin shown in the picker: `owner/repo` for a git source, else the address given. */
 function originLabel(repo: Repo): string {
@@ -88,15 +93,19 @@ function originLabel(repo: Repo): string {
 }
 
 /**
- * Picker row after the checkbox: `<skill> [!] [<owner/repo>]: <description>`.
- * `[!]` marks a skill already in the config (selecting it overwrites the entry);
- * the description is trimmed to {@link DESC_MAX} chars.
+ * Picker row label (before the checkbox renders the box): the skill name followed
+ * by a dimmed `owner/repo` origin. Already-installed skills aren't marked here —
+ * they're rendered preselected instead. The description shows on its own line.
  */
-function choiceLabel(c: Candidate, installed: boolean): string {
-  const bang = installed ? " [!]" : "";
-  const desc = c.skill.description?.trim();
-  const blurb = desc ? `: ${desc.length > DESC_MAX ? desc.slice(0, DESC_MAX) : desc}` : "";
-  return `${c.name}${bang} [${originLabel(c.repo)}]${blurb}`;
+function choiceLabel(c: Candidate): string {
+  return `${c.name} ${colors.dim(originLabel(c.repo))}`;
+}
+
+/** Trim + cap a description for the picker's detail line (capped at {@link DESC_MAX}). */
+function capDescription(text: string | undefined): string | undefined {
+  const desc = text?.trim();
+  if (!desc) return undefined;
+  return desc.length > DESC_MAX ? desc.slice(0, DESC_MAX) : desc;
 }
 
 /** Sort candidates by skill name (alphabetical), then by repo declaration order. */
@@ -215,7 +224,13 @@ const commands: Record<string, CommandSpec> = {
               const source = repoSource(providerFor(provider, address), address, ctx.projectRoot);
               const fetched = await ctx.fetcher.fetch(source);
               const skills = await findSkillsInRepo(fetched.path);
-              const repo: Repo = { address, source, localRoot: fetched.path, order };
+              const repo: Repo = {
+                address,
+                source,
+                localRoot: fetched.path,
+                ...(fetched.ref ? { ref: fetched.ref } : {}),
+                order,
+              };
               return { repo, skills };
             }),
           ),
@@ -232,8 +247,11 @@ const commands: Record<string, CommandSpec> = {
         ),
       );
       if (candidates.length === 0) {
+        const where = fetchedRepos
+          .map(({ repo }) => `${originLabel(repo)}${repo.ref ? `#${repo.ref}` : ""}`)
+          .join(", ");
         throw new Error(
-          `no skills found under ${addresses.join(", ")} (looked for SKILL.md in the source)`,
+          `No skills found in ${where} (looked under the repo's root skills/ directory)`,
         );
       }
 
@@ -257,14 +275,24 @@ const commands: Record<string, CommandSpec> = {
       } else if (ctx.flags.yes) {
         chosen = pickLatestPerName(candidates);
       } else {
-        const anyInstalled = candidates.some((c) => c.name in existing);
+        // Preselect a candidate only when it's the exact ref already installed
+        // (so at most one row per same-name group starts checked). A same-named
+        // skill from a different source stays unchecked — picking it overwrites.
+        const isInstalled = (c: Candidate): boolean =>
+          existing[c.name] ===
+          compositeFor(c.repo.source, c.repo.localRoot, c.skill.path, ctx.projectRoot);
+        const anyInstalled = candidates.some(isInstalled);
         const message = anyInstalled
-          ? "Select skills to add ([!] = already installed, selecting overwrites it):"
+          ? "Select skills to add (already-installed skills are preselected):"
           : "Select skills to add:";
         const choices = candidates.map((c, i) => ({
-          name: choiceLabel(c, c.name in existing),
+          name: choiceLabel(c),
           value: String(i),
           group: c.name, // selecting one auto-deselects same-named candidates
+          checked: isInstalled(c),
+          ...(capDescription(c.skill.description)
+            ? { description: capDescription(c.skill.description)! }
+            : {}),
         }));
         const picked = await multiSelectExclusive(
           ctx,
@@ -326,10 +354,24 @@ const commands: Record<string, CommandSpec> = {
 
       let targets = ctx.args;
       if (targets.length === 0) {
-        targets = await multiSelect(
+        // Same look as `add`: skill name, then a dimmed ref, with the installed
+        // skill's description (best-effort) on its own line.
+        const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
+        const choices = await Promise.all(
+          declared.map(async (n) => {
+            const { description } = await readSkillMeta(path.join(skillsDir, n, "SKILL.md"));
+            const desc = capDescription(description);
+            return {
+              name: `${n} ${colors.dim(all[n]!)}`,
+              value: n,
+              ...(desc ? { description: desc } : {}),
+            };
+          }),
+        );
+        targets = await multiSelectExclusive(
           ctx,
           "Select skills to remove:",
-          declared.map((n) => ({ name: `${n}  (${all[n]})`, value: n })),
+          choices,
           "specify skill name(s) to remove, or run in a terminal to pick them",
         );
       }

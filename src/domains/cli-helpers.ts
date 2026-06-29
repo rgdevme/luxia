@@ -12,6 +12,8 @@ import {
   useKeypress,
 } from "@inquirer/core";
 import type { Prompt } from "@inquirer/type";
+import figures from "@inquirer/figures";
+import colors from "yoctocolors-cjs";
 import type { AgnosConfig, CommandContext, FlagSpec } from "../core/index.js";
 import { writeConfig } from "../core/index.js";
 import type { MergePolicy } from "./merge.js";
@@ -28,6 +30,10 @@ export interface ExclusiveChoice extends PickChoice {
    * group are independent.
    */
   group?: string;
+  /** Longer blurb shown (dimmed/cyan) on its own line when the row is active. */
+  description?: string;
+  /** Initially checked (e.g. an already-installed skill). */
+  checked?: boolean;
 }
 
 /**
@@ -65,11 +71,21 @@ export const exclusiveCheckbox: Prompt<string[], ExclusiveConfig> = createPrompt
   string[],
   ExclusiveConfig
 >((config, done) => {
-  const theme = makeTheme({ icon: { checked: "[x]", unchecked: "[ ]", cursor: ">" } });
+  // Mirror the stock `@inquirer/prompts` checkbox look: filled/empty circles, a
+  // pointer cursor, and a cyan description line — so this custom prompt doesn't
+  // read as plain ASCII text next to the rest of the CLI's prompts.
+  const theme = makeTheme({
+    icon: {
+      checked: colors.green(figures.circleFilled),
+      unchecked: figures.circle,
+      cursor: figures.pointer,
+    },
+    style: { description: (text: string) => colors.cyan(text) },
+  });
   const [status, setStatus] = useState<"idle" | "done">("idle");
   const prefix = usePrefix({ status, theme });
   const [items, setItems] = useState<ExItem[]>(
-    config.choices.map((c) => ({ ...c, checked: false })),
+    config.choices.map((c) => ({ ...c, checked: c.checked ?? false })),
   );
   const [active, setActive] = useState(0);
 
@@ -105,10 +121,12 @@ export const exclusiveCheckbox: Prompt<string[], ExclusiveConfig> = createPrompt
     return `${prefix} ${message} ${theme.style.answer(answer)}`;
   }
 
+  let description: string | undefined;
   const page = usePagination({
     items,
     active,
     renderItem({ item, isActive }) {
+      if (isActive) description = item.description;
       const box = item.checked ? theme.icon.checked : theme.icon.unchecked;
       const cursor = isActive ? theme.icon.cursor : " ";
       const line = `${cursor}${box} ${item.name}`;
@@ -119,7 +137,16 @@ export const exclusiveCheckbox: Prompt<string[], ExclusiveConfig> = createPrompt
   });
 
   const help = theme.style.help("(↑↓ navigate · space select · ⏎ submit)");
-  return `${prefix} ${message}\n${page}\n${help}`;
+  return [
+    `${prefix} ${message}`,
+    page,
+    " ",
+    description ? theme.style.description(description) : "",
+    help,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trimEnd();
 });
 
 /**

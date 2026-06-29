@@ -15,11 +15,31 @@ export async function resolveGitCommit(src: GitSource, ref = "HEAD"): Promise<Co
 }
 
 /**
- * Look up the repository's default branch via the provider API. Returns null
- * when the API responds but exposes no usable branch name; throws on a failed
- * request (callers fetching a repo treat that as "fall back to giget default").
+ * Look up the repository's default branch. Primary path is `git ls-remote
+ * --symref <url> HEAD`, which has no API quota and needs no auth — unlike the
+ * provider REST API, which rate-limits unauthenticated callers (HTTP 403/429)
+ * and would otherwise leave us guessing `main`. Falls back to the REST API only
+ * if `git` is unavailable or returns nothing usable. Returns null when neither
+ * can determine a branch.
  */
 export async function resolveDefaultBranch(src: GitSource): Promise<string | null> {
+  const viaGit = await defaultBranchViaLsRemote(src).catch(() => null);
+  if (viaGit) return viaGit;
+  return defaultBranchViaApi(src);
+}
+
+/** Parse `ref: refs/heads/<branch>\tHEAD` out of `git ls-remote --symref`. */
+async function defaultBranchViaLsRemote(src: GitSource): Promise<string | null> {
+  const { stdout } = await execFile("git", ["ls-remote", "--symref", buildCloneUrl(src), "HEAD"]);
+  const m = /^ref:\s+refs\/heads\/(\S+)\s+HEAD/m.exec(stdout);
+  return m ? m[1]! : null;
+}
+
+/**
+ * REST-API fallback for the default branch. Returns null when the API responds
+ * but exposes no usable branch name; throws on a failed request.
+ */
+async function defaultBranchViaApi(src: GitSource): Promise<string | null> {
   const url = buildRepoUrl(src);
   const res = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "agnos-cli" },
@@ -36,6 +56,18 @@ export async function resolveDefaultBranch(src: GitSource): Promise<string | nul
   }
   const body = (await res.json()) as unknown;
   return extractDefaultBranch(src.provider, body);
+}
+
+/** Anonymous HTTPS clone URL for a git source — used by `ls-remote` and `clone`. */
+export function buildCloneUrl(src: GitSource): string {
+  switch (src.provider) {
+    case "github":
+      return `https://github.com/${src.owner}/${src.repo}.git`;
+    case "gitlab":
+      return `https://gitlab.com/${src.owner}/${src.repo}.git`;
+    case "bitbucket":
+      return `https://bitbucket.org/${src.owner}/${src.repo}.git`;
+  }
 }
 
 export async function resolveLocalCommit(src: LocalSource): Promise<CommitResolution> {
