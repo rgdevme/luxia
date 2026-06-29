@@ -10,7 +10,6 @@ import type {
 } from "../../core/index.js";
 import {
   buildPaths,
-  dim,
   findSkillsInRepo,
   parseCompositeSkillRef,
   parseSource,
@@ -20,7 +19,13 @@ import {
   withSpinner,
   writeConfig,
 } from "../../core/index.js";
-import { MIGRATE_FLAGS, multiSelect, policyFromFlags, writeChange } from "../cli-helpers.js";
+import {
+  MIGRATE_FLAGS,
+  multiSelect,
+  multiSelectExclusive,
+  policyFromFlags,
+  writeChange,
+} from "../cli-helpers.js";
 import { runSkillPipeline } from "./pipeline.js";
 import { mergeSkillSources } from "./migrate.js";
 import { createSkillSteps, updateSkills } from "./steps.js";
@@ -58,9 +63,59 @@ function providerFor(def: string | undefined, address: string): string | undefin
   return def;
 }
 
-/** Owner segment used to namespace a skill's stored name: git owner, else the source dir name. */
-function ownerPrefix(source: ParsedSource): string {
-  return source.kind === "git" ? source.owner : path.basename(source.absolutePath);
+/** A fetched source plus its declaration order on the command line. */
+interface Repo {
+  address: string;
+  source: ParsedSource;
+  localRoot: string;
+  /** Index in the original `add a b c` order — the tiebreaker for same-named skills. */
+  order: number;
+}
+
+/** One discovered skill bound to the repo it came from. */
+interface Candidate {
+  repo: Repo;
+  skill: DiscoveredSkill;
+  /** Stored name = the skill directory's own basename (never renamed). */
+  name: string;
+}
+
+const DESC_MAX = 80;
+
+/** Origin shown in the picker: `owner/repo` for a git source, else the address given. */
+function originLabel(repo: Repo): string {
+  return repo.source.kind === "git" ? `${repo.source.owner}/${repo.source.repo}` : repo.address;
+}
+
+/**
+ * Picker row after the checkbox: `<skill> [!] [<owner/repo>]: <description>`.
+ * `[!]` marks a skill already in the config (selecting it overwrites the entry);
+ * the description is trimmed to {@link DESC_MAX} chars.
+ */
+function choiceLabel(c: Candidate, installed: boolean): string {
+  const bang = installed ? " [!]" : "";
+  const desc = c.skill.description?.trim();
+  const blurb = desc ? `: ${desc.length > DESC_MAX ? desc.slice(0, DESC_MAX) : desc}` : "";
+  return `${c.name}${bang} [${originLabel(c.repo)}]${blurb}`;
+}
+
+/** Sort candidates by skill name (alphabetical), then by repo declaration order. */
+function sortCandidates(cands: Candidate[]): Candidate[] {
+  return [...cands].sort((a, b) => a.name.localeCompare(b.name) || a.repo.order - b.repo.order);
+}
+
+/**
+ * Collapse same-named candidates to one — the last declared (highest repo order),
+ * matching "alphabet-then-declaration" order's final occurrence. Used by `-y` and
+ * `--skills`, where there's no interactive prompt to resolve the collision.
+ */
+function pickLatestPerName(cands: Candidate[]): Candidate[] {
+  const byName = new Map<string, Candidate>();
+  for (const c of cands) {
+    const prev = byName.get(c.name);
+    if (!prev || c.repo.order > prev.repo.order) byName.set(c.name, c);
+  }
+  return sortCandidates([...byName.values()]);
 }
 
 /** Concrete composite ref for a discovered skill — the same shape `add` has always stored. */
@@ -149,40 +204,32 @@ const commands: Record<string, CommandSpec> = {
           : undefined;
 
       // Fetch every source (in parallel) and discover the skills inside each,
-      // keeping provenance so we can namespace + build composite refs per origin.
-      interface Repo {
-        address: string;
-        source: ParsedSource;
-        localRoot: string;
-      }
-      interface Candidate {
-        repo: Repo;
-        skill: DiscoveredSkill;
-        name: string;
-      }
+      // keeping provenance (incl. declaration order) so we can build composite
+      // refs per origin and break same-name ties deterministically.
       const label = addresses.length === 1 ? addresses[0] : `${addresses.length} sources`;
       const fetchedRepos = await withSpinner(
         `Loading skills from ${label}…`,
         () =>
           Promise.all(
-            addresses.map(async (address) => {
+            addresses.map(async (address, order) => {
               const source = repoSource(providerFor(provider, address), address, ctx.projectRoot);
               const fetched = await ctx.fetcher.fetch(source);
               const skills = await findSkillsInRepo(fetched.path);
-              const repo: Repo = { address, source, localRoot: fetched.path };
+              const repo: Repo = { address, source, localRoot: fetched.path, order };
               return { repo, skills };
             }),
           ),
         { quiet: ctx.flags.quiet },
       );
 
-      // Flatten to candidates, namespacing each stored name as `<owner>-<skill>`.
-      const candidates: Candidate[] = fetchedRepos.flatMap(({ repo, skills }) =>
-        skills.map((skill) => ({
-          repo,
-          skill,
-          name: `${ownerPrefix(repo.source)}-${skill.defaultName}`,
-        })),
+      // Flatten to candidates, sorted by skill name then declaration order. A skill
+      // is stored under its own name (the directory basename) — never renamed, so
+      // we never touch files we don't own. Same-name skills from different sources
+      // coexist as candidates; the collision is resolved at selection, not here.
+      const candidates = sortCandidates(
+        fetchedRepos.flatMap(({ repo, skills }) =>
+          skills.map((skill) => ({ repo, skill, name: skill.defaultName })),
+        ),
       );
       if (candidates.length === 0) {
         throw new Error(
@@ -193,32 +240,33 @@ const commands: Record<string, CommandSpec> = {
       const config = await readConfigOrDefault(ctx.configPath);
       const existing = config.skills?.sources ?? {};
 
-      // Pick the skills to add: explicit --skills filter, --yes (all), else prompt.
+      // Pick the skills to add. Collisions (same name from >1 source) resolve by:
+      //   --skills <names> → last declared per name
+      //   -y               → last declared per name (every distinct skill)
+      //   interactive      → picking one auto-deselects same-named rows
       let chosen: Candidate[];
       if (filter) {
-        chosen = candidates.filter((c) => filter.includes(c.skill.defaultName));
-        const found = new Set(chosen.map((c) => c.skill.defaultName));
+        const wanted = candidates.filter((c) => filter.includes(c.name));
+        const found = new Set(wanted.map((c) => c.name));
         const missing = filter.filter((n) => !found.has(n));
         if (missing.length > 0) {
-          const available = [...new Set(candidates.map((c) => c.skill.defaultName))].join(", ");
+          const available = [...new Set(candidates.map((c) => c.name))].sort().join(", ");
           throw new Error(`skill(s) not found: ${missing.join(", ")}. Available: ${available}`);
         }
+        chosen = pickLatestPerName(wanted);
       } else if (ctx.flags.yes) {
-        chosen = candidates;
+        chosen = pickLatestPerName(candidates);
       } else {
         const anyInstalled = candidates.some((c) => c.name in existing);
         const message = anyInstalled
-          ? "Select skills to add:\n[!] already installed — selecting overwrites it."
+          ? "Select skills to add ([!] = already installed, selecting overwrites it):"
           : "Select skills to add:";
-        const multiRepo = addresses.length > 1;
-        const choices = candidates.map((c, i) => {
-          const desc = c.skill.description?.trim();
-          const blurb = desc ? " " + dim(desc.length > 60 ? `${desc.slice(0, 60)}…` : desc) : "";
-          const origin = multiRepo ? dim(` (${c.repo.address})`) : "";
-          const text = `${c.name}${origin}${blurb}`;
-          return { name: c.name in existing ? `[!] ${text}` : text, value: String(i) };
-        });
-        const picked = await multiSelect(
+        const choices = candidates.map((c, i) => ({
+          name: choiceLabel(c, c.name in existing),
+          value: String(i),
+          group: c.name, // selecting one auto-deselects same-named candidates
+        }));
+        const picked = await multiSelectExclusive(
           ctx,
           message,
           choices,
@@ -232,26 +280,17 @@ const commands: Record<string, CommandSpec> = {
       }
 
       // Expand each pick into a concrete per-skill composite ref. Storage shape
-      // is identical to before — one entry per skill — so installs stay reproducible.
+      // is one entry per skill name — an already-declared name is overwritten.
       const sources = { ...existing };
       const added: string[] = [];
-      const seen = new Map<string, string>(); // stored name → origin address
       for (const { repo, skill, name } of chosen) {
         const named = skillNameSchema.safeParse(name);
         if (!named.success) {
           throw new Error(
             `"${name}" (from ${skill.path} in ${repo.address}) is not a valid skill name; ` +
-              `owner and skill directory names must be alphanumeric/dash`,
+              `the skill directory name must be alphanumeric/dash`,
           );
         }
-        const prior = seen.get(named.data);
-        if (prior) {
-          throw new Error(
-            `skill name "${named.data}" resolves from both ${prior} and ${repo.address}; ` +
-              `add them in separate runs to avoid one silently overwriting the other`,
-          );
-        }
-        seen.set(named.data, repo.address);
         const composite = compositeFor(repo.source, repo.localRoot, skill.path, ctx.projectRoot);
         // Defensive: the stored value must parse back to a concrete skill ref.
         parseCompositeSkillRef(composite, { projectRoot: ctx.projectRoot });

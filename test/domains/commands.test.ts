@@ -96,11 +96,11 @@ describe("skills subcommands", () => {
     }
   };
 
-  it("add with --skills filter writes only the named skills, namespaced by owner", async () => {
+  it("add with --skills filter writes only the named skills, stored by skill name", async () => {
     await makeSkillSource("src-skills", ["pdf", "lint"]);
     await run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "pdf" });
     expect((await readCfg()).skills?.sources).toEqual({
-      "src-skills-pdf": "file:./src-skills/skills/pdf",
+      pdf: "file:./src-skills/skills/pdf",
     });
   });
 
@@ -108,28 +108,38 @@ describe("skills subcommands", () => {
     await makeSkillSource("src-skills", ["pdf", "lint"]);
     await run(skillsDomain, "add", ["./src-skills"], { provider: "file" });
     expect((await readCfg()).skills?.sources).toEqual({
-      "src-skills-pdf": "file:./src-skills/skills/pdf",
-      "src-skills-lint": "file:./src-skills/skills/lint",
+      pdf: "file:./src-skills/skills/pdf",
+      lint: "file:./src-skills/skills/lint",
     });
   });
 
-  it("add across multiple sources aggregates skills, namespaced per owner", async () => {
+  it("add across multiple sources aggregates skills under their own names", async () => {
     await makeSkillSource("one", ["pdf"]);
     await makeSkillSource("two", ["lint"]);
     await run(skillsDomain, "add", ["./one", "./two"], { provider: "file" });
     expect((await readCfg()).skills?.sources).toEqual({
-      "one-pdf": "file:./one/skills/pdf",
-      "two-lint": "file:./two/skills/lint",
+      pdf: "file:./one/skills/pdf",
+      lint: "file:./two/skills/lint",
     });
   });
 
-  it("add throws when two sources resolve to the same namespaced name", async () => {
-    await makeSkillSource("a/pack", ["pdf"]);
-    await makeSkillSource("b/pack", ["pdf"]);
-    // Both basenames are "pack" → both skills resolve to "pack-pdf".
-    await expect(
-      run(skillsDomain, "add", ["./a/pack", "./b/pack"], { provider: "file" }),
-    ).rejects.toThrow(/resolves from both/);
+  it("add -y resolves a same-name collision to the last-declared source", async () => {
+    await makeSkillSource("one", ["pdf"]);
+    await makeSkillSource("two", ["pdf"]);
+    // Both sources expose a "pdf"; -y picks the last declared (./two) for that name.
+    await run(skillsDomain, "add", ["./one", "./two"], { provider: "file" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./two/skills/pdf",
+    });
+  });
+
+  it("add --skills resolves a same-name collision to the last-declared source", async () => {
+    await makeSkillSource("one", ["pdf"]);
+    await makeSkillSource("two", ["pdf"]);
+    await run(skillsDomain, "add", ["./one", "./two"], { provider: "file", skills: "pdf" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./two/skills/pdf",
+    });
   });
 
   it("add with no filter + non-interactive errors instead of prompting", async () => {
@@ -148,11 +158,9 @@ describe("skills subcommands", () => {
 
   it("add of an already-declared skill overwrites it under --skills", async () => {
     await makeSkillSource("src-skills", ["pdf"]);
-    await writeCfg({ skills: { sources: { "src-skills-pdf": "file:./stale/skills/pdf" } } });
+    await writeCfg({ skills: { sources: { pdf: "file:./stale/skills/pdf" } } });
     await run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "pdf" });
-    expect((await readCfg()).skills?.sources["src-skills-pdf"]).toBe(
-      "file:./src-skills/skills/pdf",
-    );
+    expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./src-skills/skills/pdf");
   });
 
   it("add reports a clear error when the source has no skills", async () => {
