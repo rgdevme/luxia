@@ -96,44 +96,78 @@ describe("skills subcommands", () => {
     }
   };
 
-  it("add (file + name) discovers the skill and writes a concrete per-skill entry", async () => {
+  it("add with --skills filter writes only the named skills, stored by skill name", async () => {
     await makeSkillSource("src-skills", ["pdf", "lint"]);
-    await run(skillsDomain, "add", ["file", "./src-skills", "pdf"]);
-    expect((await readCfg()).skills?.sources).toEqual({ pdf: "file:./src-skills/skills/pdf" });
+    await run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "pdf" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./src-skills/skills/pdf",
+    });
   });
 
-  it("add with no skill_name + non-interactive errors instead of prompting", async () => {
+  it("add under -y installs every discovered skill", async () => {
     await makeSkillSource("src-skills", ["pdf", "lint"]);
-    await expect(run(skillsDomain, "add", ["file", "./src-skills"])).rejects.toThrow(
-      /skill_name|terminal/i,
-    );
+    await run(skillsDomain, "add", ["./src-skills"], { provider: "file" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./src-skills/skills/pdf",
+      lint: "file:./src-skills/skills/lint",
+    });
   });
 
-  it("add with an unknown skill_name throws and lists what's available", async () => {
-    await makeSkillSource("src-skills", ["pdf", "lint"]);
-    await expect(run(skillsDomain, "add", ["file", "./src-skills", "ghost"])).rejects.toThrow(
-      /not found.*pdf|not found.*lint/,
-    );
+  it("add across multiple sources aggregates skills under their own names", async () => {
+    await makeSkillSource("one", ["pdf"]);
+    await makeSkillSource("two", ["lint"]);
+    await run(skillsDomain, "add", ["./one", "./two"], { provider: "file" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./one/skills/pdf",
+      lint: "file:./two/skills/lint",
+    });
   });
 
-  it("add of an already-declared skill overwrites it under -y (no prompt)", async () => {
+  it("add -y resolves a same-name collision to the last-declared source", async () => {
+    await makeSkillSource("one", ["pdf"]);
+    await makeSkillSource("two", ["pdf"]);
+    // Both sources expose a "pdf"; -y picks the last declared (./two) for that name.
+    await run(skillsDomain, "add", ["./one", "./two"], { provider: "file" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./two/skills/pdf",
+    });
+  });
+
+  it("add --skills resolves a same-name collision to the last-declared source", async () => {
+    await makeSkillSource("one", ["pdf"]);
+    await makeSkillSource("two", ["pdf"]);
+    await run(skillsDomain, "add", ["./one", "./two"], { provider: "file", skills: "pdf" });
+    expect((await readCfg()).skills?.sources).toEqual({
+      pdf: "file:./two/skills/pdf",
+    });
+  });
+
+  it("add with no filter + non-interactive errors instead of prompting", async () => {
+    await makeSkillSource("src-skills", ["pdf", "lint"]);
+    await expect(
+      run(skillsDomain, "add", ["./src-skills"], { provider: "file", yes: false }),
+    ).rejects.toThrow(/skills|terminal/i);
+  });
+
+  it("add with an unknown --skills name throws and lists what's available", async () => {
+    await makeSkillSource("src-skills", ["pdf", "lint"]);
+    await expect(
+      run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "ghost" }),
+    ).rejects.toThrow(/not found.*pdf|not found.*lint/);
+  });
+
+  it("add of an already-declared skill overwrites it under --skills", async () => {
     await makeSkillSource("src-skills", ["pdf"]);
     await writeCfg({ skills: { sources: { pdf: "file:./stale/skills/pdf" } } });
-    await run(skillsDomain, "add", ["file", "./src-skills", "pdf"]);
+    await run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "pdf" });
     expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./src-skills/skills/pdf");
-  });
-
-  it("add of an already-declared skill does NOT overwrite non-interactively without -y", async () => {
-    await makeSkillSource("src-skills", ["pdf"]);
-    await writeCfg({ skills: { sources: { pdf: "file:./stale/skills/pdf" } } });
-    // non-TTY + no --yes → the overwrite confirmation declines; config is untouched
-    await run(skillsDomain, "add", ["file", "./src-skills", "pdf"], { yes: false });
-    expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./stale/skills/pdf");
   });
 
   it("add reports a clear error when the source has no skills", async () => {
     await fs.mkdir(path.join(tmp, "empty"), { recursive: true });
-    await expect(run(skillsDomain, "add", ["file", "./empty"])).rejects.toThrow(/no skills found/);
+    await expect(run(skillsDomain, "add", ["./empty"], { provider: "file" })).rejects.toThrow(
+      /no skills found/,
+    );
   });
 
   it("remove deletes multiple named skills; no-name + non-interactive errors", async () => {

@@ -10,9 +10,7 @@ import type {
 } from "../../core/index.js";
 import {
   buildPaths,
-  dim,
   findSkillsInRepo,
-  isProvider,
   parseCompositeSkillRef,
   parseSource,
   readConfigOrDefault,
@@ -22,9 +20,9 @@ import {
   writeConfig,
 } from "../../core/index.js";
 import {
-  confirmPrompt,
   MIGRATE_FLAGS,
   multiSelect,
+  multiSelectExclusive,
   policyFromFlags,
   writeChange,
 } from "../cli-helpers.js";
@@ -51,6 +49,73 @@ function repoSource(
 ): ParsedSource {
   if (provider === "file") return parseSource(`file:${address}`, { projectRoot });
   return parseSource(provider ? `${provider}:${address}` : address, { projectRoot });
+}
+
+/**
+ * The `--provider` default applies only to addresses that don't already carry
+ * their own scheme (`github:…`, `file:…`, `https://…`, `git@…`) or look like a
+ * path — those are self-describing and prefixing them would corrupt the spec.
+ */
+function providerFor(def: string | undefined, address: string): string | undefined {
+  if (!def) return undefined;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(address) || address.startsWith("git@")) return undefined;
+  if (/^(\.\.?\/|\/|[A-Za-z]:[\\/])/.test(address)) return undefined;
+  return def;
+}
+
+/** A fetched source plus its declaration order on the command line. */
+interface Repo {
+  address: string;
+  source: ParsedSource;
+  localRoot: string;
+  /** Index in the original `add a b c` order — the tiebreaker for same-named skills. */
+  order: number;
+}
+
+/** One discovered skill bound to the repo it came from. */
+interface Candidate {
+  repo: Repo;
+  skill: DiscoveredSkill;
+  /** Stored name = the skill directory's own basename (never renamed). */
+  name: string;
+}
+
+const DESC_MAX = 80;
+
+/** Origin shown in the picker: `owner/repo` for a git source, else the address given. */
+function originLabel(repo: Repo): string {
+  return repo.source.kind === "git" ? `${repo.source.owner}/${repo.source.repo}` : repo.address;
+}
+
+/**
+ * Picker row after the checkbox: `<skill> [!] [<owner/repo>]: <description>`.
+ * `[!]` marks a skill already in the config (selecting it overwrites the entry);
+ * the description is trimmed to {@link DESC_MAX} chars.
+ */
+function choiceLabel(c: Candidate, installed: boolean): string {
+  const bang = installed ? " [!]" : "";
+  const desc = c.skill.description?.trim();
+  const blurb = desc ? `: ${desc.length > DESC_MAX ? desc.slice(0, DESC_MAX) : desc}` : "";
+  return `${c.name}${bang} [${originLabel(c.repo)}]${blurb}`;
+}
+
+/** Sort candidates by skill name (alphabetical), then by repo declaration order. */
+function sortCandidates(cands: Candidate[]): Candidate[] {
+  return [...cands].sort((a, b) => a.name.localeCompare(b.name) || a.repo.order - b.repo.order);
+}
+
+/**
+ * Collapse same-named candidates to one — the last declared (highest repo order),
+ * matching "alphabet-then-declaration" order's final occurrence. Used by `-y` and
+ * `--skills`, where there's no interactive prompt to resolve the collision.
+ */
+function pickLatestPerName(cands: Candidate[]): Candidate[] {
+  const byName = new Map<string, Candidate>();
+  for (const c of cands) {
+    const prev = byName.get(c.name);
+    if (!prev || c.repo.order > prev.repo.order) byName.set(c.name, c);
+  }
+  return sortCandidates([...byName.values()]);
 }
 
 /** Concrete composite ref for a discovered skill — the same shape `add` has always stored. */
@@ -100,114 +165,133 @@ async function diagnose(
 const commands: Record<string, CommandSpec> = {
   add: {
     name: "add",
-    description: "Add skills from a source; discovers skills and prompts when no name is given",
+    description: "Add skills from one or more sources; discovers skills and prompts to pick",
     args: [
-      {
-        name: "provider",
-        required: false,
-        description: "github (default) | gitlab | bitbucket | file",
-      },
       {
         name: "skills_address",
         required: true,
+        variadic: true,
         description:
-          "owner/repo[#ref] (git, ref defaults to the repo's default branch) or a directory path (file)",
+          "one or more owner/repo[#ref] (ref defaults to the repo's default branch) or directory paths; each may carry its own provider: prefix",
+      },
+    ],
+    flags: [
+      {
+        name: "provider",
+        type: "string",
+        alias: "p",
+        description:
+          "default provider for addresses without their own prefix (github|gitlab|bitbucket|file)",
       },
       {
-        name: "skill_name",
-        required: false,
-        description: "a single skill to add (omit to multi-select)",
+        name: "skills",
+        type: "string",
+        alias: "s",
+        description:
+          "comma-separated skill names to add, e.g. --skills pdf,docx (skips the prompt)",
       },
     ],
     async run(ctx) {
-      // Provider is an optional leading positional. A real <skills_address> is
-      // always owner/repo or a path (contains "/"), never a bare provider word,
-      // so membership detection is unambiguous (needs an address after it).
-      const tokens = [...ctx.args];
-      let provider: string | undefined;
-      if (tokens.length >= 2 && (isProvider(tokens[0]!) || tokens[0] === "file")) {
-        provider = tokens.shift();
-      }
-      const address = tokens[0];
-      if (!address) throw new Error("missing argument <skills_address>");
-      const skillName = tokens[1];
+      const addresses = [...ctx.args];
+      if (addresses.length === 0) throw new Error("missing argument <skills_address>");
+      const provider = typeof ctx.flags.provider === "string" ? ctx.flags.provider : undefined;
+      const filter =
+        typeof ctx.flags.skills === "string"
+          ? ctx.flags.skills
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : undefined;
 
-      // Fetch the whole source and discover the skills inside it (spinner while we wait).
-      const source = repoSource(provider, address, ctx.projectRoot);
-      const { fetched, discovered } = await withSpinner(
-        `Loading skills from ${address}…`,
-        async () => {
-          const fetched = await ctx.fetcher.fetch(source);
-          return { fetched, discovered: await findSkillsInRepo(fetched.path) };
-        },
+      // Fetch every source (in parallel) and discover the skills inside each,
+      // keeping provenance (incl. declaration order) so we can build composite
+      // refs per origin and break same-name ties deterministically.
+      const label = addresses.length === 1 ? addresses[0] : `${addresses.length} sources`;
+      const fetchedRepos = await withSpinner(
+        `Loading skills from ${label}…`,
+        () =>
+          Promise.all(
+            addresses.map(async (address, order) => {
+              const source = repoSource(providerFor(provider, address), address, ctx.projectRoot);
+              const fetched = await ctx.fetcher.fetch(source);
+              const skills = await findSkillsInRepo(fetched.path);
+              const repo: Repo = { address, source, localRoot: fetched.path, order };
+              return { repo, skills };
+            }),
+          ),
         { quiet: ctx.flags.quiet },
       );
-      if (discovered.length === 0) {
-        throw new Error(`no skills found under "${address}" (looked for SKILL.md in the source)`);
+
+      // Flatten to candidates, sorted by skill name then declaration order. A skill
+      // is stored under its own name (the directory basename) — never renamed, so
+      // we never touch files we don't own. Same-name skills from different sources
+      // coexist as candidates; the collision is resolved at selection, not here.
+      const candidates = sortCandidates(
+        fetchedRepos.flatMap(({ repo, skills }) =>
+          skills.map((skill) => ({ repo, skill, name: skill.defaultName })),
+        ),
+      );
+      if (candidates.length === 0) {
+        throw new Error(
+          `no skills found under ${addresses.join(", ")} (looked for SKILL.md in the source)`,
+        );
       }
 
       const config = await readConfigOrDefault(ctx.configPath);
       const existing = config.skills?.sources ?? {};
 
-      // Pick the skills to add.
-      let chosen: DiscoveredSkill[];
-      if (skillName) {
-        const match = discovered.find((d) => d.defaultName === skillName);
-        if (!match) {
-          throw new Error(
-            `skill "${skillName}" not found. Available: ${discovered
-              .map((d) => d.defaultName)
-              .join(", ")}`,
-          );
+      // Pick the skills to add. Collisions (same name from >1 source) resolve by:
+      //   --skills <names> → last declared per name
+      //   -y               → last declared per name (every distinct skill)
+      //   interactive      → picking one auto-deselects same-named rows
+      let chosen: Candidate[];
+      if (filter) {
+        const wanted = candidates.filter((c) => filter.includes(c.name));
+        const found = new Set(wanted.map((c) => c.name));
+        const missing = filter.filter((n) => !found.has(n));
+        if (missing.length > 0) {
+          const available = [...new Set(candidates.map((c) => c.name))].sort().join(", ");
+          throw new Error(`skill(s) not found: ${missing.join(", ")}. Available: ${available}`);
         }
-        if (match.defaultName in existing) {
-          const ok = await confirmPrompt(ctx, "This skill is already installed. Overwrite it?");
-          if (!ok) {
-            ctx.logger.info("aborted; no changes made");
-            return;
-          }
-        }
-        chosen = [match];
+        chosen = pickLatestPerName(wanted);
+      } else if (ctx.flags.yes) {
+        chosen = pickLatestPerName(candidates);
       } else {
-        const anyInstalled = discovered.some((d) => d.defaultName in existing);
+        const anyInstalled = candidates.some((c) => c.name in existing);
         const message = anyInstalled
-          ? "Select skills to add:\n[!] This skill is already installed. Selecting it will overwrite it."
+          ? "Select skills to add ([!] = already installed, selecting overwrites it):"
           : "Select skills to add:";
-        const choices = discovered.map((d) => {
-          const desc = d.description?.trim();
-          const blurb = desc ? " " + dim(desc.length > 60 ? `${desc.slice(0, 60)}…` : desc) : "";
-          const label = `${d.defaultName}${blurb}`;
-          return {
-            name: d.defaultName in existing ? `[!] ${label}` : label,
-            value: d.defaultName,
-          };
-        });
-        const picked = await multiSelect(
+        const choices = candidates.map((c, i) => ({
+          name: choiceLabel(c, c.name in existing),
+          value: String(i),
+          group: c.name, // selecting one auto-deselects same-named candidates
+        }));
+        const picked = await multiSelectExclusive(
           ctx,
           message,
           choices,
-          "specify a <skill_name> to add, or run in a terminal to pick interactively",
+          "pass --skills <names> or -y to install all, or run in a terminal to pick interactively",
         );
         if (picked.length === 0) {
           ctx.logger.info("nothing selected");
           return;
         }
-        chosen = discovered.filter((d) => picked.includes(d.defaultName));
+        chosen = picked.map((i) => candidates[Number(i)]!);
       }
 
       // Expand each pick into a concrete per-skill composite ref. Storage shape
-      // is identical to before — one entry per skill — so installs stay reproducible.
+      // is one entry per skill name — an already-declared name is overwritten.
       const sources = { ...existing };
       const added: string[] = [];
-      for (const d of chosen) {
-        const named = skillNameSchema.safeParse(d.defaultName);
+      for (const { repo, skill, name } of chosen) {
+        const named = skillNameSchema.safeParse(name);
         if (!named.success) {
           throw new Error(
-            `"${d.defaultName}" (from ${d.path}) is not a valid skill name; ` +
-              `skill directory names must be alphanumeric/dash`,
+            `"${name}" (from ${skill.path} in ${repo.address}) is not a valid skill name; ` +
+              `the skill directory name must be alphanumeric/dash`,
           );
         }
-        const composite = compositeFor(source, fetched.path, d.path, ctx.projectRoot);
+        const composite = compositeFor(repo.source, repo.localRoot, skill.path, ctx.projectRoot);
         // Defensive: the stored value must parse back to a concrete skill ref.
         parseCompositeSkillRef(composite, { projectRoot: ctx.projectRoot });
         sources[named.data] = composite;
