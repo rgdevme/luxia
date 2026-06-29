@@ -60,7 +60,13 @@ function compositeFor(
   skillPath: string,
   projectRoot: string,
 ): string {
-  if (source.kind === "git") return `${source.canonical}/${skillPath}`;
+  if (source.kind === "git") {
+    // The in-repo path slots between repo and the `#<ref>` suffix; re-parse so
+    // the result is a normalized canonical ref rather than a hand-spliced one.
+    const refSuffix = source.ref ? `#${source.ref}` : "";
+    const spec = `${source.provider}:${source.owner}/${source.repo}/${skillPath}${refSuffix}`;
+    return parseSource(spec, { projectRoot }).canonical;
+  }
   return parseSource(`file:${path.join(localRoot, skillPath)}`, { projectRoot }).canonical;
 }
 
@@ -104,7 +110,8 @@ const commands: Record<string, CommandSpec> = {
       {
         name: "skills_address",
         required: true,
-        description: "owner/repo (git) or a directory path (file)",
+        description:
+          "owner/repo[#ref] (git, ref defaults to the repo's default branch) or a directory path (file)",
       },
       {
         name: "skill_name",

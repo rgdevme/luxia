@@ -4,6 +4,13 @@ export type Provider = "github" | "gitlab" | "bitbucket";
 
 export const SUPPORTED_PROVIDERS: readonly Provider[] = ["github", "gitlab", "bitbucket"];
 
+/**
+ * Branch the fetcher falls back to when a source omits a `#<ref>` and the
+ * provider's default branch can't be resolved (offline / rate-limited). The
+ * normal path infers the real default branch instead — see the resolver.
+ */
+export const FALLBACK_REF = "main";
+
 const PROVIDER_HOSTS: Record<string, Provider> = {
   "github.com": "github",
   "gitlab.com": "gitlab",
@@ -23,9 +30,16 @@ export interface GitSource {
    */
   subPath?: string;
   /**
-   * Canonical form:
-   *   - without subPath: `<provider>:<owner>/<repo>`
-   *   - with subPath:    `<provider>:<owner>/<repo>/<subPath>`
+   * Explicit git ref (branch / tag / commit) from a `#<ref>` suffix. When
+   * undefined the source follows the repository's default branch, resolved
+   * lazily at fetch time.
+   */
+  ref?: string;
+  /**
+   * Canonical form (the `#<ref>` suffix is present only for an explicit ref):
+   *   - `<provider>:<owner>/<repo>`                  (follows default branch)
+   *   - `<provider>:<owner>/<repo>/<subPath>`        (follows default branch)
+   *   - `<provider>:<owner>/<repo>[/<subPath>]#<ref>`
    */
   canonical: string;
 }
@@ -63,13 +77,17 @@ const SSH_RE = /^git@([^:]+):([^/]+)\/(.+?)(?:\.git)?$/;
 const HTTPS_RE = /^https?:\/\/([^/]+)\/([^/]+)\/([^/?#]+?)(?:\.git)?(?:\/(.*?))?(?:[?#].*)?$/i;
 
 export function parseSource(input: string, opts: ParseOptions): ParsedSource {
-  const raw = input.trim();
-  if (!raw) throw new Error("source is empty");
+  const trimmed = input.trim();
+  if (!trimmed) throw new Error("source is empty");
 
-  // Explicit file: scheme — strip and treat as local.
-  if (raw.startsWith("file:")) {
-    return makeLocal(raw.slice("file:".length), opts.projectRoot);
+  // Explicit file: scheme — strip and treat as local (refs don't apply locally).
+  if (trimmed.startsWith("file:")) {
+    return makeLocal(trimmed.slice("file:".length), opts.projectRoot);
   }
+
+  // Peel off an optional trailing `#<ref>` shared by every git form. The base
+  // (ref-stripped) string drives form detection; `ref` flows into makeGit.
+  const { base: raw, ref } = splitRef(trimmed);
 
   // <provider>:<owner>/<repo>[/<subPath>] canonical form (idempotent parsing).
   const colon = raw.indexOf(":");
@@ -83,7 +101,7 @@ export function parseSource(input: string, opts: ParseOptions): ParsedSource {
           `Invalid ${scheme} source: expected "<owner>/<repo>[/<path>]", got "${rest}"`,
         );
       }
-      return makeGit(scheme as Provider, m[1]!, m[2]!, m[3]);
+      return makeGit(scheme as Provider, m[1]!, m[2]!, m[3], ref);
     }
   }
 
@@ -97,7 +115,7 @@ export function parseSource(input: string, opts: ParseOptions): ParsedSource {
         `Unsupported git host "${host}". Supported: ${Object.keys(PROVIDER_HOSTS).join(", ")}.`,
       );
     }
-    return makeGit(provider, ssh[2]!, stripDotGit(ssh[3]!));
+    return makeGit(provider, ssh[2]!, stripDotGit(ssh[3]!), undefined, ref);
   }
 
   // HTTPS form: https://host/owner/repo[/...]
@@ -110,20 +128,23 @@ export function parseSource(input: string, opts: ParseOptions): ParsedSource {
         `Unsupported git host "${host}". Supported: ${Object.keys(PROVIDER_HOSTS).join(", ")}.`,
       );
     }
-    const subPath = normalizeHttpsRemainder(https[4]);
-    return makeGit(provider, https[2]!, stripDotGit(https[3]!), subPath);
+    // A `/tree/<ref>/` or `/blob/<ref>/` web-UI suffix also encodes a ref; an
+    // explicit `#<ref>` takes precedence over it.
+    const { subPath, ref: treeRef } = normalizeHttpsRemainder(https[4]);
+    return makeGit(provider, https[2]!, stripDotGit(https[3]!), subPath, ref ?? treeRef);
   }
 
   // Bare shorthand: owner/repo[/path]
   const sh = OWNER_REPO_RE.exec(raw);
   if (sh) {
     const provider = opts.defaultProvider ?? "github";
-    return makeGit(provider, sh[1]!, sh[2]!, sh[3]);
+    return makeGit(provider, sh[1]!, sh[2]!, sh[3], ref);
   }
 
   // Local path: anything starting with ./, ../, /, or a Windows drive letter.
-  if (looksLikePath(raw)) {
-    return makeLocal(raw, opts.projectRoot);
+  // Parse the original (un-split) input so a `#` in a path is preserved.
+  if (looksLikePath(trimmed)) {
+    return makeLocal(trimmed, opts.projectRoot);
   }
 
   throw new Error(
@@ -163,17 +184,27 @@ export function parseCompositeSkillRef(value: string, opts: ParseOptions): Compo
   return { source: parsed, subPath: "", composite: parsed.canonical };
 }
 
-function makeGit(provider: Provider, owner: string, repo: string, subPath?: string): GitSource {
+function makeGit(
+  provider: Provider,
+  owner: string,
+  repo: string,
+  subPath?: string,
+  ref?: string,
+): GitSource {
   const cleanSub = normalizeSubPath(subPath);
-  const canonical = cleanSub
+  const base = cleanSub
     ? `${provider}:${owner}/${repo}/${cleanSub}`
     : `${provider}:${owner}/${repo}`;
+  // No explicit ref → follow the default branch, kept implicit in the canonical
+  // form. An explicit ref (even "main") is preserved, so it pins that branch.
+  const canonical = ref ? `${base}#${ref}` : base;
   return {
     kind: "git",
     provider,
     owner,
     repo,
     ...(cleanSub ? { subPath: cleanSub } : {}),
+    ...(ref ? { ref } : {}),
     canonical,
   };
 }
@@ -223,12 +254,38 @@ function normalizeSubPath(raw: string | undefined): string | undefined {
 
 /**
  * For an HTTPS source like https://github.com/owner/repo/tree/main/skills/pdf,
- * `https[4]` captures `tree/main/skills/pdf`. Strip the `tree/<ref>/` or
- * `blob/<ref>/` prefix the GitHub web UI tacks on so the returned path is
- * just the in-repo location.
+ * `https[4]` captures `tree/main/skills/pdf`. Split off the `tree/<ref>/` or
+ * `blob/<ref>/` prefix the GitHub web UI tacks on, returning both the encoded
+ * ref and the in-repo path (either may be absent).
  */
-function normalizeHttpsRemainder(remainder: string | undefined): string | undefined {
-  if (!remainder) return undefined;
-  const m = /^(?:tree|blob)\/[^/]+\/(.+)$/.exec(remainder);
-  return normalizeSubPath(m ? m[1] : remainder);
+function normalizeHttpsRemainder(remainder: string | undefined): {
+  subPath: string | undefined;
+  ref: string | undefined;
+} {
+  if (!remainder) return { subPath: undefined, ref: undefined };
+  const m = /^(?:tree|blob)\/([^/]+)(?:\/(.+))?$/.exec(remainder);
+  if (m) return { ref: m[1], subPath: normalizeSubPath(m[2]) };
+  return { subPath: normalizeSubPath(remainder), ref: undefined };
+}
+
+// A git ref permits letters, digits, and `. _ - /` (branches, tags, SHAs).
+// We additionally reject `..` and leading/trailing slashes — enough to keep a
+// ref from smuggling path traversal or shell-hostile characters downstream.
+const REF_RE = /^[a-z0-9][a-z0-9._/-]*$/i;
+
+/** Split a trailing `#<ref>` off a git source string; validates the ref shape. */
+function splitRef(raw: string): { base: string; ref: string | undefined } {
+  const hash = raw.indexOf("#");
+  if (hash < 0) return { base: raw, ref: undefined };
+  const base = raw.slice(0, hash);
+  const ref = raw.slice(hash + 1).trim();
+  if (!ref) {
+    throw new Error(`Invalid source "${raw}": "#" must be followed by a git ref`);
+  }
+  if (!REF_RE.test(ref) || ref.includes("..") || ref.endsWith("/")) {
+    throw new Error(
+      `Invalid git ref "${ref}" in "${raw}": refs may contain letters, digits, ".", "_", "-", "/".`,
+    );
+  }
+  return { base, ref };
 }

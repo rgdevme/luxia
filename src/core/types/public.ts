@@ -34,8 +34,10 @@ export interface SkillsConfig {
    * Map of local skill name → composite source ref.
    *
    * Value grammar:
-   *   - git: `<provider>:<owner>/<repo>/<in-repo-path>`
+   *   - git: `<provider>:<owner>/<repo>/<in-repo-path>[#<ref>]`
    *     e.g. `github:vercel-labs/agent-skills/skills/pdf`
+   *     The `#<ref>` (branch/tag/commit) suffix is optional; when omitted the
+   *     skill follows the repository's default branch (resolved at fetch time).
    *   - local: `file:<path-to-skill-dir>` (the directory contains SKILL.md directly)
    */
   sources?: Record<string, string>;

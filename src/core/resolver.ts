@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { downloadTemplate } from "giget";
-import type { GitSource, LocalSource, ParsedSource } from "./source.js";
+import { FALLBACK_REF, type GitSource, type LocalSource, type ParsedSource } from "./source.js";
+import { resolveDefaultBranch } from "./commit-resolver.js";
 
 export interface RepoFetchOptions {
   /** Optional commit SHA (or branch/tag) to fetch. Defaults to provider default branch. */
@@ -43,8 +44,11 @@ async function fetchGit(
   cfg: CreateRepoFetcherOptions,
   opts?: RepoFetchOptions,
 ): Promise<RepoFetchResult> {
-  const ref = opts?.ref;
-  const cacheKey = hashKey(`${source.canonical}@${ref ?? "HEAD"}`);
+  // Explicit override wins; otherwise the source's explicit ref. When neither is
+  // set the source follows the default branch — keyed as "HEAD" so the cache is
+  // stable across runs without needing to resolve the branch name up front.
+  const explicitRef = opts?.ref ?? source.ref;
+  const cacheKey = hashKey(`${source.canonical}@${explicitRef ?? "HEAD"}`);
   const destDir = path.join(cfg.cacheDir, "repos", cacheKey);
   const cacheRegistry = path.join(cfg.cacheDir, "giget");
 
@@ -52,6 +56,12 @@ async function fetchGit(
   if (!opts?.noCache && (await dirHasFiles(destDir))) {
     return { path: destDir };
   }
+
+  // Cache miss: with no explicit ref, ask the provider for the repo's default
+  // branch so a `main`-only assumption doesn't 404 on repos that default to
+  // `develop`/`master`. If that lookup fails (offline, rate-limited), fall back
+  // to giget's own default branch.
+  const ref = explicitRef ?? (await resolveDefaultBranch(source).catch(() => null)) ?? undefined;
 
   await fs.rm(destDir, { recursive: true, force: true });
   await fs.mkdir(path.dirname(destDir), { recursive: true });
@@ -100,7 +110,7 @@ function gigetCacheDir(): string {
 
 export function gigetTarballPath(source: GitSource, ref: string | undefined): string {
   const name = `${source.owner}-${source.repo}`.replace(/[^\da-z-]/gi, "-");
-  const version = ref ?? "main";
+  const version = ref ?? FALLBACK_REF;
   const sourceDir = path.resolve(gigetCacheDir(), source.provider, name);
   const tarPath = path.resolve(sourceDir, `${version}.tar.gz`);
   const rel = path.relative(sourceDir, tarPath);

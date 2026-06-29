@@ -68,7 +68,13 @@ export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";
 export type { EnsureLinkResult } from "./fs/link.js";
 export { importMcpServers, pickEnv, pickStringArray } from "./agent-helpers.js";
 export { createRepoFetcher, gigetTarballPath } from "./resolver.js";
-export { parseSource, parseCompositeSkillRef, isProvider, SUPPORTED_PROVIDERS } from "./source.js";
+export {
+  parseSource,
+  parseCompositeSkillRef,
+  isProvider,
+  SUPPORTED_PROVIDERS,
+  FALLBACK_REF,
+} from "./source.js";
 export type {
   ParsedSource,
   GitSource,
@@ -76,7 +82,7 @@ export type {
   Provider,
   CompositeSkillRef,
 } from "./source.js";
-export { resolveGitCommit, resolveLocalCommit } from "./commit-resolver.js";
+export { resolveGitCommit, resolveLocalCommit, resolveDefaultBranch } from "./commit-resolver.js";
 export type { CommitResolution } from "./commit-resolver.js";
 export { findSkillsInRepo } from "./skill-discovery.js";
 export type { DiscoveredSkill } from "./skill-discovery.js";

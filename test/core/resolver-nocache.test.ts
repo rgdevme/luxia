@@ -19,9 +19,16 @@ describe("createRepoFetcher noCache", () => {
   let root: string;
   let cacheHome: string;
   let originalXdg: string | undefined;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(async () => {
     downloadTemplate.mockClear();
+    // Default-branch inference hits the provider API on a cache miss; stub it so
+    // the fetcher stays offline and deterministic.
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({ default_branch: "main" }),
+    })) as unknown as typeof fetch;
     root = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-resolver-"));
     cacheHome = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-xdg-"));
     originalXdg = process.env["XDG_CACHE_HOME"];
@@ -29,6 +36,7 @@ describe("createRepoFetcher noCache", () => {
   });
 
   afterEach(async () => {
+    globalThis.fetch = originalFetch;
     if (originalXdg === undefined) delete process.env["XDG_CACHE_HOME"];
     else process.env["XDG_CACHE_HOME"] = originalXdg;
     await fs.rm(root, { recursive: true, force: true });
