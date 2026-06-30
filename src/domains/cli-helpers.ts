@@ -1,4 +1,4 @@
-import { checkbox, confirm } from "@inquirer/prompts";
+import { checkbox, confirm, input, select } from "@inquirer/prompts";
 import {
   createPrompt,
   isDownKey,
@@ -34,6 +34,12 @@ export interface ExclusiveChoice extends PickChoice {
   description?: string;
   /** Initially checked (e.g. an already-installed skill). */
   checked?: boolean;
+  /**
+   * Greyed-out, non-toggleable row. Rendered dimmed, ignored by the space key,
+   * and excluded from the result — used to show already-installed entries that
+   * can't be unchecked (the picker stays additive).
+   */
+  disabled?: boolean;
 }
 
 /**
@@ -92,12 +98,13 @@ export const exclusiveCheckbox: Prompt<string[], ExclusiveConfig> = createPrompt
   useKeypress((key) => {
     if (isEnterKey(key)) {
       setStatus("done");
-      done(items.filter((i) => i.checked).map((i) => i.value));
+      done(items.filter((i) => i.checked && !i.disabled).map((i) => i.value));
     } else if (isUpKey(key) || isDownKey(key)) {
       const offset = isUpKey(key) ? -1 : 1;
       setActive((active + offset + items.length) % items.length);
     } else if (isSpaceKey(key)) {
       const current = items[active]!;
+      if (current.disabled) return;
       const turningOn = !current.checked;
       setItems(
         items.map((choice, i) => {
@@ -115,7 +122,7 @@ export const exclusiveCheckbox: Prompt<string[], ExclusiveConfig> = createPrompt
   const message = theme.style.message(config.message, status);
   if (status === "done") {
     const answer = items
-      .filter((i) => i.checked)
+      .filter((i) => i.checked && !i.disabled)
       .map((i) => i.value)
       .join(", ");
     return `${prefix} ${message} ${theme.style.answer(answer)}`;
@@ -130,6 +137,7 @@ export const exclusiveCheckbox: Prompt<string[], ExclusiveConfig> = createPrompt
       const box = item.checked ? theme.icon.checked : theme.icon.unchecked;
       const cursor = isActive ? theme.icon.cursor : " ";
       const line = `${cursor}${box} ${item.name}`;
+      if (item.disabled) return colors.dim(line);
       return isActive ? theme.style.highlight(line) : line;
     },
     pageSize: config.pageSize ?? 10,
@@ -177,6 +185,40 @@ export async function confirmPrompt(
   if (ctx.flags["yes"]) return true;
   if (!process.stdin.isTTY) return false;
   return confirm({ message, default: def });
+}
+
+/**
+ * Free-text prompt. Non-interactively (`-y` or no TTY) returns `opts.default`
+ * when one is given, otherwise throws — a value can't be invented silently.
+ */
+export async function textPrompt(
+  ctx: CommandContext,
+  message: string,
+  opts?: { default?: string; validate?: (value: string) => boolean | string },
+): Promise<string> {
+  if (ctx.flags["yes"] || !process.stdin.isTTY) {
+    if (opts?.default !== undefined) return opts.default;
+    throw new Error(`cannot prompt for "${message}" non-interactively`);
+  }
+  return input({ message, default: opts?.default, validate: opts?.validate });
+}
+
+/**
+ * Single-choice prompt. Non-interactively (`-y` or no TTY) returns the default
+ * (or the first choice) so scripted runs resolve deterministically.
+ */
+export async function selectPrompt<T extends string>(
+  ctx: CommandContext,
+  message: string,
+  choices: { name: string; value: T; description?: string }[],
+  opts?: { default?: T },
+): Promise<T> {
+  if (ctx.flags["yes"] || !process.stdin.isTTY) {
+    const fallback = opts?.default ?? choices[0]?.value;
+    if (fallback !== undefined) return fallback;
+    throw new Error(`cannot prompt for "${message}" non-interactively`);
+  }
+  return select<T>({ message, choices, default: opts?.default });
 }
 
 /** Conflict-policy flags shared by the `migrate` subcommands. */
