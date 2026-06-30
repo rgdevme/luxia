@@ -147,7 +147,7 @@ export interface Logger {
   success(msg: string): void;
 }
 
-export type LinkKind = "symlink" | "junction" | "copy";
+export type LinkKind = "symlink" | "junction" | "hardlink" | "copy";
 
 export interface Linker {
   canSymlinkFiles(): Promise<boolean>;

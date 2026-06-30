@@ -54,13 +54,7 @@ export {
   DEFAULT_CONFIG,
   SCHEMA_URL,
 } from "./config.js";
-export {
-  buildResolveContext,
-  ensureSymlinkPrivileges,
-  rebuildContextWithCopyFallback,
-  resetSymlinkDecisionCache,
-  workspaceRelativePath,
-} from "./context.js";
+export { buildResolveContext, workspaceRelativePath } from "./context.js";
 export { loadPlugins, orderedDomains, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
 export { runAll, runOne } from "./run.js";

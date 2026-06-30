@@ -1,7 +1,2 @@
-export {
-  createLinker,
-  describeSymlinkFailure,
-  ensureLink,
-  predictRequiresFileSymlinks,
-} from "./link.js";
+export { createLinker, describeSymlinkFailure, ensureLink } from "./link.js";
 export type { EnsureLinkResult } from "./link.js";

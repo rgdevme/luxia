@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { MaterializeContext } from "../../core/index.js";
-import { ensureLink } from "../../core/index.js";
+import type { LinkKind, MaterializeContext } from "../../core/index.js";
+import { describeSymlinkFailure, ensureLink } from "../../core/index.js";
 
 /**
  * Mirror each canonical rules file to the agent's own filename in the same
@@ -16,6 +16,7 @@ export async function mirrorRules(
   ctx: MaterializeContext,
 ): Promise<string[]> {
   const owned: string[] = [];
+  const created: LinkKind[] = [];
   for (const rel of canonicalPaths) {
     const canonicalAbs = path.resolve(ctx.projectRoot, rel);
     const mirrorAbs = path.join(path.dirname(canonicalAbs), agentFilename);
@@ -26,14 +27,41 @@ export async function mirrorRules(
       continue;
     }
     try {
-      await ensureLink(canonicalAbs, mirrorAbs, ctx.linker, { fallback: "copy" });
+      const { kind } = await ensureLink(canonicalAbs, mirrorAbs, ctx.linker, {
+        fallback: "copy",
+        owned: true,
+      });
+      if (kind !== "already-linked") created.push(kind);
     } catch (err) {
       ctx.logger.warn(
         `rules: could not mirror ${agentFilename} for ${rel}: ${(err as Error).message}`,
       );
     }
   }
+  noteRuleLinkMode(created, agentFilename, ctx);
   return owned;
+}
+
+/**
+ * One aggregated notice when freshly-created rule mirrors couldn't be real
+ * symlinks. Hardlinks still keep content in sync; copies don't, so they warn.
+ * Stays silent on steady-state runs (everything `already-linked`).
+ */
+function noteRuleLinkMode(
+  created: LinkKind[],
+  agentFilename: string,
+  ctx: MaterializeContext,
+): void {
+  if (created.includes("copy")) {
+    ctx.logger.warn(
+      `rules: copied ${agentFilename} (changes to the source won't propagate).\n${describeSymlinkFailure()}`,
+    );
+  } else if (created.includes("hardlink")) {
+    ctx.logger.info(
+      `rules: hardlinked ${agentFilename} (content stays in sync). ` +
+        `Enable Developer Mode / an elevated shell for symlinks.`,
+    );
+  }
 }
 
 /** Compute the per-agent rule-mirror paths without writing (for claims/cleanup). */
@@ -73,7 +101,7 @@ export async function linkSkills(
   }
   await fs.mkdir(canonicalDir, { recursive: true });
   try {
-    await ensureLink(canonicalDir, linkPath, ctx.linker, { fallback: "copy" });
+    await ensureLink(canonicalDir, linkPath, ctx.linker, { fallback: "copy", owned: true });
   } catch (err) {
     ctx.logger.warn(`skills: could not link ${rel}: ${(err as Error).message}`);
   }
