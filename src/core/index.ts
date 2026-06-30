@@ -67,7 +67,7 @@ export type { RunStepsOptions } from "./commands/init-steps.js";
 export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";
 export type { EnsureLinkResult } from "./fs/link.js";
 export { importMcpServers, pickEnv, pickStringArray } from "./agent-helpers.js";
-export { createRepoFetcher, gigetTarballPath } from "./resolver.js";
+export { createRepoFetcher } from "./resolver.js";
 export {
   parseSource,
   parseCompositeSkillRef,
@@ -84,7 +84,7 @@ export type {
 } from "./source.js";
 export { resolveGitCommit, resolveLocalCommit, resolveDefaultBranch } from "./commit-resolver.js";
 export type { CommitResolution } from "./commit-resolver.js";
-export { findSkillsInRepo } from "./skill-discovery.js";
+export { findSkillsInRepo, readSkillMeta } from "./skill-discovery.js";
 export type { DiscoveredSkill } from "./skill-discovery.js";
 export { hashSkillDir } from "./skill-hash.js";
 export { prepareSkills } from "./skill-prepare.js";

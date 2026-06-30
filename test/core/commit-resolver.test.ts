@@ -1,10 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { execFile } from "node:child_process";
+
+// commit-resolver shells out to `git` (ls-remote / rev-parse) via
+// promisify(execFile). Mock the module so we can drive those calls. The mock
+// invokes the trailing callback, matching what promisify expects.
+vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
+
 import {
   resolveDefaultBranch,
   resolveGitCommit,
   resolveLocalCommit,
 } from "../../src/core/commit-resolver.js";
 import type { GitSource, LocalSource } from "../../src/core/source.js";
+
+const mockExec = vi.mocked(execFile);
+
+/** Make every `git` invocation reject (the default for tests that don't use git). */
+function gitFails(): void {
+  mockExec.mockImplementation(((...args: unknown[]) => {
+    (args[args.length - 1] as (e: Error) => void)(new Error("git unavailable"));
+  }) as unknown as typeof execFile);
+}
+
+/** Make every `git` invocation resolve with the given stdout. */
+function gitReturns(stdout: string): void {
+  mockExec.mockImplementation(((...args: unknown[]) => {
+    (args[args.length - 1] as (e: null, r: { stdout: string; stderr: string }) => void)(null, {
+      stdout,
+      stderr: "",
+    });
+  }) as unknown as typeof execFile);
+}
+
+beforeEach(() => {
+  mockExec.mockReset();
+  gitFails();
+});
 
 function gitSrc(provider: "github" | "gitlab" | "bitbucket"): GitSource {
   return {
@@ -86,6 +117,19 @@ describe("resolveDefaultBranch", () => {
     globalThis.fetch = originalFetch;
   });
 
+  it("resolves the default branch via git ls-remote --symref (no API call)", async () => {
+    gitReturns("ref: refs/heads/canary\tHEAD\nfeedface\tHEAD\n");
+    const fetchSpy = vi.fn() as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+    expect(await resolveDefaultBranch(gitSrc("github"))).toBe("canary");
+    const call = mockExec.mock.calls[0]!;
+    expect(call[0]).toBe("git");
+    expect(call[1]).toEqual(["ls-remote", "--symref", "https://github.com/owner/repo.git", "HEAD"]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // The remaining cases exercise the REST-API fallback: the default `gitFails()`
+  // mock makes ls-remote throw, so resolution falls through to the provider API.
   it("reads github/gitlab default_branch", async () => {
     const fetchSpy = vi.fn(async () => ({
       ok: true,

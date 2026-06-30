@@ -30,15 +30,18 @@ describe("findSkillsInRepo", () => {
     expect(out[0]).toMatchObject({ defaultName: "pdf", title: "Test Skill" });
   });
 
-  it("finds skills outside the conventional ./skills/ tree", async () => {
+  it("only looks under the root skills/ dir, ignoring skills elsewhere", async () => {
     await placeSkill("packages/foo/agent-skills/data-cleanup");
     await placeSkill("docs/skills/api-reference");
+    await placeSkill("skills/keep-me");
 
     const out = await findSkillsInRepo(root);
-    expect(out.map((d) => d.path).sort()).toEqual([
-      "docs/skills/api-reference",
-      "packages/foo/agent-skills/data-cleanup",
-    ]);
+    expect(out.map((d) => d.path)).toEqual(["skills/keep-me"]);
+  });
+
+  it("returns empty when the repo has no root skills/ dir", async () => {
+    await placeSkill("packages/foo/skills/nested");
+    expect(await findSkillsInRepo(root)).toEqual([]);
   });
 
   it("skips standard build / VCS directories", async () => {
