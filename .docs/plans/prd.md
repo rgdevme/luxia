@@ -1,3 +1,10 @@
+---
+title: PRD — @luxia/agnos v0.1
+description: Product requirements document for collapsing the 8-package monorepo into a single `@luxia/agnos` package and redesigning the domain model around config writers and a single config reader (agents).
+read_when: When planning or implementing the v0.1 refactor, choosing architectural patterns, or resolving design questions about the new domain model, packaging, or CLI shape.
+agent_cant: delete
+---
+
 # PRD — `@luxia/agnos` v0.1 (single-package consolidation + domain redesign)
 
 > Status: draft · Target version: 0.1.0 · Branch: `refactor/single-package`

@@ -15,8 +15,11 @@ scratch/
 .env*
 
 # AGENTS
-.claude
+.agents/
 .agnos/
+.claude/
+.codex/
+CLAUDE.md
 
 # scratch test dir (manual-testing guide)
 temp-test/
