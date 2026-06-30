@@ -490,12 +490,13 @@ const commands: Record<string, CommandSpec> = {
 
 /**
  * The skills domain: a config writer that also prepares the canonical skill
- * bytes. `run` executes the prep pipeline (fetch → version → integrity →
- * install) over every declared skill, bucketing failures as moved/changed/
- * outdated and installing the clean ones into `.agnos/skills/` (linked per-agent
- * by the agents domain). The `fetch`/`version`/`integrity`/`install`/`update`/
- * `migrate` subcommands expose the same engine; data layer in pipeline.ts /
- * migrate.ts / steps.ts.
+ * bytes. `run` executes the offline prep pipeline (fetch → integrity → install)
+ * over every declared skill, bucketing failures as moved/changed and installing
+ * the clean ones into `.agnos/skills/` (linked per-agent by the agents domain).
+ * Warm runs reuse the locked ref + cache and make no network calls; the network
+ * freshness check lives in the `version`/`update` subcommands. The
+ * `fetch`/`version`/`integrity`/`install`/`update`/`migrate` subcommands expose
+ * the same engine; data layer in pipeline.ts / migrate.ts / steps.ts.
  */
 export const skillsDomain: Domain = {
   id: "skills",
@@ -530,7 +531,7 @@ export const skillsDomain: Domain = {
     const sources = config.skills?.sources ?? {};
     // No skill sources declared → nothing to fetch/verify.
     if (Object.keys(sources).length === 0) return undefined;
-    // Run the prep pipeline (fetch → version → integrity → install). Failures are
+    // Run the offline prep pipeline (fetch → integrity → install). Failures are
     // bucketed and reported as "Skills need to be updated: …" without throwing,
     // so the overall run continues (§13.1).
     const handle = await createSkillSteps(config, ctx);

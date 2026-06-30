@@ -27,12 +27,31 @@ async function isSkillDir(p: string): Promise<boolean> {
   }
 }
 
-/** Locate the fetched skill content for a composite ref (or null if missing). */
-async function locate(composite: string, ctx: ResolveContext): Promise<string | null> {
-  const ref = parseCompositeSkillRef(composite, { projectRoot: ctx.projectRoot });
-  const fetched = await ctx.fetcher.fetch(ref.source);
-  const src = ref.source.kind === "git" ? path.join(fetched.path, ref.subPath) : fetched.path;
-  return (await isSkillDir(src)) ? src : null;
+interface LocateResult {
+  /** Absolute path to the fetched skill content. */
+  src: string;
+  /** Branch/tag actually fetched (for git sources) — persisted to the lock. */
+  ref?: string;
+}
+
+/**
+ * Locate the fetched skill content for a composite ref (or null if missing).
+ * `lockedRef` is the branch/tag recorded in the lock: passing it as the explicit
+ * fetch ref lets `fetchGit` skip the `ls-remote` default-branch lookup and hit
+ * the cache directly, so warm runs are fully offline.
+ */
+async function locate(
+  composite: string,
+  ctx: ResolveContext,
+  lockedRef?: string,
+): Promise<LocateResult | null> {
+  const parsed = parseCompositeSkillRef(composite, { projectRoot: ctx.projectRoot });
+  const ownRef = parsed.source.kind === "git" ? parsed.source.ref : undefined;
+  const explicit = ownRef ?? lockedRef;
+  const fetched = await ctx.fetcher.fetch(parsed.source, explicit ? { ref: explicit } : undefined);
+  const src = parsed.source.kind === "git" ? path.join(fetched.path, parsed.subPath) : fetched.path;
+  if (!(await isSkillDir(src))) return null;
+  return { src, ...(fetched.ref ? { ref: fetched.ref } : {}) };
 }
 
 /** Best-effort upstream commit for the ref (undefined on any failure / no network). */
@@ -70,6 +89,17 @@ export async function createSkillSteps(
   let lock = await readLock(ctx.projectRoot);
   let dirty = false;
 
+  // Hash each fetched source directory at most once per run — `integrity` and
+  // `install` both need the source hash, and the source tree is immutable.
+  const srcHashes = new Map<string, string>();
+  const hashOnce = async (dir: string): Promise<string> => {
+    const cached = srcHashes.get(dir);
+    if (cached !== undefined) return cached;
+    const h = await hashSkillDir(dir);
+    srcHashes.set(dir, h);
+    return h;
+  };
+
   const compositeOf = (name: string): string => {
     const c = sources[name];
     if (!c) throw new Error(`skill "${name}" is not declared`);
@@ -79,8 +109,11 @@ export async function createSkillSteps(
   const steps: SkillSteps = {
     async fetch(_name, composite) {
       try {
-        const src = await locate(composite, ctx);
-        return src ? { ok: true, src } : { ok: false };
+        const lockedRef = getSkill(lock, composite)?.ref;
+        const located = await locate(composite, ctx, lockedRef);
+        return located
+          ? { ok: true, src: located.src, ...(located.ref ? { ref: located.ref } : {}) }
+          : { ok: false };
       } catch {
         return { ok: false };
       }
@@ -95,29 +128,36 @@ export async function createSkillSteps(
     async integrity(name, src) {
       const entry = getSkill(lock, compositeOf(name));
       if (!entry) return true; // unpinned → install will pin it
-      return (await hashSkillDir(src)) === entry.computedHash;
+      return (await hashOnce(src)) === entry.computedHash;
     },
-    async install(name, src) {
+    async install(name, src, ref) {
       const composite = compositeOf(name);
       if (ctx.dryRun) {
         ctx.logger.info(`would: install skill "${name}"`);
         return;
       }
       const dst = path.join(skillsDir, name);
-      const srcHash = await hashSkillDir(src);
+      const srcHash = await hashOnce(src);
       const dstHash = (await isSkillDir(dst)) ? await hashSkillDir(dst) : null;
       if (dstHash !== srcHash) {
         await fs.rm(dst, { recursive: true, force: true });
         await fs.mkdir(path.dirname(dst), { recursive: true });
         await fs.cp(src, dst, { recursive: true, force: true });
       }
-      if (!getSkill(lock, composite)) {
+      const existing = getSkill(lock, composite);
+      if (!existing) {
         const commit = await resolveCommit(composite, ctx);
         lock = upsertSkill(lock, composite, {
           computedHash: srcHash,
           resolvedAt: new Date().toISOString(),
           ...(commit ? { resolvedCommit: commit } : {}),
+          ...(ref ? { ref } : {}),
         });
+        dirty = true;
+      } else if (ref && !existing.ref) {
+        // Backfill the tracked ref for legacy lock entries so subsequent runs
+        // fetch offline (no `ls-remote`). Self-heals after one run.
+        lock = upsertSkill(lock, composite, { ...existing, ref });
         dirty = true;
       }
     },
@@ -150,20 +190,21 @@ export async function updateSkills(
   for (const name of targets) {
     const composite = sources[name];
     if (!composite) throw new Error(`skill "${name}" is not declared`);
-    const src = await locate(composite, ctx);
-    if (!src) throw new Error(`skill "${name}" not found at ${composite}`);
-    const hash = await hashSkillDir(src);
+    const located = await locate(composite, ctx, getSkill(lock, composite)?.ref);
+    if (!located) throw new Error(`skill "${name}" not found at ${composite}`);
+    const hash = await hashSkillDir(located.src);
     const commit = await resolveCommit(composite, ctx);
     lock = upsertSkill(lock, composite, {
       computedHash: hash,
       resolvedAt: new Date().toISOString(),
       ...(commit ? { resolvedCommit: commit } : {}),
+      ...(located.ref ? { ref: located.ref } : {}),
     });
     if (!ctx.dryRun) {
       const dst = path.join(skillsDir, name);
       await fs.rm(dst, { recursive: true, force: true });
       await fs.mkdir(path.dirname(dst), { recursive: true });
-      await fs.cp(src, dst, { recursive: true, force: true });
+      await fs.cp(located.src, dst, { recursive: true, force: true });
     }
     updated.push(name);
   }
