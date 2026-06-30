@@ -35,6 +35,8 @@ export type {
 } from "./types/public.js";
 
 export { createLogger, dim, withSpinner } from "./logger.js";
+export { exclusiveCheckbox } from "./prompts.js";
+export type { ExclusiveChoice, ExclusiveConfig, PickChoice } from "./prompts.js";
 export {
   buildPaths,
   ensureDir,

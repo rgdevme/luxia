@@ -265,6 +265,12 @@ export type InitStep =
       choices: { name: string; value: string }[];
       default?: InitStepDefault<string>;
       callback(value: string, ctx: ResolveContext): Promise<void>;
+    })
+  | (InitStepBase & {
+      type: "multiselect";
+      choices: { name: string; value: string; description?: string; checked?: boolean }[];
+      default?: InitStepDefault<string[]>;
+      callback(value: string[], ctx: ResolveContext): Promise<void>;
     });
 
 export interface DomainPlugin<TDecl = unknown, TItem = unknown> {

@@ -2,6 +2,7 @@ import { confirm, input, select } from "@inquirer/prompts";
 import type { Domain, InitStep, ResolveContext } from "../types/public.js";
 import type { PluginRegistry } from "../plugin-loader.js";
 import { orderedDomains } from "../plugin-loader.js";
+import { exclusiveCheckbox } from "../prompts.js";
 
 export interface RunStepsOptions {
   yes: boolean;
@@ -84,6 +85,15 @@ async function resolveStepValue(
       const def = await resolveDefault<string>(step.default, ctx);
       return await select<string>({ message: step.message, choices: step.choices, default: def });
     }
+    case "multiselect": {
+      const def = (await resolveDefault<string[]>(step.default, ctx)) ?? [];
+      const preset = new Set(def);
+      const choices = step.choices.map((c) => ({
+        ...c,
+        checked: c.checked ?? preset.has(c.value),
+      }));
+      return await exclusiveCheckbox({ message: step.message, choices });
+    }
   }
 }
 
@@ -95,6 +105,8 @@ async function defaultFor(step: InitStep, ctx: ResolveContext): Promise<unknown>
       return (await resolveDefault<boolean>(step.default, ctx)) ?? false;
     case "select":
       return (await resolveDefault<string>(step.default, ctx)) ?? step.choices[0]?.value;
+    case "multiselect":
+      return (await resolveDefault<string[]>(step.default, ctx)) ?? [];
   }
 }
 
@@ -117,10 +129,14 @@ async function invokeCallback(step: InitStep, value: unknown, ctx: ResolveContex
     case "select":
       await step.callback(value as string, ctx);
       return;
+    case "multiselect":
+      await step.callback(value as string[], ctx);
+      return;
   }
 }
 
 function formatValue(value: unknown): string {
   if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) return JSON.stringify(value);
   return String(value);
 }

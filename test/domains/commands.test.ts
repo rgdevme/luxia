@@ -293,4 +293,37 @@ describe("agents subcommands", () => {
     await run(agentsDomain, "remove", ["claude-code"]);
     expect((await readCfg()).agents).toEqual([]);
   });
+
+  it("add accepts several ids at once and is idempotent on re-add", async () => {
+    await run(agentsDomain, "add", ["claude-code", "codex"]);
+    expect((await readCfg()).agents).toEqual(["claude-code", "codex"]);
+    // Re-adding an already-enabled agent leaves the list untouched.
+    await run(agentsDomain, "add", ["claude-code"]);
+    expect((await readCfg()).agents).toEqual(["claude-code", "codex"]);
+  });
+
+  it("add reports every unknown id in one error", async () => {
+    await expect(run(agentsDomain, "add", ["zed", "nano"])).rejects.toThrow(/zed, nano/);
+  });
+
+  it("add with no ids and no TTY refuses with a hint instead of hanging", async () => {
+    // `-y` is ignored by these commands; only the missing TTY guards the prompt.
+    await expect(run(agentsDomain, "add", [])).rejects.toThrow(/needs a TTY/);
+  });
+
+  it("remove drops several ids and cleans non-enabled requests", async () => {
+    await writeCfg({ agents: ["claude-code", "codex"] });
+    await run(agentsDomain, "remove", ["claude-code", "codex"]);
+    expect((await readCfg()).agents).toEqual([]);
+  });
+
+  it("remove rejects ids that are not enabled", async () => {
+    await writeCfg({ agents: ["claude-code"] });
+    await expect(run(agentsDomain, "remove", ["codex"])).rejects.toThrow(/not enabled/);
+  });
+
+  it("remove with no ids and no TTY refuses with a hint", async () => {
+    await writeCfg({ agents: ["claude-code"] });
+    await expect(run(agentsDomain, "remove", [])).rejects.toThrow(/needs a TTY/);
+  });
 });

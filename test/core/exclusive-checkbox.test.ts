@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@inquirer/testing";
 import figures from "@inquirer/figures";
-import { exclusiveCheckbox } from "../../src/domains/cli-helpers.js";
+import { exclusiveCheckbox } from "../../src/core/index.js";
 
 const choices = [
   { name: "pdf [one/repo]", value: "0", group: "pdf", description: "Read and edit PDFs" },
@@ -84,5 +84,22 @@ describe("exclusiveCheckbox", () => {
     events.keypress("space");
     events.keypress("enter");
     await expect(answer).resolves.toEqual(["0", "2"]);
+  });
+
+  it("ignores the space key on a disabled row and omits it from the result", async () => {
+    const { getScreen, events, answer } = await render(exclusiveCheckbox, {
+      message: "Select agents:",
+      choices: [
+        { name: "Claude Code", value: "claude-code", checked: true, disabled: true },
+        { name: "OpenAI Codex", value: "codex" },
+      ],
+    });
+    // Cursor starts on the disabled row; space must not toggle or surface it.
+    events.keypress("space");
+    events.keypress("down");
+    events.keypress("space"); // select the enabled row
+    events.keypress("enter");
+    expect(getScreen()).toBeDefined();
+    await expect(answer).resolves.toEqual(["codex"]);
   });
 });

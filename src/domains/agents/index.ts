@@ -5,14 +5,39 @@ import type {
   CommandContext,
   CommandSpec,
   Domain,
+  ExclusiveChoice,
   MaterializeContext,
   ResolveContext,
   ResolvedMcp,
 } from "../../core/index.js";
-import { buildPaths, readConfigOrDefault } from "../../core/index.js";
-import { adapterById, ADAPTERS } from "../../agents/adapters/index.js";
+import { buildPaths, readConfigOrDefault, writeConfig } from "../../core/index.js";
+import { adapterById, ADAPTERS, DEFAULT_AGENT_IDS } from "../../agents/adapters/index.js";
 import { removePaths } from "../../agents/adapters/shared.js";
-import { reqArg, writeChange } from "../cli-helpers.js";
+import { multiSelectInteractive, writeChange } from "../cli-helpers.js";
+
+const ADD_HINT =
+  "pass agent ids to add (e.g. `agnos agents add claude-code`) — interactive selection needs a TTY";
+const REMOVE_HINT =
+  "pass agent ids to remove (e.g. `agnos agents remove codex`) — interactive selection needs a TTY";
+
+const AGENTS_ARG = {
+  name: "agents",
+  required: false,
+  variadic: true,
+  description: "agent ids (claude-code | codex); omit to pick interactively",
+} as const;
+
+function agentDescription(adapter: AgentAdapter): string | undefined {
+  const file = adapter.paths?.rulesFilename;
+  return file ? `writes ${file}` : undefined;
+}
+
+function unknownAgentError(ids: string[]): Error {
+  const plural = ids.length > 1 ? "s" : "";
+  return new Error(
+    `unknown agent${plural} "${ids.join(", ")}" (known: ${ADAPTERS.map((a) => a.id).join(", ")})`,
+  );
+}
 
 /** The per-agent render slices, in dependency order. */
 const SLICES = ["rules", "mcp", "hooks", "skills"] as const;
@@ -107,43 +132,81 @@ export async function scrapeActive(
 const commands: Record<string, CommandSpec> = {
   add: {
     name: "add",
-    description: "Enable an agent (its files render on the next `agnos` run)",
-    args: [{ name: "agent", required: true, description: "agent id (claude-code | codex)" }],
+    description: "Enable agents (their files render on the next `agnos` run)",
+    args: [AGENTS_ARG],
     async run(ctx) {
-      const id = reqArg(ctx, 0, "agent");
-      if (!adapterById(id)) {
-        throw new Error(`unknown agent "${id}" (known: ${ADAPTERS.map((a) => a.id).join(", ")})`);
-      }
       const config = await readConfigOrDefault(ctx.configPath);
-      const agents = config.agents ?? [];
-      if (agents.includes(id)) {
-        ctx.logger.info(`agent "${id}" is already enabled`);
+      const enabled = config.agents ?? [];
+      let ids = ctx.args;
+      if (ids.length === 0) {
+        if (ADAPTERS.every((a) => enabled.includes(a.id))) {
+          ctx.logger.info("all agents are already enabled");
+          return;
+        }
+        // Already-enabled agents show dimmed and locked so the picker stays additive.
+        const choices: ExclusiveChoice[] = ADAPTERS.map((a) => ({
+          name: a.displayName,
+          value: a.id,
+          description: agentDescription(a),
+          checked: enabled.includes(a.id),
+          disabled: enabled.includes(a.id),
+        }));
+        ids = await multiSelectInteractive("Add agents:", choices, ADD_HINT);
+      }
+      const unknown = ids.filter((id) => !adapterById(id));
+      if (unknown.length > 0) throw unknownAgentError(unknown);
+      const toAdd = [...new Set(ids)].filter((id) => !enabled.includes(id));
+      if (toAdd.length === 0) {
+        ctx.logger.info("nothing to add");
         return;
       }
-      await writeChange(ctx, `enabled agent "${id}"`, { ...config, agents: [...agents, id] });
+      const plural = toAdd.length > 1 ? "s" : "";
+      await writeChange(ctx, `enabled agent${plural} "${toAdd.join(", ")}"`, {
+        ...config,
+        agents: [...enabled, ...toAdd],
+      });
     },
   },
   remove: {
     name: "remove",
-    description: "Remove an agent's rendered files, then disable it",
-    args: [{ name: "agent", required: true, description: "agent id" }],
+    description: "Remove agents' rendered files, then disable them",
+    args: [AGENTS_ARG],
     async run(ctx) {
-      const id = reqArg(ctx, 0, "agent");
       const config = await readConfigOrDefault(ctx.configPath);
-      const agents = config.agents ?? [];
-      if (!agents.includes(id)) throw new Error(`agent "${id}" is not enabled`);
-      // §13.2: delete the agent's owned files first, then edit the config.
-      const removed = adapterById(id);
-      if (removed) {
-        const remaining = agents
-          .filter((a) => a !== id)
-          .map((a) => adapterById(a))
-          .filter((a): a is AgentAdapter => Boolean(a));
-        await cleanupAgent(removed, remaining, { ...ctx, agentId: id, indent: "  " });
+      const enabled = config.agents ?? [];
+      let ids = ctx.args;
+      if (ids.length === 0) {
+        if (enabled.length === 0) {
+          ctx.logger.info("no agents are enabled");
+          return;
+        }
+        const choices: ExclusiveChoice[] = enabled.map((id) => {
+          const adapter = adapterById(id);
+          return {
+            name: adapter?.displayName ?? id,
+            value: id,
+            description: adapter ? agentDescription(adapter) : undefined,
+          };
+        });
+        ids = await multiSelectInteractive("Remove agents:", choices, REMOVE_HINT);
       }
-      await writeChange(ctx, `removed agent "${id}"`, {
+      const targets = [...new Set(ids)];
+      if (targets.length === 0) return;
+      const notEnabled = targets.filter((id) => !enabled.includes(id));
+      if (notEnabled.length > 0) throw new Error(`not enabled: ${notEnabled.join(", ")}`);
+      // §13.2: delete each removed agent's owned files first, then edit the config.
+      const remaining = enabled
+        .filter((id) => !targets.includes(id))
+        .map((id) => adapterById(id))
+        .filter((a): a is AgentAdapter => Boolean(a));
+      for (const id of targets) {
+        const removed = adapterById(id);
+        if (removed) await cleanupAgent(removed, remaining, { ...ctx, agentId: id, indent: "  " });
+      }
+      const plural = targets.length > 1 ? "s" : "";
+      await writeChange(ctx, `removed agent${plural} "${targets.join(", ")}"`, {
         ...config,
-        agents: agents.filter((a) => a !== id),
+        agents: enabled.filter((id) => !targets.includes(id)),
       });
     },
   },
@@ -160,6 +223,29 @@ export const agentsDomain: Domain = {
   description: "Render per-agent native files from agnos.json (the config reader)",
   kind: "reader",
   priority: 99,
+  initSteps: [
+    {
+      id: "select",
+      type: "multiselect",
+      message: "Which agents do you want to configure?",
+      choices: ADAPTERS.map((a) => ({
+        name: a.displayName,
+        value: a.id,
+        description: agentDescription(a),
+      })),
+      // Pre-check the current selection; on a fresh project fall back to the
+      // curated default. Also the value written non-interactively (`-y`/`--dry`).
+      default: async (ctx) => {
+        const config = await readConfigOrDefault(ctx.configPath);
+        const agents = config.agents ?? [];
+        return agents.length > 0 ? agents : [...DEFAULT_AGENT_IDS];
+      },
+      async callback(ids, ctx) {
+        const config = await readConfigOrDefault(ctx.configPath);
+        await writeConfig(ctx.configPath, { ...config, agents: [...new Set(ids)] });
+      },
+    },
+  ],
   commands,
   async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
