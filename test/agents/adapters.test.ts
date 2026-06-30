@@ -64,6 +64,34 @@ describe("claude-code adapter", () => {
     ]);
   });
 
+  it("remote mcp render → scrape round-trips with headers", async () => {
+    const ctx = ctxFor(tmp);
+    const remote: ResolvedMcp[] = [
+      {
+        name: "hosted",
+        command: "https://mcp.acme.com/sse",
+        transport: "http",
+        headers: { Authorization: "Bearer t" },
+      },
+    ];
+    await claudeCode.render!["mcp"]!(remote, ctx);
+    const written = JSON.parse(await fs.readFile(path.join(tmp, ".mcp.json"), "utf8"));
+    expect(written.mcpServers.hosted).toEqual({
+      type: "http",
+      url: "https://mcp.acme.com/sse",
+      headers: { Authorization: "Bearer t" },
+    });
+    const scraped = (await claudeCode.scrape!["mcp"]!(ctx)) as ResolvedMcp[];
+    expect(scraped).toEqual([
+      {
+        name: "hosted",
+        transport: "http",
+        command: "https://mcp.acme.com/sse",
+        headers: { Authorization: "Bearer t" },
+      },
+    ]);
+  });
+
   it("hooks render → scrape round-trips and preserves other settings keys", async () => {
     const ctx = ctxFor(tmp);
     await fs.mkdir(path.join(tmp, ".claude"), { recursive: true });
@@ -103,6 +131,28 @@ describe("codex adapter", () => {
         command: "npx",
         args: ["-y", "server-fs"],
         env: { TOKEN: "x" },
+      },
+    ]);
+  });
+
+  it("remote mcp render → scrape round-trips with headers (TOML)", async () => {
+    const ctx = ctxFor(tmp);
+    const remote: ResolvedMcp[] = [
+      {
+        name: "hosted",
+        command: "https://mcp.acme.com/sse",
+        transport: "sse",
+        headers: { Authorization: "Bearer t" },
+      },
+    ];
+    await codex.render!["mcp"]!(remote, ctx);
+    const scraped = (await codex.scrape!["mcp"]!(ctx)) as ResolvedMcp[];
+    expect(scraped).toEqual([
+      {
+        name: "hosted",
+        transport: "sse",
+        command: "https://mcp.acme.com/sse",
+        headers: { Authorization: "Bearer t" },
       },
     ]);
   });

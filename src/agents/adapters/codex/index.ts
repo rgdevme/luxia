@@ -145,6 +145,8 @@ function fromCodexServer(name: string, entry: unknown): McpDeclaration | undefin
   if (args && args.length > 0) decl.args = args;
   const env = pickEnv(e["env"]);
   if (env) decl.env = env;
+  const headers = pickEnv(e["headers"]);
+  if (headers) decl.headers = headers;
   return decl;
 }
 
@@ -153,6 +155,7 @@ function toCodexServer(decl: ResolvedMcp): Record<string, unknown> {
   if (decl.command) out["command"] = decl.command;
   if (decl.args) out["args"] = decl.args;
   if (decl.env) out["env"] = decl.env;
+  if (decl.headers) out["headers"] = decl.headers;
   if (decl.transport && decl.transport !== "stdio") out["transport"] = decl.transport;
   return out;
 }

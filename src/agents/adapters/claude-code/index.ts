@@ -156,6 +156,8 @@ function fromClaudeServer(name: string, entry: unknown): McpDeclaration | undefi
     const decl: McpDeclaration = { name, transport: type, command: url };
     const env = pickEnv(e["env"]);
     if (env) decl.env = env;
+    const headers = pickEnv(e["headers"]);
+    if (headers) decl.headers = headers;
     return decl;
   }
   const command = typeof e["command"] === "string" ? (e["command"] as string) : undefined;
@@ -170,7 +172,12 @@ function fromClaudeServer(name: string, entry: unknown): McpDeclaration | undefi
 
 function toClaudeServer(decl: ResolvedMcp): Record<string, unknown> {
   if (decl.transport && decl.transport !== "stdio") {
-    return { type: decl.transport, url: decl.command, ...(decl.env ? { env: decl.env } : {}) };
+    return {
+      type: decl.transport,
+      url: decl.command,
+      ...(decl.headers ? { headers: decl.headers } : {}),
+      ...(decl.env ? { env: decl.env } : {}),
+    };
   }
   return {
     command: decl.command ?? "",

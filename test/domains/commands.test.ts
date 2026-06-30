@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -42,17 +42,120 @@ afterEach(async () => {
 });
 
 describe("mcp subcommands", () => {
-  it("add appends a server; a duplicate add throws", async () => {
-    await run(mcpDomain, "add", ["gh", "npx", "-y", "s"]);
+  const regResponse = (body: unknown, status = 200): Response =>
+    ({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: "test",
+      json: async () => body,
+    }) as Response;
+
+  const serverEntry = (server: unknown) => ({
+    server,
+    _meta: { "io.modelcontextprotocol.registry/official": { status: "active" } },
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("add from the registry installs the chosen server with source + version (-y auto-selects)", async () => {
+    const listing = {
+      servers: [
+        serverEntry({
+          name: "io.github.acme/weather",
+          title: "Weather",
+          description: "Weather data",
+          version: "1.2.3",
+          packages: [
+            {
+              registryType: "npm",
+              identifier: "@acme/weather",
+              version: "1.2.3",
+              transport: { type: "stdio" },
+              environmentVariables: [{ name: "API_KEY" }],
+            },
+          ],
+        }),
+      ],
+      metadata: { count: 1 },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => regResponse(listing)),
+    );
+    await run(mcpDomain, "add", ["weather"]);
     expect((await readCfg()).mcp).toEqual([
-      { name: "gh", command: "npx", args: ["-y", "s"], transport: "stdio" },
+      {
+        name: "weather",
+        source: "io.github.acme/weather",
+        version: "1.2.3",
+        command: "npx",
+        transport: "stdio",
+        args: ["-y", "@acme/weather@1.2.3"],
+        env: { API_KEY: "" },
+      },
     ]);
-    await expect(run(mcpDomain, "add", ["gh", "x"])).rejects.toThrow(/already exists/);
+  });
+
+  it("manual add (no term) is guarded when non-interactive", async () => {
+    await expect(run(mcpDomain, "add", [])).rejects.toThrow(/interactive terminal/);
+  });
+
+  it("update bumps a stale registry-managed server, preserving user env; leaves manual servers", async () => {
+    await writeCfg({
+      mcp: [
+        {
+          name: "weather",
+          source: "io.github.acme/weather",
+          version: "1.0.0",
+          command: "npx",
+          transport: "stdio",
+          args: ["-y", "@acme/weather@1.0.0"],
+          env: { API_KEY: "secret" },
+        },
+        { name: "manual", command: "node", transport: "stdio" },
+      ],
+    });
+    const latest = {
+      server: {
+        name: "io.github.acme/weather",
+        version: "2.0.0",
+        packages: [
+          {
+            registryType: "npm",
+            identifier: "@acme/weather",
+            version: "2.0.0",
+            transport: { type: "stdio" },
+            environmentVariables: [{ name: "API_KEY" }],
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => regResponse(latest)),
+    );
+    await run(mcpDomain, "update", []);
+    const cfg = await readCfg();
+    const weather = cfg.mcp?.find((m) => m.name === "weather");
+    expect(weather?.version).toBe("2.0.0");
+    expect(weather?.args).toEqual(["-y", "@acme/weather@2.0.0"]);
+    expect(weather?.env).toEqual({ API_KEY: "secret" });
+    expect(cfg.mcp?.find((m) => m.name === "manual")).toEqual({
+      name: "manual",
+      command: "node",
+      transport: "stdio",
+    });
   });
 
   it("remove drops named servers; missing throws; no-arg is guarded", async () => {
-    await run(mcpDomain, "add", ["gh", "npx"]);
-    await run(mcpDomain, "add", ["fs", "npx"]);
+    await writeCfg({
+      mcp: [
+        { name: "gh", command: "npx", transport: "stdio" },
+        { name: "fs", command: "npx", transport: "stdio" },
+      ],
+    });
     await expect(run(mcpDomain, "remove", ["nope"])).rejects.toThrow(/not found/);
     // no names + non-interactive (yes flag / no TTY) → guarded, doesn't prompt
     await expect(run(mcpDomain, "remove", [])).rejects.toThrow(/specify server/i);

@@ -68,12 +68,17 @@
           "source": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional source ref for the server package."
+            "description": "Registry reverse-DNS identifier (set when added from the MCP registry; enables version updates)."
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Installed registry server version, used to detect updates."
           },
           "command": {
             "type": "string",
             "minLength": 1,
-            "description": "Executable to run (stdio transport)."
+            "description": "Executable to run (stdio transport), or the server URL (sse/http transport)."
           },
           "args": {
             "type": "array",
@@ -83,6 +88,11 @@
           "env": {
             "type": "object",
             "description": "Environment variables. Values may contain ${VAR} references resolved at render time.",
+            "additionalProperties": { "type": "string" }
+          },
+          "headers": {
+            "type": "object",
+            "description": "HTTP headers for remote (sse/http) transports, e.g. auth tokens.",
             "additionalProperties": { "type": "string" }
           },
           "transport": {
