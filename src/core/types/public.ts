@@ -562,6 +562,20 @@ export interface Domain {
   kind: "writer" | "reader";
   priority: number;
   run?(opts: DomainRunOptions, ctx: RunContext): Promise<DomainRunHandle | undefined>;
+  /**
+   * Absolute content paths this domain watches in watch mode (besides
+   * `agnos.json`). Directories are watched recursively. Returning an empty list
+   * (or omitting the method) means the domain contributes no content watcher —
+   * it is either purely config-driven or CLI-driven. The supervisor re-runs this
+   * domain (and every downstream domain) when any returned path changes.
+   */
+  watchPaths?(config: AgnosConfig, ctx: ResolveContext): string[] | Promise<string[]>;
+  /**
+   * Absolute paths under `watchPaths` to exclude from the watcher — typically a
+   * domain's own generated output that lives inside a watched directory (e.g.
+   * docs' `index.md`), so writing it does not re-trigger the domain.
+   */
+  watchIgnore?(config: AgnosConfig, ctx: ResolveContext): string[] | Promise<string[]>;
   initSteps?: InitStep[];
   commands?: Record<string, CommandSpec>;
 }

@@ -2,7 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
 import type { AgnosConfig, Domain, ResolveContext } from "../../core/index.js";
-import { readConfigOrDefault, withSpinner, writeConfig } from "../../core/index.js";
+import {
+  readConfigOrDefault,
+  readState,
+  withSpinner,
+  writeConfig,
+  writeState,
+} from "../../core/index.js";
 import { injectSections, slugify, type Section } from "./inject.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
@@ -44,6 +50,11 @@ async function loadSection(
 export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Promise<void> {
   const files = config.rules?.files ?? {};
   const missingTitle: string[] = [];
+  const state = await readState(ctx.statePath);
+  const prevSections = state.rulesSections ?? {};
+  // Rebuilt fresh each run: only currently-declared canonical files survive, so
+  // a file dropped from rules.files is forgotten (its slugs no longer prune).
+  const nextSections: Record<string, string[]> = {};
 
   for (const [canonical, injectables] of Object.entries(files)) {
     const sections: Section[] = [];
@@ -69,7 +80,9 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
     } catch {
       /* new canonical file */
     }
-    const next = injectSections(existing, sections);
+    const prevSlugs = prevSections[canonical] ?? [];
+    const next = injectSections(existing, sections, prevSlugs);
+    nextSections[canonical] = sections.map((s) => s.slug);
     if (next === existing) continue;
     if (ctx.dryRun) {
       ctx.logger.info(`would: inject ${sections.length} section(s) into ${canonical}`);
@@ -79,6 +92,10 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
     await fs.writeFile(canonAbs, next, "utf8");
     ctx.logger.info(`rules: injected ${sections.length} section(s) into ${canonical}`);
   }
+
+  // Persist the managed-slug map so a later run can prune the sections of
+  // fragments removed from rules.files in the meantime.
+  if (!ctx.dryRun) await writeState(ctx.statePath, { ...state, rulesSections: nextSections });
 
   if (missingTitle.length > 0) {
     ctx.logger.warn(
@@ -128,6 +145,16 @@ export const rulesDomain: Domain = {
     if (Object.keys(config.rules?.files ?? {}).length === 0) return undefined;
     await withSpinner("Injecting rules", () => injectRules(config, ctx), { quiet: opts.quiet });
     return undefined;
+  },
+  // Watch every injectable fragment declared across all canonical files. Editing
+  // a fragment re-injects its titled section into its canonical file(s).
+  watchPaths(config, ctx) {
+    const files = config.rules?.files ?? {};
+    const seen = new Set<string>();
+    for (const injectables of Object.values(files)) {
+      for (const rel of injectables) seen.add(path.resolve(ctx.projectRoot, rel));
+    }
+    return [...seen];
   },
 };
 

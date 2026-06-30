@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   injectSection,
   injectSections,
-  pruneOrphanSections,
+  renderSection,
   slugify,
   type Section,
 } from "../../src/domains/rules/inject.js";
@@ -16,13 +16,23 @@ describe("slugify", () => {
   });
 });
 
+describe("renderSection", () => {
+  it("renders a level-2 heading with the trimmed body", () => {
+    expect(renderSection(sec("Security", "  no secrets\n"))).toBe("## Security\n\nno secrets");
+  });
+  it("renders a heading-only block when the body is empty", () => {
+    expect(renderSection(sec("Empty", "   "))).toBe("## Empty");
+  });
+});
+
 describe("injectSection", () => {
-  it("appends a new section", () => {
-    const out = injectSection("# Existing\n\nhand-written\n", sec("Security", "no secrets"));
-    expect(out).toContain("<!-- agnos:section:security -->");
-    expect(out).toContain("# Security");
+  it("appends a new H2 section, preserving the preamble, with no sentinels", () => {
+    const out = injectSection("# AGENTS\n\nhand-written\n", sec("Security", "no secrets"));
+    expect(out).toContain("# AGENTS");
+    expect(out).toContain("hand-written");
+    expect(out).toContain("## Security");
     expect(out).toContain("no secrets");
-    expect(out).toContain("hand-written"); // preserved
+    expect(out).not.toContain("<!--");
   });
 
   it("replaces an existing section in place and is idempotent / byte-stable", () => {
@@ -30,27 +40,42 @@ describe("injectSection", () => {
     const replaced = injectSection(once, sec("Security", "v2"));
     expect(replaced).toContain("v2");
     expect(replaced).not.toContain("v1");
-    // idempotent: same content → unchanged
     expect(injectSection(replaced, sec("Security", "v2"))).toBe(replaced);
+  });
+
+  it("ends a section at the next H2 — replacing one does not swallow the next", () => {
+    let text = injectSections("", [sec("Alpha", "a body"), sec("Beta", "b body")]);
+    text = injectSection(text, sec("Alpha", "a updated"));
+    expect(text).toContain("a updated");
+    expect(text).toContain("## Beta");
+    expect(text).toContain("b body");
   });
 });
 
-describe("injectSections + pruneOrphanSections", () => {
-  it("injects in order and prunes orphaned sections, preserving hand edits", () => {
-    let text = "# AGENTS\n\nintro kept\n";
-    text = injectSections(text, [sec("Alpha", "a"), sec("Beta", "b")]);
-    expect(text.indexOf("agnos:section:alpha")).toBeLessThan(text.indexOf("agnos:section:beta"));
-    // drop Beta on the next run → its section is pruned, Alpha + hand edits remain
-    const pruned = injectSections(text, [sec("Alpha", "a")]);
-    expect(pruned).toContain("agnos:section:alpha");
-    expect(pruned).not.toContain("agnos:section:beta");
-    expect(pruned).toContain("intro kept");
+describe("injectSections", () => {
+  it("injects in order and preserves hand-written H2 sections", () => {
+    const text = injectSections("## Manual\n\nkeep me\n", [sec("Alpha", "a"), sec("Beta", "b")]);
+    expect(text.indexOf("## Alpha")).toBeLessThan(text.indexOf("## Beta"));
+    expect(text).toContain("## Manual");
+    expect(text).toContain("keep me");
   });
 
-  it("pruneOrphanSections keeps listed slugs and removes the rest", () => {
-    const text = injectSections("", [sec("Keep", "k"), sec("Drop", "d")]);
-    const out = pruneOrphanSections(text, new Set(["keep"]));
-    expect(out).toContain("agnos:section:keep");
-    expect(out).not.toContain("agnos:section:drop");
+  it("prunes only previously-managed sections that are now gone", () => {
+    const first = injectSections("", [sec("Alpha", "a"), sec("Beta", "b")]);
+    const pruned = injectSections(first, [sec("Alpha", "a")], ["alpha", "beta"]);
+    expect(pruned).toContain("## Alpha");
+    expect(pruned).not.toContain("## Beta");
+  });
+
+  it("never prunes a hand-written section absent from prevSlugs", () => {
+    const out = injectSections("## Manual\n\nkeep me\n", [sec("Alpha", "a")], ["alpha"]);
+    expect(out).toContain("## Manual");
+    expect(out).toContain("keep me");
+  });
+
+  it("is byte-stable across repeated runs", () => {
+    const first = injectSections("# Title\n\nintro\n", [sec("Alpha", "a"), sec("Beta", "b")], []);
+    const second = injectSections(first, [sec("Alpha", "a"), sec("Beta", "b")], ["alpha", "beta"]);
+    expect(second).toBe(first);
   });
 });
