@@ -46,6 +46,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "agnos": "pnpm exec agnos",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -79,6 +80,7 @@
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@inquirer/testing": "^3.3.9",
+    "@luxia/agnos": "^1.0.5",
     "@types/js-yaml": "^4.0.9",
     "@types/minimist": "^1.2.5",
     "@types/node": "^22.10.5",
