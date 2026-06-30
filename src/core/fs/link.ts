@@ -58,10 +58,22 @@ export function createLinker({ cacheDir, logger, copyFallback }: LinkerOptions):
         return { kind: "symlink" satisfies LinkKind };
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
-        if (
-          (code === "EPERM" || code === "EACCES") &&
-          (opts?.fallback === "copy" || copyFallback)
-        ) {
+        if (code !== "EPERM" && code !== "EACCES") throw err;
+
+        // File symlinks need elevation/Developer Mode on Windows. A hardlink
+        // needs neither and keeps content in sync with the target (same inode),
+        // so prefer it over a copy — but it only works for files on the same
+        // volume. Fall through to copy when it can't be created.
+        if (!isDir) {
+          try {
+            await fs.link(absoluteTarget, linkPath);
+            return { kind: "hardlink" satisfies LinkKind };
+          } catch (linkErr) {
+            logger.debug(`hardlink failed for ${linkPath}: ${(linkErr as Error).message}`);
+          }
+        }
+
+        if (opts?.fallback === "copy" || copyFallback) {
           if (isDir) {
             await fs.cp(absoluteTarget, linkPath, { recursive: true });
           } else {
@@ -78,28 +90,23 @@ export function createLinker({ cacheDir, logger, copyFallback }: LinkerOptions):
   };
 }
 
-export async function predictRequiresFileSymlinks(plan: {
-  fileSymlinks: boolean;
-  dirSymlinks: boolean;
-}): Promise<boolean> {
-  return plan.fileSymlinks;
-}
-
 export interface EnsureLinkResult {
   kind: LinkKind | "already-linked";
 }
 
 /**
  * Idempotent link: if `linkPath` already points to `target`, no-op. If it's a
- * stale symlink, replace it. If it's a real file/directory (not a link), throw
- * EEXIST — callers decide whether to migrate, prompt, or skip. Reuses
- * `linker.link` for the cross-OS junction/symlink/copy-fallback path.
+ * stale symlink, replace it. If it's a real file/directory (not a link) that
+ * differs from the target, throw EEXIST — unless `opts.owned` marks the path as
+ * agnos-managed, in which case it's replaced (e.g. a hardlink broken by a rename
+ * or a stale copy). Reuses `linker.link` for the junction/symlink/hardlink/copy
+ * path.
  */
 export async function ensureLink(
   target: string,
   linkPath: string,
   linker: Linker,
-  opts?: { fallback?: "copy" },
+  opts?: { fallback?: "copy"; owned?: boolean },
 ): Promise<EnsureLinkResult> {
   const absTarget = path.resolve(target);
   const lstat = await fs.lstat(linkPath).catch(() => null);
@@ -128,16 +135,39 @@ export async function ensureLink(
   }
 
   if (lstat && (lstat.isDirectory() || lstat.isFile())) {
-    // A prior copy-fallback materialization is a real file (not a symlink). If it
-    // already matches the target byte-for-byte, it's effectively in place — skip,
-    // so copy mode is idempotent too. A differing real file is a genuine conflict
-    // (a user file we must not clobber).
     if (lstat.isFile()) {
+      // A hardlink to the target shares its inode — already in place, even
+      // while the content is being rewritten. Check this before reading bytes:
+      // it's cheaper and stays correct mid-edit.
+      const [curStat, tgtStat] = await Promise.all([
+        fs.stat(linkPath).catch(() => null),
+        fs.stat(absTarget).catch(() => null),
+      ]);
+      if (
+        curStat &&
+        tgtStat &&
+        curStat.ino !== 0 &&
+        curStat.ino === tgtStat.ino &&
+        curStat.dev === tgtStat.dev
+      ) {
+        return { kind: "already-linked" };
+      }
+      // A prior copy-fallback materialization is a real file. If it matches the
+      // target byte-for-byte it's effectively in place — skip, so copy mode is
+      // idempotent too.
       const [cur, tgt] = await Promise.all([
         fs.readFile(linkPath).catch(() => null),
         fs.readFile(absTarget).catch(() => null),
       ]);
       if (cur && tgt && cur.equals(tgt)) return { kind: "already-linked" };
+    }
+    // A real file/dir that differs from the target. If agnos owns this path (a
+    // derived mirror/link target), replace it — a broken hardlink or stale copy.
+    // Otherwise it's a user file we must not clobber: surface the conflict.
+    if (opts?.owned) {
+      await linker.unlink(linkPath);
+      const out = await linker.link(absTarget, linkPath, opts);
+      return { kind: out.kind };
     }
     const err = new Error(
       `cannot link ${linkPath}: a ${lstat.isDirectory() ? "directory" : "file"} already exists there`,
