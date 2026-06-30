@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
 import type { AgnosConfig, Domain, ResolveContext } from "../../core/index.js";
-import { readConfigOrDefault, writeConfig } from "../../core/index.js";
+import { readConfigOrDefault, withSpinner, writeConfig } from "../../core/index.js";
 import { injectSections, slugify, type Section } from "./inject.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
@@ -122,11 +122,11 @@ export const rulesDomain: Domain = {
       },
     },
   ],
-  async run(_opts, ctx) {
+  async run(opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
     // No canonical files declared (empty/undefined `rules.files`) → skip.
     if (Object.keys(config.rules?.files ?? {}).length === 0) return undefined;
-    await injectRules(config, ctx);
+    await withSpinner("Injecting rules", () => injectRules(config, ctx), { quiet: opts.quiet });
     return undefined;
   },
 };

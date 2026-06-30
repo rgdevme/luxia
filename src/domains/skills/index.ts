@@ -3,11 +3,11 @@ import path from "node:path";
 import colors from "yoctocolors-cjs";
 import type {
   AgnosConfig,
+  CommandContext,
   CommandSpec,
   DiscoveredSkill,
   Domain,
   ParsedSource,
-  ResolveContext,
 } from "../../core/index.js";
 import {
   buildPaths,
@@ -148,24 +148,31 @@ function compositeFor(
 async function diagnose(
   which: "fetch" | "version" | "integrity",
   config: AgnosConfig,
-  ctx: ResolveContext,
+  ctx: CommandContext,
 ): Promise<void> {
   const sources = config.skills?.sources ?? {};
-  if (Object.keys(sources).length === 0) {
+  const count = Object.keys(sources).length;
+  if (count === 0) {
     ctx.logger.info("no skills declared");
     return;
   }
   const { steps } = await createSkillSteps(config, ctx);
   const bad: string[] = [];
-  for (const [name, composite] of Object.entries(sources)) {
-    const f = await steps.fetch(name, composite);
-    if (!f.ok || !f.src) {
-      if (which === "fetch") bad.push(name);
-      continue;
-    }
-    if (which === "version" && !(await steps.version(name, f.src))) bad.push(name);
-    else if (which === "integrity" && !(await steps.integrity(name, f.src))) bad.push(name);
-  }
+  await withSpinner(
+    `Checking ${count} skill${count === 1 ? "" : "s"}…`,
+    async () => {
+      for (const [name, composite] of Object.entries(sources)) {
+        const f = await steps.fetch(name, composite);
+        if (!f.ok || !f.src) {
+          if (which === "fetch") bad.push(name);
+          continue;
+        }
+        if (which === "version" && !(await steps.version(name, f.src))) bad.push(name);
+        else if (which === "integrity" && !(await steps.integrity(name, f.src))) bad.push(name);
+      }
+    },
+    { quiet: ctx.flags.quiet },
+  );
   const label = which === "fetch" ? "moved" : which === "version" ? "outdated" : "changed";
   if (bad.length > 0) ctx.logger.warn(`${which}: ${bad.length} ${label} (${bad.join(", ")})`);
   else ctx.logger.success(`${which}: all skills OK`);
@@ -436,7 +443,13 @@ const commands: Record<string, CommandSpec> = {
     ],
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
-      const updated = await updateSkills(ctx.args, config, ctx);
+      const declared = Object.keys(config.skills?.sources ?? {});
+      const n = ctx.args.length > 0 ? ctx.args.length : declared.length;
+      const updated = await withSpinner(
+        `Updating ${n} skill${n === 1 ? "" : "s"}…`,
+        () => updateSkills(ctx.args, config, ctx),
+        { quiet: ctx.flags.quiet },
+      );
       ctx.logger.success(`updated ${updated.length} skill(s)${ctx.dryRun ? " (dry)" : ""}`);
     },
   },
@@ -526,17 +539,24 @@ export const skillsDomain: Domain = {
       },
     },
   ],
-  async run(_opts, ctx) {
+  async run(opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
     const sources = config.skills?.sources ?? {};
     // No skill sources declared → nothing to fetch/verify.
-    if (Object.keys(sources).length === 0) return undefined;
+    const count = Object.keys(sources).length;
+    if (count === 0) return undefined;
     // Run the offline prep pipeline (fetch → integrity → install). Failures are
     // bucketed and reported as "Skills need to be updated: …" without throwing,
     // so the overall run continues (§13.1).
     const handle = await createSkillSteps(config, ctx);
-    await runSkillPipeline(sources, handle.steps, ctx.logger);
-    await handle.flush();
+    await withSpinner(
+      `Downloading and installing ${count} skill${count === 1 ? "" : "s"}`,
+      async () => {
+        await runSkillPipeline(sources, handle.steps, ctx.logger);
+        await handle.flush();
+      },
+      { quiet: opts.quiet },
+    );
     return undefined;
   },
 };
