@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgnosConfig, Domain } from "../../core/index.js";
-import { readConfigOrDefault, writeConfig } from "../../core/index.js";
+import { readConfigOrDefault, withSpinner, writeConfig } from "../../core/index.js";
 import { compileDocsIndex, DEFAULT_DOCS_ROOT } from "./compile.js";
 
 export * from "./compile.js";
@@ -31,11 +31,15 @@ export const docsDomain: Domain = {
       },
     },
   ],
-  async run(_opts, ctx) {
+  async run(opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
     // Nothing to do unless a docs root is configured (empty/undefined → skip).
     if (!config.docs?.root) return undefined;
-    await compileDocsIndex(config, ctx);
+    await withSpinner(
+      `Compiling docs index from ${config.docs.root}`,
+      () => compileDocsIndex(config, ctx),
+      { quiet: opts.quiet },
+    );
     return undefined;
   },
 };

@@ -10,7 +10,7 @@ import type {
   ResolveContext,
   ResolvedMcp,
 } from "../../core/index.js";
-import { buildPaths, readConfigOrDefault, writeConfig } from "../../core/index.js";
+import { buildPaths, createSpinner, readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { adapterById, ADAPTERS, DEFAULT_AGENT_IDS } from "../../agents/adapters/index.js";
 import { removePaths } from "../../agents/adapters/shared.js";
 import { multiSelectInteractive, writeChange } from "../cli-helpers.js";
@@ -247,10 +247,18 @@ export const agentsDomain: Domain = {
     },
   ],
   commands,
-  async run(_opts, ctx) {
+  async run(opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
-    for (const adapter of activeAdapters(config, ctx)) {
-      await renderAgent(adapter, config, { ...ctx, agentId: adapter.id, indent: "  " });
+    const adapters = activeAdapters(config, ctx);
+    if (adapters.length === 0) return undefined;
+    const spinner = createSpinner("Materializing agent files", { quiet: opts.quiet });
+    try {
+      for (const adapter of adapters) {
+        spinner.update(`Materializing ${adapter.displayName} agent's files`);
+        await renderAgent(adapter, config, { ...ctx, agentId: adapter.id, indent: "  " });
+      }
+    } finally {
+      spinner.stop();
     }
     return undefined;
   },

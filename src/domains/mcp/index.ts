@@ -6,7 +6,7 @@ import type {
   Domain,
   McpDeclaration,
 } from "../../core/index.js";
-import { readConfigOrDefault } from "../../core/index.js";
+import { readConfigOrDefault, withSpinner } from "../../core/index.js";
 import { jsonEqual, mergeByIdentity, type ArrayMergeResult, type MergePolicy } from "../merge.js";
 import {
   MIGRATE_FLAGS,
@@ -116,8 +116,12 @@ async function addFromRegistry(
   mcp: McpDeclaration[],
   term: string,
 ): Promise<void> {
-  ctx.logger.info(`searching the MCP registry for "${term}"…`);
-  const results = await searchServers(term);
+  // Spinner (not a log line) so it clears before the interactive picker prompts.
+  const results = await withSpinner(
+    `Searching the MCP registry for "${term}"…`,
+    () => searchServers(term),
+    { quiet: ctx.flags.quiet },
+  );
   if (results.length === 0) {
     ctx.logger.info(
       `no servers found for "${term}". Run \`agnos mcp add\` with no term to configure one manually.`,
@@ -336,25 +340,31 @@ const commands: Record<string, CommandSpec> = {
       const updates = new Map<string, McpDeclaration>();
       let current = 0;
       let missing = 0;
-      for (const decl of targets) {
-        const latest = await getServerLatest(decl.source!);
-        if (!latest) {
-          ctx.logger.warn(`${decl.name}: no longer in registry (${decl.source})`);
-          missing++;
-          continue;
-        }
-        if (decl.version && !isNewer(latest.version, decl.version)) {
-          current++;
-          continue;
-        }
-        const rebuilt = rebuildFrom(latest, decl);
-        if (rebuilt) {
-          updates.set(decl.name, rebuilt);
-          ctx.logger.info(`${decl.name}: ${decl.version ?? "?"} → ${latest.version}`);
-        } else {
-          ctx.logger.warn(`${decl.name}: latest version has no matching deployment; skipped`);
-        }
-      }
+      await withSpinner(
+        `Checking ${targets.length} server${targets.length === 1 ? "" : "s"} for updates…`,
+        async () => {
+          for (const decl of targets) {
+            const latest = await getServerLatest(decl.source!);
+            if (!latest) {
+              ctx.logger.warn(`${decl.name}: no longer in registry (${decl.source})`);
+              missing++;
+              continue;
+            }
+            if (decl.version && !isNewer(latest.version, decl.version)) {
+              current++;
+              continue;
+            }
+            const rebuilt = rebuildFrom(latest, decl);
+            if (rebuilt) {
+              updates.set(decl.name, rebuilt);
+              ctx.logger.info(`${decl.name}: ${decl.version ?? "?"} → ${latest.version}`);
+            } else {
+              ctx.logger.warn(`${decl.name}: latest version has no matching deployment; skipped`);
+            }
+          }
+        },
+        { quiet: ctx.flags.quiet },
+      );
       if (updates.size === 0) {
         const extra = missing > 0 ? `, ${missing} missing` : "";
         ctx.logger.info(`all up to date (${current} current${extra})`);

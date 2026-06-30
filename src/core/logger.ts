@@ -21,30 +21,81 @@ export function dim(msg: string): string {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+// At most one spinner animates at a time. `active` is the spinner's mutable
+// state (so `update` can swap the message live); the logger consults it to wipe
+// the spinner line before printing so log output never lands mid-frame.
+let active: { message: string } | null = null;
+let timer: ReturnType<typeof setInterval> | undefined;
+let frame = 0;
+
+function renderActive(): void {
+  if (!active) return;
+  const glyph = SPINNER_FRAMES[frame++ % SPINNER_FRAMES.length];
+  process.stderr.write(`\r${COLORS.cyan}${glyph}${COLORS.reset} ${active.message}`);
+}
+
 /**
- * Run `fn` while an animated spinner ticks on stderr. Skipped (so `fn` just
- * runs) when stderr isn't a TTY or `quiet` is set, keeping scripts, CI, and the
- * test suite free of escape codes.
+ * Erase the current spinner frame from the stderr line so the next write starts
+ * clean. No-op when no spinner is running (which includes every non-TTY run, so
+ * scripts/tests are unaffected). The spinner redraws itself on its next tick.
+ */
+function clearActiveLine(): void {
+  if (active) process.stderr.write("\r\x1b[2K");
+}
+
+export interface Spinner {
+  /** Swap the displayed message (takes effect on the next frame). */
+  update(message: string): void;
+  /** Stop animating and clear the line. Idempotent; safe after a newer spinner replaced this one. */
+  stop(): void;
+}
+
+/**
+ * Start an animated spinner on stderr and return a handle to update/stop it.
+ * A no-op handle when stderr isn't a TTY or `quiet` is set (keeping scripts, CI,
+ * and tests free of escape codes). Only one spinner runs at a time — starting a
+ * new one supersedes any prior; the superseded handle's `update`/`stop` become
+ * inert (guarded by identity) so a late `stop()` can't wipe the newer spinner.
+ */
+export function createSpinner(message: string, opts: { quiet?: boolean } = {}): Spinner {
+  if (opts.quiet || !process.stderr.isTTY) {
+    return { update() {}, stop() {} };
+  }
+  if (timer) clearInterval(timer); // supersede any running spinner
+  const self = { message };
+  active = self;
+  process.stderr.write("\x1b[?25l"); // hide cursor
+  renderActive();
+  timer = setInterval(renderActive, 80);
+  return {
+    update(next: string): void {
+      if (active === self) self.message = next;
+    },
+    stop(): void {
+      if (active !== self) return; // a newer spinner took over; leave it alone
+      if (timer) clearInterval(timer);
+      timer = undefined;
+      active = null;
+      process.stderr.write("\r\x1b[2K\x1b[?25h"); // clear line + restore cursor
+    },
+  };
+}
+
+/**
+ * Run `fn` while a spinner ticks on stderr (convenience wrapper over
+ * {@link createSpinner}); the spinner is always stopped when `fn` settles.
+ * Skipped (so `fn` just runs) when stderr isn't a TTY or `quiet` is set.
  */
 export async function withSpinner<T>(
   message: string,
   fn: () => Promise<T>,
   opts: { quiet?: boolean } = {},
 ): Promise<T> {
-  if (opts.quiet || !process.stderr.isTTY) return fn();
-  let frame = 0;
-  const render = (): void => {
-    const glyph = SPINNER_FRAMES[frame++ % SPINNER_FRAMES.length];
-    process.stderr.write(`\r${COLORS.cyan}${glyph}${COLORS.reset} ${message}`);
-  };
-  process.stderr.write("\x1b[?25l"); // hide cursor
-  render();
-  const timer = setInterval(render, 80);
+  const spinner = createSpinner(message, opts);
   try {
     return await fn();
   } finally {
-    clearInterval(timer);
-    process.stderr.write("\r\x1b[2K\x1b[?25h"); // clear line + restore cursor
+    spinner.stop();
   }
 }
 
@@ -57,27 +108,34 @@ export function createLogger(opts: CreateLoggerOptions = {}): Logger {
   const debugEnabled = opts.debug ?? process.env["AGNOS_DEBUG"] === "1";
   const quiet = opts.quiet ?? false;
   const noop = () => {};
+  // Wipe any running spinner frame before each write so the log line lands on a
+  // clean row; the spinner redraws below it on its next tick.
   return {
     info: quiet
       ? noop
       : (msg) => {
+          clearActiveLine();
           console.log(msg);
         },
     success: quiet
       ? noop
       : (msg) => {
+          clearActiveLine();
           console.log(paint("green", "✓ ") + msg);
         },
     warn(msg) {
+      clearActiveLine();
       console.warn(paint("yellow", "! ") + msg);
     },
     error(msg) {
+      clearActiveLine();
       console.error(paint("red", "✗ ") + msg);
     },
     debug: quiet
       ? noop
       : (msg) => {
           if (!debugEnabled) return;
+          clearActiveLine();
           console.error(paint("gray", "· " + msg));
         },
   };

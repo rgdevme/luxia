@@ -33,7 +33,10 @@ export async function startWatch(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const schedule = (): void => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => void once(), 150);
+    timer = setTimeout(() => {
+      ctx.logger.info("agnos.json changed — re-running…");
+      void once();
+    }, 150);
   };
   watcher.on("change", schedule).on("add", schedule).on("unlink", schedule);
   ctx.logger.info(`watching ${ctx.configPath} (Ctrl-C to stop)`);

@@ -34,7 +34,8 @@ export type {
   SkillsConfig,
 } from "./types/public.js";
 
-export { createLogger, dim, withSpinner } from "./logger.js";
+export { createLogger, createSpinner, dim, withSpinner } from "./logger.js";
+export type { Spinner } from "./logger.js";
 export { exclusiveCheckbox } from "./prompts.js";
 export type { ExclusiveChoice, ExclusiveConfig, PickChoice } from "./prompts.js";
 export {
