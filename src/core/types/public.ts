@@ -70,10 +70,15 @@ export interface RulesDeclaration {
 
 export interface McpDeclaration {
   name: string;
+  /** Registry reverse-DNS identifier (e.g. `io.github.user/weather`). Set iff the server came from the MCP registry; absent for manually-added servers. */
   source?: string;
+  /** Installed registry server version, used to detect updates. Set alongside `source`. */
+  version?: string;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /** HTTP headers for remote (sse/http) transports — e.g. auth tokens. */
+  headers?: Record<string, string>;
   transport?: "stdio" | "sse" | "http";
 }
 

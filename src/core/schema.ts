@@ -38,9 +38,11 @@ export const skillsConfigSchema = z.object({
 export const mcpDeclarationSchema = z.object({
   name: z.string().min(1),
   source: z.string().min(1).optional(),
+  version: z.string().min(1).optional(),
   command: z.string().min(1).optional(),
   args: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   transport: z.enum(["stdio", "sse", "http"]).optional(),
 });
 
