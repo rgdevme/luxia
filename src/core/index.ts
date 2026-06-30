@@ -58,7 +58,7 @@ export {
 export { buildResolveContext, workspaceRelativePath } from "./context.js";
 export { loadPlugins, orderedDomains, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
-export { runAll, runOne } from "./run.js";
+export { runAll, runOne, runFrom } from "./run.js";
 export { runDomainInitSteps, runAllDomainInitSteps } from "./commands/init-steps.js";
 export type { RunStepsOptions } from "./commands/init-steps.js";
 export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";

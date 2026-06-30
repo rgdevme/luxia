@@ -262,6 +262,11 @@ export const agentsDomain: Domain = {
     }
     return undefined;
   },
+  // The config reader re-renders whenever agnos.json changes — that is where the
+  // active agents, skills, mcp, hooks, and rules-file list it materializes live.
+  watchPaths(_config, ctx) {
+    return [ctx.configPath];
+  },
 };
 
 export { ADAPTERS };

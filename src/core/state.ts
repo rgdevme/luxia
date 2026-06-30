@@ -7,6 +7,13 @@ export interface AgnosState {
   initializedDomains: string[];
   /** agentId → set of domain names that have completed onImport. */
   importedDomains?: Record<string, string[]>;
+  /**
+   * Canonical rules file (as declared in `rules.files`) → the section slugs
+   * agnos last injected into it. Lets the heading-delimited injector prune the
+   * sections of removed fragments without sentinels, while leaving hand-authored
+   * `##` sections untouched.
+   */
+  rulesSections?: Record<string, string[]>;
 }
 
 const DEFAULT_STATE: AgnosState = {
@@ -14,6 +21,7 @@ const DEFAULT_STATE: AgnosState = {
   installedAgents: [],
   initializedDomains: [],
   importedDomains: {},
+  rulesSections: {},
 };
 
 export async function readState(statePath: string): Promise<AgnosState> {
@@ -81,11 +89,12 @@ function normalize(parsed: Partial<AgnosState>): AgnosState {
     initializedDomains: Array.isArray(parsed.initializedDomains)
       ? parsed.initializedDomains.filter((x): x is string => typeof x === "string")
       : [],
-    importedDomains: normalizeImportedDomains(parsed.importedDomains),
+    importedDomains: normalizeStringListMap(parsed.importedDomains),
+    rulesSections: normalizeStringListMap(parsed.rulesSections),
   };
 }
 
-function normalizeImportedDomains(value: unknown): Record<string, string[]> {
+function normalizeStringListMap(value: unknown): Record<string, string[]> {
   if (!value || typeof value !== "object") return {};
   const out: Record<string, string[]> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {

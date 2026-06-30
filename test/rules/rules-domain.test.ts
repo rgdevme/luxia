@@ -46,12 +46,32 @@ describe("injectRules", () => {
     };
     await injectRules(config, ctxFor(tmp));
     const first = await read("AGENTS.md");
-    expect(first).toContain("<!-- agnos:section:security -->");
-    expect(first).toContain("# Security");
+    expect(first).toContain("## Security");
+    expect(first).not.toContain("<!--"); // heading-delimited, no sentinels
     expect(first).toContain("no secrets");
     // idempotent: a second run leaves the file byte-identical
     await injectRules(config, ctxFor(tmp));
     expect(await read("AGENTS.md")).toBe(first);
+  });
+
+  it("preserves hand-written sections and tracks managed slugs in state", async () => {
+    await frag("frag/sec.md", "Security", "no secrets");
+    const ctx = ctxFor(tmp);
+    await fs.writeFile(path.join(tmp, "AGENTS.md"), "# AGENTS\n\nintro\n\n## Manual\n\nkeep me\n");
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      rules: { files: { "./AGENTS.md": ["./frag/sec.md"] } },
+    };
+    await injectRules(config, ctx);
+    const out = await read("AGENTS.md");
+    expect(out).toContain("## Manual");
+    expect(out).toContain("keep me");
+    expect(out).toContain("## Security");
+    // managed slugs are persisted so a later run can prune removed fragments
+    const state = JSON.parse(await read(".agnos/state.json")) as {
+      rulesSections?: Record<string, string[]>;
+    };
+    expect(state.rulesSections?.["./AGENTS.md"]).toEqual(["security"]);
   });
 
   it("fans out one fragment into multiple canonical files", async () => {
