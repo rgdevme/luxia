@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import matter from "gray-matter";
 import type { AgnosConfig, ResolveContext } from "../../src/core/index.js";
 import { createLogger } from "../../src/core/index.js";
-import { compileDocsIndex, effectiveMetadata } from "../../src/domains/docs/index.js";
+import { compileDocsIndex } from "../../src/domains/docs/index.js";
 
 let tmp: string;
 
@@ -22,20 +23,19 @@ function ctxFor(root: string): ResolveContext {
   };
 }
 
-async function doc(rel: string, fm: Record<string, string>, body = "body"): Promise<void> {
-  const front = Object.entries(fm)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\n");
+async function doc(rel: string, fm: Record<string, unknown>, body = "body"): Promise<void> {
   const abs = path.join(tmp, ".docs", rel);
   await fs.mkdir(path.dirname(abs), { recursive: true });
-  await fs.writeFile(abs, `---\n${front}\n---\n${body}\n`);
+  await fs.writeFile(abs, matter.stringify(`${body}\n`, fm));
 }
 
 const full = (title: string, description: string) => ({
+  type: "Technical Doc",
   title,
   description,
-  read_when: "always",
-  agent_cant: "delete",
+  resource: "",
+  tags: [],
+  timestamp: "2026-06-30T00:00:00Z",
 });
 
 const readIndex = () => fs.readFile(path.join(tmp, ".docs", "index.md"), "utf8");
@@ -48,23 +48,13 @@ afterEach(async () => {
   await fs.rm(tmp, { recursive: true, force: true });
 });
 
-describe("effectiveMetadata", () => {
-  it("merges user metadata onto the opinionated defaults", () => {
-    const meta = effectiveMetadata({
-      schemaVersion: 1,
-      docs: { root: ".docs", metadata: { owner: "team" } },
-    });
-    expect(meta["title"]).toBeDefined(); // default kept
-    expect(meta["owner"]).toBe("team"); // user-added
-  });
-});
-
 describe("compileDocsIndex", () => {
   it("compiles a titled, deterministic index and self-excludes it", async () => {
     await doc("setup.md", full("Setup", "how to set up"));
     await doc("api/auth.md", full("Auth", "authentication"));
     const res = await compileDocsIndex(config, ctxFor(tmp));
     expect(res.written).toBe(true);
+    expect(res.incomplete).toEqual([]);
     const idx = await readIndex();
     expect(idx.startsWith("---\ntitle: Documentation Index\n---")).toBe(true); // injectable by rules
     expect(idx).toContain("### Overview");
@@ -85,12 +75,83 @@ describe("compileDocsIndex", () => {
     expect(await readIndex()).toBe(first);
   });
 
-  it("warns about missing metadata but still indexes the doc", async () => {
-    await doc("partial.md", { title: "Partial" }); // missing description/read_when/agent_cant
+  it("treats a doc with empty resource and tags as complete", async () => {
+    await doc("ok.md", {
+      type: "Doc",
+      title: "OK",
+      description: "fine",
+      resource: "",
+      tags: [],
+      timestamp: "2026-06-30T00:00:00Z",
+    });
     const res = await compileDocsIndex(config, ctxFor(tmp));
-    expect(res.missing).toEqual([
-      { file: "partial.md", keys: ["description", "read_when", "agent_cant"] },
-    ]);
+    expect(res.incomplete).toEqual([]);
+  });
+
+  it("accepts an unquoted ISO timestamp that YAML parses into a Date", async () => {
+    const abs = path.join(tmp, ".docs", "dated.md");
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(
+      abs,
+      `---\ntype: Doc\ntitle: Dated\ndescription: d\nresource: ""\ntags: []\ntimestamp: 2026-06-30T00:00:00Z\n---\nbody\n`,
+    );
+    const res = await compileDocsIndex(config, ctxFor(tmp));
+    expect(res.incomplete).toEqual([]);
+  });
+
+  it("reports a doc missing required fields as incomplete but still indexes it", async () => {
+    await doc("partial.md", { title: "Partial" }); // missing type/description/resource/tags/timestamp
+    const res = await compileDocsIndex(config, ctxFor(tmp));
+    expect(res.incomplete).toEqual(["partial.md"]);
     expect(await readIndex()).toContain("[Partial](partial.md)");
+  });
+
+  it("reports a doc that omits the resource or tags keys as incomplete", async () => {
+    await doc("noresource.md", {
+      type: "Doc",
+      title: "No resource",
+      description: "d",
+      tags: [],
+      timestamp: "2026-06-30T00:00:00Z",
+    });
+    await doc("notags.md", {
+      type: "Doc",
+      title: "No tags",
+      description: "d",
+      resource: "",
+      timestamp: "2026-06-30T00:00:00Z",
+    });
+    const res = await compileDocsIndex(config, ctxFor(tmp));
+    expect(res.incomplete.sort()).toEqual(["noresource.md", "notags.md"]);
+  });
+
+  it("excludes reserved index.md and log.md from the scan and the listing", async () => {
+    await doc("guide.md", full("Guide", "a guide"));
+    await fs.writeFile(
+      path.join(tmp, ".docs", "log.md"),
+      "# Log\n\n## 2026-06-30\n\n- did a thing\n",
+    );
+    const res = await compileDocsIndex(config, ctxFor(tmp));
+    expect(res.incomplete).toEqual([]); // log.md is not scanned despite having no frontmatter
+    const idx = await readIndex();
+    expect(idx).not.toContain("log.md");
+    expect(idx).not.toContain("index.md");
+    expect(idx).toContain("[Guide](guide.md)");
+  });
+
+  it("warns with the incomplete-files list and the metadata shape", async () => {
+    await doc("partial.md", { title: "Partial" });
+    const warnings: string[] = [];
+    const ctx = ctxFor(tmp);
+    ctx.logger = { ...ctx.logger, warn: (m: string) => warnings.push(m) };
+    await compileDocsIndex(config, ctx);
+    expect(warnings).toHaveLength(1);
+    const msg = warnings[0]!;
+    expect(msg).toContain("The following files' metadata is incomplete:");
+    expect(msg).toContain("- partial.md");
+    expect(msg).toContain("Metadata shape:");
+    expect(msg).toContain(" > ```markdown");
+    expect(msg).toContain(" > type:");
+    expect(msg).toContain(" > timestamp:");
   });
 });

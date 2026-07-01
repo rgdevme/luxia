@@ -10,8 +10,6 @@ export type AgentRef = string;
 export interface DocsConfig {
   /** Docs directory, relative to project root. Defaults to ".docs". */
   root?: string;
-  /** Frontmatter key → description, merged onto the opinionated defaults. */
-  metadata?: Record<string, string>;
 }
 
 export interface AgnosConfig {
