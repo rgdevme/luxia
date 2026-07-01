@@ -91,14 +91,13 @@ Domains run in priority order (`skills` → `docs` → `rules` → `mcp` → `ho
 
 ## Installation
 
-Requires **Node.js 24 or newer**. agnos is ESM-only.
+Requires **Node.js 24 or newer**. agnos is ESM-only. This project uses **pnpm** exclusively.
 
 ```sh
 # global (recommended for the CLI)
-npm i -g @luxia/agnos
+pnpm add -g @luxia/agnos
 
 # or per-project
-npm i -D @luxia/agnos
 pnpm add -D @luxia/agnos
 ```
 
@@ -111,11 +110,7 @@ agnos --once        # run the pipeline once: prepare skills → docs → rules �
 agnos               # watch mode: keep agent files in sync as sources change
 ```
 
-> **NOTE**: We recommend running `agnos agents` from an elevated terminal the first time.
->
-> This way, it will create sym-links during the agents rendering cycle. Using a non-elevated terminal will use hard links, and fall back to plain copy.
->
-> Subsequent runs can be done without elevated priviledges, as the sym-links do not need to updated.
+> **NOTE**: agnos always tries a symlink first when the `agents` domain links skills or mirrors rules. On Windows, creating a file symlink can require an elevated terminal or Developer Mode; when that's not available it falls back to a hardlink, then a plain copy. Directories use junctions on Windows instead, which don't need elevation. macOS/Linux create symlinks without any special privileges.
 
 Typical workflow:
 
@@ -127,81 +122,46 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 
 ## Configuration (`agnos.json`)
 
-`agnos --init` writes a minimal starting config. This is the default agnos ships with:
+`agnos --init` walks you through building `agnos.json` interactively; running it seeds `agents`, `docs.root`, `rules.files`, and `skills.route`. `mcp` and `hooks` entries are added afterward via their subcommands (or by hand). Here's an example showing every domain populated at once:
 
-```jsonc
+```json
 {
   "$schema": "https://unpkg.com/@luxia/agnos/schema.json",
   "schemaVersion": 1,
   "agents": ["claude-code", "codex"],
+  "docs": { "root": ".docs" },
   "rules": {
     "files": {
-      "./AGENTS.md": [],
-    },
+      "./AGENTS.md": ["./.docs/index.md", "./.rules/security.md", "./.rules/style.md"]
+    }
   },
-  "skills": {},
-  "mcp": [],
-  "docs": { "root": ".docs" },
-}
-```
-
-A fuller, annotated example showing every domain:
-
-```jsonc
-{
-  // Recommended so editors validate + autocomplete agnos.json.
-  "$schema": "https://unpkg.com/@luxia/agnos/schema.json",
-  "schemaVersion": 1,
-
-  // Active agents: their native files are rendered on every run.
-  "agents": ["claude-code", "codex"],
-
-  // docs: compile a metadata index from this directory; surface it by
-  // listing the generated index in rules.files.
-  "docs": { "root": ".docs" },
-
-  // rules: map each canonical rules file to the fragment files whose
-  // titled sections (frontmatter `title`) are injected into it.
-  "rules": {
-    "files": {
-      "./AGENTS.md": ["./.docs/index.md", "./.rules/security.md", "./.rules/style.md"],
-    },
-  },
-
-  // skills: local name → composite source ref.
-  //   github:<owner>/<repo>/<path>[#ref] | gitlab: | bitbucket: | file:<path>
   "skills": {
-    "route": ".agnos/skills", // optional; where canonical skill bytes live
     "sources": {
-      "pdf": "github:vercel-labs/agent-skills/skills/pdf",
-      "docx": "github:vercel-labs/agent-skills/skills/docx",
-    },
+      "pdf": "github:vercel-labs/agent-skills/skills/pdf"
+    }
   },
-
-  // mcp: server declarations, rendered into each agent's native MCP config.
   "mcp": [
     {
       "name": "github",
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }, // ${VAR} resolved at render time
-    },
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+    }
   ],
-
-  // hooks: a flat array of command hooks (5 fields, strict). Agents regroup
-  // and render each entry into their native format.
   "hooks": [
     {
       "event": "PreToolUse",
       "matcher": "git",
       "type": "command",
       "command": "echo 'about to run git'",
-      "message": "checking git usage",
-    },
-  ],
+      "message": "checking git usage"
+    }
+  ]
 }
 ```
+
+`agnos.json` is parsed as strict JSON (no comments, no trailing commas), so the block above is copy-pasteable as-is. `${VAR}` placeholders inside `mcp.env`/`mcp.headers` are resolved at render time.
 
 **Field reference** (see [`schema.json`](schema.json) for the authoritative definition):
 
