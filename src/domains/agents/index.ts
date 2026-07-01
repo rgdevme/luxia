@@ -6,6 +6,7 @@ import type {
   CommandSpec,
   Domain,
   ExclusiveChoice,
+  HookEvent,
   MaterializeContext,
   ResolveContext,
   ResolvedMcp,
@@ -13,6 +14,7 @@ import type {
 import { buildPaths, readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { adapterById, ADAPTERS, DEFAULT_AGENT_IDS } from "../../agents/adapters/index.js";
 import { removePaths } from "../../agents/adapters/shared.js";
+import { supportsHookEvent } from "../../agents/adapters/hooks-map.js";
 import { multiSelectInteractive, writeChange } from "../cli-helpers.js";
 
 const ADD_HINT =
@@ -66,6 +68,19 @@ export function activeAdapters(config: AgnosConfig, ctx: ResolveContext): AgentA
     else ctx.logger.warn({ message: `unknown agent "${ref}"`, status: "skipped" });
   }
   return out;
+}
+
+/**
+ * Installed agents whose adapter does not support `event` — used by `hooks add`
+ * to warn that a newly-added hook will not reach those agents. Support is read
+ * from each adapter's declared `hookEvents` map (the central mapping registry).
+ */
+export function agentsMissingHookEvent(
+  event: HookEvent,
+  config: AgnosConfig,
+  ctx: ResolveContext,
+): AgentAdapter[] {
+  return activeAdapters(config, ctx).filter((a) => !supportsHookEvent(a.hookEvents, event));
 }
 
 /**
