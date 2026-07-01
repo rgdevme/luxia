@@ -270,7 +270,45 @@ describe("gemini-cli adapter", () => {
     expect(settings).toEqual({ theme: "dark" });
   });
 
-  it("claims the GEMINI.md mirror and settings file", async () => {
+  it("hooks render translates the event vocabulary and round-trips the mapped ones", async () => {
+    const ctx = ctxFor(tmp);
+    const withUnsupported: HookEntry[] = [
+      { event: "PreToolUse", matcher: "git", type: "command", command: "echo guard", message: "m" },
+      { event: "SessionStart", type: "command", command: "date" },
+      { event: "SubagentStop", type: "command", command: "sub" }, // no Gemini equivalent
+    ];
+    await geminiCli.render!["hooks"]!(withUnsupported, ctx);
+    const written = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    // agnos PreToolUse → Gemini BeforeTool; message dropped (Gemini has no status field).
+    expect(written.hooks.BeforeTool).toEqual([
+      { matcher: "git", hooks: [{ type: "command", command: "echo guard" }] },
+    ]);
+    expect(written.hooks.SessionStart).toBeDefined();
+    expect(written.hooks.SubagentStop).toBeUndefined();
+    const scraped = (await geminiCli.scrape!["hooks"]!(ctx)) as HookEntry[];
+    expect(scraped).toEqual([
+      { event: "PreToolUse", matcher: "git", type: "command", command: "echo guard" },
+      { event: "SessionStart", type: "command", command: "date" },
+    ]);
+  });
+
+  it("mcp and hooks share settings.json without clobbering each other", async () => {
+    const ctx = ctxFor(tmp);
+    await geminiCli.render!["mcp"]!(SERVERS, ctx);
+    await geminiCli.render!["hooks"]!(
+      [{ event: "SessionStart", type: "command", command: "date" }],
+      ctx,
+    );
+    const settings = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    expect(settings.mcpServers.fs).toBeDefined(); // survived the hooks write
+    expect(settings.hooks.SessionStart).toBeDefined();
+  });
+
+  it("claims the GEMINI.md mirror and skills dir, not the shared settings file", async () => {
     const ctx = ctxFor(tmp);
     await fs.writeFile(
       path.join(tmp, "agnos.json"),
@@ -278,6 +316,7 @@ describe("gemini-cli adapter", () => {
     );
     const claims = await geminiCli.claims!(ctx);
     expect(claims).toContain(path.join(tmp, "GEMINI.md"));
-    expect(claims).toContain(path.join(tmp, ".gemini", "settings.json"));
+    expect(claims).toContain(path.join(tmp, ".gemini", "skills"));
+    expect(claims).not.toContain(path.join(tmp, ".gemini", "settings.json"));
   });
 });
