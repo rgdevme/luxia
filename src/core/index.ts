@@ -12,6 +12,7 @@ export type {
   FlagType,
   HookEntry,
   HookEvent,
+  HookEventMap,
   HooksDeclaration,
   InitStep,
   InitStepBase,

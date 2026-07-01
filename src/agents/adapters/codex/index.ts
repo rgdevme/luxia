@@ -4,13 +4,13 @@ import TOML from "@iarna/toml";
 import type {
   AgentAdapter,
   HookEntry,
-  HookEvent,
+  HookEventMap,
   MaterializeContext,
   McpDeclaration,
   ResolvedMcp,
 } from "../../../core/index.js";
 import { importMcpServers, pickEnv, pickStringArray } from "../../../core/index.js";
-import { flattenHooks, groupHooks } from "../hooks-map.js";
+import { identityEventMap, renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
 import { linkSkills, mirrorRules, removePaths, writeIfChanged } from "../shared.js";
 
 const CODEX_RULES = "AGENTS.md";
@@ -19,21 +19,25 @@ const CODEX_CONFIG = path.join(CODEX_DIR, "config.toml");
 const CODEX_HOOKS = path.join(CODEX_DIR, "hooks.json");
 const CODEX_SKILLS_DIR = path.join(".agents", "skills");
 
-/** New-vocabulary events Codex understands (intersection with the closed set). */
-const CODEX_EVENTS: ReadonlySet<HookEvent> = new Set<HookEvent>([
+/** Codex uses the canonical event names verbatim, for the subset it understands. */
+const CODEX_HOOK_EVENTS: HookEventMap = identityEventMap([
+  "SessionStart",
+  "SubagentStart",
   "PreToolUse",
+  "PermissionRequest",
   "PostToolUse",
-  "UserPromptSubmit",
   "PreCompact",
+  "PostCompact",
+  "UserPromptSubmit",
   "SubagentStop",
   "Stop",
-  "SessionStart",
 ]);
 
 const codex: AgentAdapter = {
   id: "codex",
   displayName: "OpenAI Codex",
   paths: { skillsDir: CODEX_SKILLS_DIR, rulesFilename: CODEX_RULES, rulesRoot: "." },
+  hookEvents: CODEX_HOOK_EVENTS,
 
   render: {
     async rules(state, ctx) {
@@ -54,7 +58,7 @@ const codex: AgentAdapter = {
 
   scrape: {
     mcp: (ctx) => importCodexConfig(ctx),
-    hooks: async (ctx) => flattenHooks(await readCodexHooks(ctx)),
+    hooks: async (ctx) => scrapeNativeHooks(await readCodexHooks(ctx), CODEX_HOOK_EVENTS),
     skills: () => Promise.resolve([]),
   },
 
@@ -67,12 +71,9 @@ const codex: AgentAdapter = {
 
 async function writeCodexHooks(entries: HookEntry[], ctx: MaterializeContext): Promise<void> {
   const file = path.join(ctx.projectRoot, CODEX_HOOKS);
-  const { hooks, dropped } = groupHooks(entries, { events: CODEX_EVENTS, withMessage: false });
-  if (dropped > 0) {
-    ctx.logger.warn(
-      `codex: skipped ${dropped} hook${dropped === 1 ? "" : "s"} for unsupported events`,
-    );
-  }
+  // Codex supports a handler `statusMessage`; unsupported events are surfaced at
+  // `hooks add` time, so render just skips them.
+  const { hooks } = renderNativeHooks(entries, CODEX_HOOK_EVENTS, { withMessage: true });
   if (Object.keys(hooks).length === 0) {
     if (!ctx.dryRun) await fs.rm(file, { force: true }).catch(() => {});
     return;

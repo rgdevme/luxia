@@ -9,7 +9,7 @@ import {
   reqArg,
   writeChange,
 } from "../cli-helpers.js";
-import { scrapeActive } from "../agents/index.js";
+import { agentsMissingHookEvent, scrapeActive } from "../agents/index.js";
 
 export { hookIdentity };
 
@@ -53,6 +53,13 @@ const commands: Record<string, CommandSpec> = {
       const hooks = config.hooks ?? [];
       if (hooks.some((h) => hookIdentity(h) === hookIdentity(entry))) {
         throw new Error(`a hook with that (event, matcher, command) already exists`);
+      }
+      const unsupported = agentsMissingHookEvent(entry.event, config, ctx);
+      if (unsupported.length > 0) {
+        ctx.logger.warn(
+          `event "${entry.event}" is not supported by ${unsupported.map((a) => a.displayName).join(", ")}; ` +
+            `the hook will not be rendered for ${unsupported.length === 1 ? "it" : "them"}`,
+        );
       }
       await writeChange(ctx, `added ${entry.event} hook`, { ...config, hooks: [...hooks, entry] });
     },

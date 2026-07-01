@@ -1,11 +1,10 @@
-import type { HookEntry, HookEvent } from "../../core/index.js";
-import { hookEventSchema } from "../../core/index.js";
+import type { HookEntry, HookEvent, HookEventMap } from "../../core/index.js";
 
 /**
  * An agent's native hooks shape: event → matcher groups → command handlers.
- * Both Claude Code (`.claude/settings.json#hooks`) and Codex (`.codex/hooks.json#hooks`)
- * use this record form, so the regroup/flatten logic is shared; agents differ
- * only in which events they support and whether they carry `statusMessage`.
+ * Claude Code, Codex, and Gemini CLI all use this record form; agents differ
+ * only in their native event names (see {@link HookEventMap}) and whether they
+ * carry a `statusMessage`.
  */
 export interface NativeHookHandler {
   type: "command";
@@ -20,34 +19,46 @@ export interface NativeHookGroup {
 
 export type NativeHooks = Record<string, NativeHookGroup[]>;
 
-const KNOWN_EVENTS: ReadonlySet<string> = new Set(hookEventSchema.options);
-
-export interface GroupOptions {
-  /** Restrict to these events (e.g. the subset an agent supports). Omit = all. */
-  events?: ReadonlySet<HookEvent>;
+export interface RenderOptions {
   /** Render `message` as the handler's `statusMessage` (agents that support it). */
   withMessage?: boolean;
 }
 
+/** Whether an agent's mapping supports a given canonical event. */
+export function supportsHookEvent(map: HookEventMap | undefined, event: HookEvent): boolean {
+  return !!map && event in map;
+}
+
 /**
- * Regroup a flat hook array into an agent's native record, grouping by
- * `(event, matcher)`. Deterministic: events and matcher groups appear in first-
- * seen order, so re-rendering identical input yields byte-identical output.
- * Returns the count of entries dropped because the agent doesn't support them.
+ * Build an identity {@link HookEventMap} for an agent that uses the canonical
+ * event names verbatim — the value equals the key for every listed event.
  */
-export function groupHooks(
+export function identityEventMap(events: readonly HookEvent[]): HookEventMap {
+  return Object.fromEntries(events.map((e) => [e, e]));
+}
+
+/**
+ * Render the canonical flat hook array into an agent's native record, keyed by
+ * that agent's *native* event names via `map`. Groups by `(nativeEvent, matcher)`
+ * in first-seen order, so re-rendering identical input yields byte-identical
+ * output. Entries whose event the agent doesn't support are skipped and counted
+ * in `dropped` — they stay in the central registry, just not in this agent.
+ */
+export function renderNativeHooks(
   entries: HookEntry[],
-  opts: GroupOptions = {},
+  map: HookEventMap,
+  opts: RenderOptions = {},
 ): { hooks: NativeHooks; dropped: number } {
   const hooks: NativeHooks = {};
   let dropped = 0;
 
   for (const entry of entries) {
-    if (opts.events && !opts.events.has(entry.event)) {
+    const nativeEvent = map[entry.event];
+    if (!nativeEvent) {
       dropped++;
       continue;
     }
-    const groups = (hooks[entry.event] ??= []);
+    const groups = (hooks[nativeEvent] ??= []);
     const matcher = entry.matcher;
     let group = groups.find((g) => g.matcher === matcher);
     if (!group) {
@@ -63,15 +74,21 @@ export function groupHooks(
 }
 
 /**
- * Flatten an agent's native hooks record back into the canonical flat array.
- * Keeps only known events and `command` handlers; maps `statusMessage` →
- * `message`. Used by the reverse-import (`scrape`) path. Never throws.
+ * Flatten an agent's native hooks record back into the canonical flat array,
+ * translating native event names to canonical ones via `map`. Keeps only events
+ * the agent maps and `command` handlers; maps `statusMessage` → `message`. Used
+ * by the reverse-import (`scrape`) path. Never throws.
  */
-export function flattenHooks(native: unknown): HookEntry[] {
+export function scrapeNativeHooks(native: unknown, map: HookEventMap): HookEntry[] {
   if (!native || typeof native !== "object" || Array.isArray(native)) return [];
+  const nativeToCanonical = new Map<string, HookEvent>();
+  for (const [canonical, nativeName] of Object.entries(map)) {
+    if (nativeName) nativeToCanonical.set(nativeName, canonical as HookEvent);
+  }
   const out: HookEntry[] = [];
-  for (const [event, rawGroups] of Object.entries(native as Record<string, unknown>)) {
-    if (!KNOWN_EVENTS.has(event) || !Array.isArray(rawGroups)) continue;
+  for (const [nativeEvent, rawGroups] of Object.entries(native as Record<string, unknown>)) {
+    const event = nativeToCanonical.get(nativeEvent);
+    if (!event || !Array.isArray(rawGroups)) continue;
     for (const rawGroup of rawGroups) {
       if (!rawGroup || typeof rawGroup !== "object") continue;
       const group = rawGroup as { matcher?: unknown; hooks?: unknown };
@@ -81,11 +98,7 @@ export function flattenHooks(native: unknown): HookEntry[] {
         if (!rawHandler || typeof rawHandler !== "object") continue;
         const h = rawHandler as Record<string, unknown>;
         if (h["type"] !== "command" || typeof h["command"] !== "string") continue;
-        const entry: HookEntry = {
-          event: event as HookEvent,
-          type: "command",
-          command: h["command"],
-        };
+        const entry: HookEntry = { event, type: "command", command: h["command"] };
         if (matcher !== undefined) entry.matcher = matcher;
         if (typeof h["statusMessage"] === "string") entry.message = h["statusMessage"];
         out.push(entry);

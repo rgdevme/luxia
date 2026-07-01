@@ -20,9 +20,9 @@
 
 ## What is agnos?
 
-**agnos is a project-level configuration manager for AI coding agents.** You declare your docs, rules, skills, MCP servers, and hooks once in a single `agnos.json` at the root of your repo. agnos materializes that declaration into whatever each agent expects to find on disk: `CLAUDE.md` + `.mcp.json` + `.claude/settings.json` for **Claude Code**, `AGENTS.md` + `.codex/config.toml` for **OpenAI Codex**, and so on.
+**agnos is a project-level configuration manager for AI coding agents.** You declare your docs, rules, skills, MCP servers, and hooks once in a single `agnos.json` at the root of your repo. agnos materializes that declaration into whatever each agent expects to find on disk: `CLAUDE.md` + `.mcp.json` + `.claude/settings.json` for **Claude Code**, `AGENTS.md` + `.codex/config.toml` for **OpenAI Codex**, `GEMINI.md` + `.gemini/settings.json` for **Gemini CLI**, and so on.
 
-agnos ships as a **single package** (`@luxia/agnos`) with a fixed, built-in set of agents (Claude Code, Codex) and domains (docs, rules, skills, mcp, hooks, agents). Point it at your project, run it once, or leave it in watch mode: every agent's files stay in sync with your one source of truth.
+agnos ships as a **single package** (`@luxia/agnos`) with a fixed, built-in set of agents (Claude Code, Codex, Gemini CLI) and domains (docs, rules, skills, mcp, hooks, agents). Point it at your project, run it once, or leave it in watch mode: every agent's files stay in sync with your one source of truth.
 
 ## What does it solve?
 
@@ -60,7 +60,7 @@ agnos collapses all of that into one declarative `agnos.json`. You edit intent; 
 ## Features
 
 - 🎯 **One source of truth**: declare docs, rules, skills, MCP servers, and hooks once in `agnos.json`.
-- 🔌 **Multi-agent output**: renders native files for Claude Code and OpenAI Codex from the same config.
+- 🔌 **Multi-agent output**: renders native files for Claude Code, OpenAI Codex, and Gemini CLI from the same config.
 - 👀 **Watch mode**: a per-domain watcher tree keeps agent files in sync as your sources change; edit a rule fragment and the canonical files re-render.
 - 🧩 **Composable rules**: inject titled sections (by frontmatter `title`) from fragment files into your canonical rules file, preserving your hand-written sections.
 - 📚 **Docs index**: compile a metadata index from your docs directory and surface it to agents.
@@ -128,7 +128,7 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 {
   "$schema": "https://unpkg.com/@luxia/agnos/schema.json",
   "schemaVersion": 1,
-  "agents": ["claude-code", "codex"],
+  "agents": ["claude-code", "codex", "gemini-cli"],
   "docs": { "root": ".docs" },
   "rules": {
     "files": {
@@ -168,7 +168,7 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 | Field            | Type                        | Description                                                                                  |
 | ---------------- | --------------------------- | -------------------------------------------------------------------------------------------- |
 | `schemaVersion`  | `1`                         | Required. Config schema version; must be `1`.                                                |
-| `agents`         | `string[]`                  | Active agent ids: `"claude-code"`, `"codex"`.                                                |
+| `agents`         | `string[]`                  | Active agent ids: `"claude-code"`, `"codex"`, `"gemini-cli"`.                                |
 | `docs.root`      | `string`                    | Directory the docs index is compiled from (default `.docs`).                                 |
 | `rules.files`    | `{ [canonical]: string[] }` | Maps each canonical rules file → fragment files whose titled sections are injected into it.  |
 | `skills.route`   | `string`                    | Canonical skills directory (default `.agnos/skills`); agents link their own skills dir here. |
@@ -270,7 +270,7 @@ The sole config reader: renders every active agent's native files. `add`/`remove
 
 ## Active development
 
-⚠️ **agnos is under active development.** The built-in roster is currently **Claude Code** and **OpenAI Codex**, with more agents planned. Config schema, CLI flags, and rendered output may change between releases: pin a version in CI and read the release notes before upgrading. Feedback and bug reports are very welcome.
+⚠️ **agnos is under active development.** The built-in roster is currently **Claude Code**, **OpenAI Codex**, and **Gemini CLI**, with more agents planned. Config schema, CLI flags, and rendered output may change between releases: pin a version in CI and read the release notes before upgrading. Feedback and bug reports are very welcome.
 
 ## Contributing
 

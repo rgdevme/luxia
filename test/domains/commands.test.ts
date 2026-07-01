@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { CommandContext, Domain } from "../../src/core/index.js";
+import type { CommandContext, Domain, Logger } from "../../src/core/index.js";
 import { createLogger, createRepoFetcher, readConfigOrDefault } from "../../src/core/index.js";
 import mcpDomain from "../../src/domains/mcp/index.js";
 import hooksDomain from "../../src/domains/hooks/index.js";
@@ -11,13 +11,15 @@ import { agentsDomain } from "../../src/domains/agents/index.js";
 
 let tmp: string;
 
+let capturedLogger: Logger | undefined;
+
 const ctxFor = (args: string[], extra: Record<string, unknown> = {}): CommandContext => ({
   agnosRoot: tmp,
   projectRoot: tmp,
   cacheDir: path.join(tmp, ".agnos", "cache"),
   configPath: path.join(tmp, "agnos.json"),
   statePath: path.join(tmp, ".agnos", "state.json"),
-  logger: createLogger({ quiet: true }),
+  logger: capturedLogger ?? createLogger({ quiet: true }),
   // Real fetcher: for `file:` (local) sources it just returns the absolute path,
   // so skills `add` discovery works without any network access.
   fetcher: createRepoFetcher({ projectRoot: tmp, cacheDir: path.join(tmp, ".agnos", "cache") }),
@@ -35,6 +37,7 @@ const run = (d: Domain, name: string, args: string[], extra?: Record<string, unk
 
 beforeEach(async () => {
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-cmd-"));
+  capturedLogger = undefined;
   await writeCfg({});
 });
 afterEach(async () => {
@@ -186,6 +189,27 @@ describe("hooks subcommands", () => {
   it("remove with no args in non-interactive mode is guarded (no prompt)", async () => {
     await run(hooksDomain, "add", ["Stop", "echo bye"]);
     await expect(run(hooksDomain, "remove", [])).rejects.toThrow(/terminal|specify/i);
+  });
+
+  it("warns which installed agents don't support the event when adding", async () => {
+    await writeCfg({ agents: ["claude-code", "codex", "gemini-cli"] });
+    const warnings: string[] = [];
+    capturedLogger = { ...createLogger({ quiet: true }), warn: (m) => warnings.push(String(m)) };
+    // Notification is unsupported by codex; SubagentStop is unsupported by gemini-cli.
+    await run(hooksDomain, "add", ["Notification", "notify.sh"]);
+    expect(warnings.some((w) => w.includes("Notification") && w.includes("OpenAI Codex"))).toBe(
+      true,
+    );
+    await run(hooksDomain, "add", ["SubagentStop", "sub.sh"]);
+    expect(warnings.some((w) => w.includes("SubagentStop") && w.includes("Gemini CLI"))).toBe(true);
+  });
+
+  it("does not warn when every installed agent supports the event", async () => {
+    await writeCfg({ agents: ["claude-code", "codex", "gemini-cli"] });
+    const warnings: string[] = [];
+    capturedLogger = { ...createLogger({ quiet: true }), warn: (m) => warnings.push(String(m)) };
+    await run(hooksDomain, "add", ["PreToolUse", "guard.sh"]); // supported by all three
+    expect(warnings).toEqual([]);
   });
 });
 
