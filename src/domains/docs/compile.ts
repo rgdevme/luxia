@@ -54,7 +54,7 @@ function renderIndexBody(docs: DocEntry[]): string {
   });
   const lines: string[] = [];
   for (const section of order) {
-    lines.push(`### ${section}`);
+    lines.push(`### ${section}`, "");
     const items = (groups.get(section) ?? []).sort((a, b) => a.title.localeCompare(b.title));
     for (const d of items) {
       lines.push(`- [${d.title}](${d.rel})${d.description ? `: ${d.description}` : ""}`);
