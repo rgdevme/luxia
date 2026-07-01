@@ -18,7 +18,6 @@ import {
   readSkillMeta,
   skillNameSchema,
   skillRefSchema,
-  withSpinner,
   writeConfig,
 } from "../../core/index.js";
 import {
@@ -158,9 +157,9 @@ async function diagnose(
   }
   const { steps } = await createSkillSteps(config, ctx);
   const bad: string[] = [];
-  await withSpinner(
-    `Checking ${count} skill${count === 1 ? "" : "s"}…`,
-    async () => {
+  await ctx.logger.info({
+    message: `Checking ${count} skill${count === 1 ? "" : "s"}…`,
+    waitFor: (async () => {
       for (const [name, composite] of Object.entries(sources)) {
         const f = await steps.fetch(name, composite);
         if (!f.ok || !f.src) {
@@ -170,9 +169,8 @@ async function diagnose(
         if (which === "version" && !(await steps.version(name, f.src))) bad.push(name);
         else if (which === "integrity" && !(await steps.integrity(name, f.src))) bad.push(name);
       }
-    },
-    { quiet: ctx.flags.quiet },
-  );
+    })(),
+  });
   const label = which === "fetch" ? "moved" : which === "version" ? "outdated" : "changed";
   if (bad.length > 0) ctx.logger.warn(`${which}: ${bad.length} ${label} (${bad.join(", ")})`);
   else ctx.logger.success(`${which}: all skills OK`);
@@ -223,26 +221,24 @@ const commands: Record<string, CommandSpec> = {
       // keeping provenance (incl. declaration order) so we can build composite
       // refs per origin and break same-name ties deterministically.
       const label = addresses.length === 1 ? addresses[0] : `${addresses.length} sources`;
-      const fetchedRepos = await withSpinner(
-        `Loading skills from ${label}…`,
-        () =>
-          Promise.all(
-            addresses.map(async (address, order) => {
-              const source = repoSource(providerFor(provider, address), address, ctx.projectRoot);
-              const fetched = await ctx.fetcher.fetch(source);
-              const skills = await findSkillsInRepo(fetched.path);
-              const repo: Repo = {
-                address,
-                source,
-                localRoot: fetched.path,
-                ...(fetched.ref ? { ref: fetched.ref } : {}),
-                order,
-              };
-              return { repo, skills };
-            }),
-          ),
-        { quiet: ctx.flags.quiet },
-      );
+      const fetchedRepos = await ctx.logger.info({
+        message: `Loading skills from ${label}…`,
+        waitFor: Promise.all(
+          addresses.map(async (address, order) => {
+            const source = repoSource(providerFor(provider, address), address, ctx.projectRoot);
+            const fetched = await ctx.fetcher.fetch(source);
+            const skills = await findSkillsInRepo(fetched.path);
+            const repo: Repo = {
+              address,
+              source,
+              localRoot: fetched.path,
+              ...(fetched.ref ? { ref: fetched.ref } : {}),
+              order,
+            };
+            return { repo, skills };
+          }),
+        ),
+      });
 
       // Flatten to candidates, sorted by skill name then declaration order. A skill
       // is stored under its own name (the directory basename) — never renamed, so
@@ -445,11 +441,10 @@ const commands: Record<string, CommandSpec> = {
       const config = await readConfigOrDefault(ctx.configPath);
       const declared = Object.keys(config.skills?.sources ?? {});
       const n = ctx.args.length > 0 ? ctx.args.length : declared.length;
-      const updated = await withSpinner(
-        `Updating ${n} skill${n === 1 ? "" : "s"}…`,
-        () => updateSkills(ctx.args, config, ctx),
-        { quiet: ctx.flags.quiet },
-      );
+      const updated = await ctx.logger.info({
+        message: `Updating ${n} skill${n === 1 ? "" : "s"}…`,
+        waitFor: updateSkills(ctx.args, config, ctx),
+      });
       ctx.logger.success(`updated ${updated.length} skill(s)${ctx.dryRun ? " (dry)" : ""}`);
     },
   },
@@ -516,6 +511,7 @@ export const skillsDomain: Domain = {
   description: "Fetch + verify skills into the canonical skills dir (linked per-agent by agents)",
   kind: "writer",
   priority: 10,
+  color: "magenta",
   commands,
   initSteps: [
     {
@@ -549,14 +545,13 @@ export const skillsDomain: Domain = {
     // bucketed and reported as "Skills need to be updated: …" without throwing,
     // so the overall run continues (§13.1).
     const handle = await createSkillSteps(config, ctx);
-    await withSpinner(
-      `Downloading and installing ${count} skill${count === 1 ? "" : "s"}`,
-      async () => {
+    await ctx.logger.info({
+      message: `Downloading and installing ${count} skill${count === 1 ? "" : "s"}`,
+      waitFor: (async () => {
         await runSkillPipeline(sources, handle.steps, ctx.logger);
         await handle.flush();
-      },
-      { quiet: opts.quiet },
-    );
+      })(),
+    });
     return undefined;
   },
 };

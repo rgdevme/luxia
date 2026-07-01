@@ -10,7 +10,7 @@ import type {
   ResolveContext,
   ResolvedMcp,
 } from "../../core/index.js";
-import { buildPaths, createSpinner, readConfigOrDefault, writeConfig } from "../../core/index.js";
+import { buildPaths, readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { adapterById, ADAPTERS, DEFAULT_AGENT_IDS } from "../../agents/adapters/index.js";
 import { removePaths } from "../../agents/adapters/shared.js";
 import { multiSelectInteractive, writeChange } from "../cli-helpers.js";
@@ -63,7 +63,7 @@ export function activeAdapters(config: AgnosConfig, ctx: ResolveContext): AgentA
   for (const ref of config.agents ?? []) {
     const adapter = adapterById(ref);
     if (adapter) out.push(adapter);
-    else ctx.logger.warn(`agents: unknown agent "${ref}" (skipped)`);
+    else ctx.logger.warn({ message: `unknown agent "${ref}"`, status: "skipped" });
   }
   return out;
 }
@@ -223,6 +223,7 @@ export const agentsDomain: Domain = {
   description: "Render per-agent native files from agnos.json (the config reader)",
   kind: "reader",
   priority: 99,
+  color: "gray",
   initSteps: [
     {
       id: "select",
@@ -251,14 +252,11 @@ export const agentsDomain: Domain = {
     const config = await readConfigOrDefault(ctx.configPath);
     const adapters = activeAdapters(config, ctx);
     if (adapters.length === 0) return undefined;
-    const spinner = createSpinner("Materializing agent files", { quiet: opts.quiet });
-    try {
-      for (const adapter of adapters) {
-        spinner.update(`Materializing ${adapter.displayName} agent's files`);
-        await renderAgent(adapter, config, { ...ctx, agentId: adapter.id, indent: "  " });
-      }
-    } finally {
-      spinner.stop();
+    for (const adapter of adapters) {
+      await ctx.logger.info({
+        message: `Materializing ${adapter.displayName} agent's files`,
+        waitFor: renderAgent(adapter, config, { ...ctx, agentId: adapter.id, indent: "  " }),
+      });
     }
     return undefined;
   },

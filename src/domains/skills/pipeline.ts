@@ -71,11 +71,10 @@ export async function runSkillPipeline(
 
   const total = buckets.moved.length + buckets.changed.length;
   if (total > 0) {
-    logger.warn(
-      `Skills need to be updated: ${buckets.moved.length} moved   ` +
-        `${buckets.changed.length} changed\n` +
-        `Please run: agnos skills update`,
-    );
+    logger.warn({
+      message: `skills need updating: ${buckets.moved.length} moved, ${buckets.changed.length} changed`,
+      extra: "run: agnos skills update",
+    });
   }
   return { buckets, installed };
 }

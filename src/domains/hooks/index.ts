@@ -132,6 +132,7 @@ export const hooksDomain: Domain = {
   description: "Manage hooks in agnos.json (rendered per-agent by the agents domain)",
   kind: "writer",
   priority: 50,
+  color: "yellow",
   commands,
 };
 

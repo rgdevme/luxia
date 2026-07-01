@@ -57,7 +57,7 @@ describe("agents init multiselect step", () => {
   it("under --dry logs the array value and writes nothing", async () => {
     const ctx = ctxFor();
     await runDomainInitSteps(agentsDomain, ctx, { yes: false, dryRun: true });
-    expect(logs.some((l) => l.includes('agents.select = ["claude-code","codex"]'))).toBe(true);
+    expect(logs.some((l) => l.includes('select = ["claude-code","codex"]'))).toBe(true);
     expect((await readCfg()).agents).toBeUndefined();
   });
 });

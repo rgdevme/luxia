@@ -1,4 +1,5 @@
 import type { DomainRunOptions, RunContext } from "./types/public.js";
+import { withDomain } from "./logger.js";
 import { orderedDomains, type PluginRegistry, type RegisteredDomain } from "./plugin-loader.js";
 
 async function runDomain(
@@ -7,7 +8,10 @@ async function runDomain(
   ctx: RunContext,
 ): Promise<void> {
   if (!dom.domain.run) return;
-  await dom.domain.run(opts, ctx);
+  // Scope the logger to this domain so everything it prints carries the
+  // domain's `[domain]` prefix and color automatically.
+  const scoped: RunContext = { ...ctx, logger: withDomain(ctx.logger, dom.domain) };
+  await dom.domain.run(opts, scoped);
 }
 
 /**
