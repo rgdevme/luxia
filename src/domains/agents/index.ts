@@ -24,7 +24,7 @@ const AGENTS_ARG = {
   name: "agents",
   required: false,
   variadic: true,
-  description: "agent ids (claude-code | codex); omit to pick interactively",
+  description: "agent ids (claude-code | codex | gemini-cli); omit to pick interactively",
 } as const;
 
 function agentDescription(adapter: AgentAdapter): string | undefined {
