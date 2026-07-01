@@ -30,6 +30,14 @@ export function supportsHookEvent(map: HookEventMap | undefined, event: HookEven
 }
 
 /**
+ * Build an identity {@link HookEventMap} for an agent that uses the canonical
+ * event names verbatim — the value equals the key for every listed event.
+ */
+export function identityEventMap(events: readonly HookEvent[]): HookEventMap {
+  return Object.fromEntries(events.map((e) => [e, e]));
+}
+
+/**
  * Render the canonical flat hook array into an agent's native record, keyed by
  * that agent's *native* event names via `map`. Groups by `(nativeEvent, matcher)`
  * in first-seen order, so re-rendering identical input yields byte-identical

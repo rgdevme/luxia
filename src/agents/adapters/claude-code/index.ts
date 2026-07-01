@@ -14,7 +14,7 @@ import {
   pickStringArray,
   readConfigOrDefault,
 } from "../../../core/index.js";
-import { renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
+import { identityEventMap, renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
 import {
   linkSkills,
   mirrorRules,
@@ -28,18 +28,42 @@ const CLAUDE_MCP = ".mcp.json";
 const CLAUDE_SETTINGS = path.join(".claude", "settings.json");
 const CLAUDE_SKILLS_DIR = path.join(".claude", "skills");
 
-/** Claude Code uses the canonical event names verbatim (identity mapping). */
-const CLAUDE_HOOK_EVENTS: HookEventMap = {
-  PreToolUse: "PreToolUse",
-  PostToolUse: "PostToolUse",
-  UserPromptSubmit: "UserPromptSubmit",
-  Notification: "Notification",
-  Stop: "Stop",
-  SubagentStop: "SubagentStop",
-  PreCompact: "PreCompact",
-  SessionStart: "SessionStart",
-  SessionEnd: "SessionEnd",
-};
+/**
+ * Claude Code exposes the widest native event set and uses the canonical event
+ * names verbatim (identity mapping). Canonical names are derived from this list.
+ */
+const CLAUDE_HOOK_EVENTS: HookEventMap = identityEventMap([
+  "SessionStart",
+  "SessionEnd",
+  "Setup",
+  "InstructionsLoaded",
+  "ConfigChange",
+  "CwdChanged",
+  "UserPromptSubmit",
+  "UserPromptExpansion",
+  "Stop",
+  "StopFailure",
+  "PreToolUse",
+  "PermissionRequest",
+  "PermissionDenied",
+  "PostToolUse",
+  "PostToolUseFailure",
+  "PostToolBatch",
+  "SubagentStart",
+  "SubagentStop",
+  "TaskCreated",
+  "TaskCompleted",
+  "TeammateIdle",
+  "Notification",
+  "MessageDisplay",
+  "FileChanged",
+  "WorktreeCreate",
+  "WorktreeRemove",
+  "PreCompact",
+  "PostCompact",
+  "Elicitation",
+  "ElicitationResult",
+]);
 
 const claudeCode: AgentAdapter = {
   id: "claude-code",

@@ -10,7 +10,7 @@ import type {
   ResolvedMcp,
 } from "../../../core/index.js";
 import { importMcpServers, pickEnv, pickStringArray } from "../../../core/index.js";
-import { renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
+import { identityEventMap, renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
 import { linkSkills, mirrorRules, removePaths, writeIfChanged } from "../shared.js";
 
 const CODEX_RULES = "AGENTS.md";
@@ -20,15 +20,18 @@ const CODEX_HOOKS = path.join(CODEX_DIR, "hooks.json");
 const CODEX_SKILLS_DIR = path.join(".agents", "skills");
 
 /** Codex uses the canonical event names verbatim, for the subset it understands. */
-const CODEX_HOOK_EVENTS: HookEventMap = {
-  PreToolUse: "PreToolUse",
-  PostToolUse: "PostToolUse",
-  UserPromptSubmit: "UserPromptSubmit",
-  PreCompact: "PreCompact",
-  SubagentStop: "SubagentStop",
-  Stop: "Stop",
-  SessionStart: "SessionStart",
-};
+const CODEX_HOOK_EVENTS: HookEventMap = identityEventMap([
+  "SessionStart",
+  "SubagentStart",
+  "PreToolUse",
+  "PermissionRequest",
+  "PostToolUse",
+  "PreCompact",
+  "PostCompact",
+  "UserPromptSubmit",
+  "SubagentStop",
+  "Stop",
+]);
 
 const codex: AgentAdapter = {
   id: "codex",
@@ -68,8 +71,9 @@ const codex: AgentAdapter = {
 
 async function writeCodexHooks(entries: HookEntry[], ctx: MaterializeContext): Promise<void> {
   const file = path.join(ctx.projectRoot, CODEX_HOOKS);
-  // Unsupported events are surfaced at `hooks add` time; render just skips them.
-  const { hooks } = renderNativeHooks(entries, CODEX_HOOK_EVENTS, { withMessage: false });
+  // Codex supports a handler `statusMessage`; unsupported events are surfaced at
+  // `hooks add` time, so render just skips them.
+  const { hooks } = renderNativeHooks(entries, CODEX_HOOK_EVENTS, { withMessage: true });
   if (Object.keys(hooks).length === 0) {
     if (!ctx.dryRun) await fs.rm(file, { force: true }).catch(() => {});
     return;
