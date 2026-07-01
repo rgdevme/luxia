@@ -47,9 +47,11 @@ export const mcpDeclarationSchema = z.object({
 });
 
 /**
- * Closed, normalized vocabulary of hook events. Each agent adapter maps the
- * subset it supports and skips the rest. (Proposed set — finalize against the
- * agents' real event names in a later milestone.)
+ * Canonical, normalized vocabulary of hook events — the union of every event
+ * any supported agent exposes. Each adapter declares a `hookEvents` map from
+ * these canonical names to its own native names; events an agent lacks are not
+ * rendered to it (and `hooks add` warns which agents skip them). Nothing is
+ * dropped from the central registry, so scraping preserves every event.
  */
 export const hookEventSchema = z.enum([
   "PreToolUse",
@@ -61,6 +63,9 @@ export const hookEventSchema = z.enum([
   "PreCompact",
   "SessionStart",
   "SessionEnd",
+  "BeforeModel",
+  "AfterModel",
+  "BeforeToolSelection",
 ]);
 
 /**

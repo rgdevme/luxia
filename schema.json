@@ -122,7 +122,10 @@
               "SubagentStop",
               "PreCompact",
               "SessionStart",
-              "SessionEnd"
+              "SessionEnd",
+              "BeforeModel",
+              "AfterModel",
+              "BeforeToolSelection"
             ],
             "description": "Normalized hook event name."
           },

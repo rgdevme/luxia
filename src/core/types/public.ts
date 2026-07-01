@@ -83,8 +83,9 @@ export interface McpDeclaration {
 // ---------- Hooks domain ----------
 
 /**
- * Closed, normalized vocabulary of hook events. Each agent adapter maps the
- * subset it supports and skips the rest.
+ * Canonical, normalized vocabulary of hook events — the union of every event
+ * any supported agent exposes. Each adapter maps these to its native names via
+ * {@link HookEventMap}; events an agent lacks are simply not rendered to it.
  */
 export type HookEvent =
   | "PreToolUse"
@@ -95,7 +96,17 @@ export type HookEvent =
   | "SubagentStop"
   | "PreCompact"
   | "SessionStart"
-  | "SessionEnd";
+  | "SessionEnd"
+  | "BeforeModel"
+  | "AfterModel"
+  | "BeforeToolSelection";
+
+/**
+ * An agent's hook-event mapping: canonical {@link HookEvent} → the agent's own
+ * native event name. A present key means the agent supports that event (and the
+ * value is what to write in its native config); an absent key means it doesn't.
+ */
+export type HookEventMap = Partial<Record<HookEvent, string>>;
 
 /**
  * A single hook entry — a flat, strict 5-field shape. Agents render it into
@@ -633,6 +644,13 @@ export interface AgentAdapter {
   id: string;
   displayName: string;
   paths?: AgentPaths;
+  /**
+   * Canonical→native hook-event mapping. Declared once here and consumed by the
+   * shared hooks machinery for render/scrape and by `hooks add` to warn which
+   * installed agents don't support a given event. Omit for agents with no hook
+   * system (they support no events).
+   */
+  hookEvents?: HookEventMap;
   /** Render a resolved slice (keyed by domain id) into this agent's native files. */
   render?: Record<string, (state: unknown, ctx: MaterializeContext) => Promise<void>>;
   /** Scrape this agent's native files back into agnos.json declarations (keyed by domain id). */

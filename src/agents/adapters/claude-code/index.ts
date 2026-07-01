@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   AgentAdapter,
   HookEntry,
+  HookEventMap,
   MaterializeContext,
   McpDeclaration,
   ResolvedMcp,
@@ -13,7 +14,7 @@ import {
   pickStringArray,
   readConfigOrDefault,
 } from "../../../core/index.js";
-import { flattenHooks, groupHooks } from "../hooks-map.js";
+import { renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
 import {
   linkSkills,
   mirrorRules,
@@ -27,10 +28,24 @@ const CLAUDE_MCP = ".mcp.json";
 const CLAUDE_SETTINGS = path.join(".claude", "settings.json");
 const CLAUDE_SKILLS_DIR = path.join(".claude", "skills");
 
+/** Claude Code uses the canonical event names verbatim (identity mapping). */
+const CLAUDE_HOOK_EVENTS: HookEventMap = {
+  PreToolUse: "PreToolUse",
+  PostToolUse: "PostToolUse",
+  UserPromptSubmit: "UserPromptSubmit",
+  Notification: "Notification",
+  Stop: "Stop",
+  SubagentStop: "SubagentStop",
+  PreCompact: "PreCompact",
+  SessionStart: "SessionStart",
+  SessionEnd: "SessionEnd",
+};
+
 const claudeCode: AgentAdapter = {
   id: "claude-code",
   displayName: "Claude Code",
   paths: { skillsDir: CLAUDE_SKILLS_DIR, rulesFilename: CLAUDE_RULES, rulesRoot: "." },
+  hookEvents: CLAUDE_HOOK_EVENTS,
 
   render: {
     async rules(state, ctx) {
@@ -49,7 +64,8 @@ const claudeCode: AgentAdapter = {
 
   scrape: {
     mcp: (ctx) => importMcpFile(ctx),
-    hooks: async (ctx) => flattenHooks((await readSettings(settingsPath(ctx)))?.data["hooks"]),
+    hooks: async (ctx) =>
+      scrapeNativeHooks((await readSettings(settingsPath(ctx)))?.data["hooks"], CLAUDE_HOOK_EVENTS),
     skills: (ctx) => listSkillDirs(ctx),
   },
 
@@ -101,7 +117,7 @@ async function writeClaudeHooks(entries: HookEntry[], ctx: MaterializeContext): 
     ctx.logger.warn(`${CLAUDE_SETTINGS} is not valid JSON; skipping hooks`);
     return;
   }
-  const { hooks } = groupHooks(entries, { withMessage: true });
+  const { hooks } = renderNativeHooks(entries, CLAUDE_HOOK_EVENTS, { withMessage: true });
   const hasHooks = Object.keys(hooks).length > 0;
   if (hasHooks) {
     settings.data["hooks"] = hooks;

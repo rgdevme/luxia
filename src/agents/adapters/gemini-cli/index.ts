@@ -3,7 +3,7 @@ import path from "node:path";
 import type {
   AgentAdapter,
   HookEntry,
-  HookEvent,
+  HookEventMap,
   MaterializeContext,
   McpDeclaration,
   ResolvedMcp,
@@ -14,7 +14,7 @@ import {
   pickStringArray,
   readConfigOrDefault,
 } from "../../../core/index.js";
-import { flattenHooks, groupHooks } from "../hooks-map.js";
+import { renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
 import {
   linkSkills,
   mirrorRules,
@@ -29,11 +29,11 @@ const GEMINI_SETTINGS = path.join(GEMINI_DIR, "settings.json");
 const GEMINI_SKILLS_DIR = path.join(GEMINI_DIR, "skills");
 
 /**
- * Gemini names hook events differently from agnos' closed vocabulary. Only the
- * events with a faithful semantic counterpart are translated; the rest (e.g.
- * `SubagentStop`, or Gemini's `BeforeModel`) are dropped on render/scrape.
+ * Gemini names hook events differently from agnos' canonical vocabulary. Every
+ * canonical event with a Gemini counterpart is mapped (nothing is dropped from
+ * the registry); `SubagentStop` is the only canonical event Gemini lacks.
  */
-const AGNOS_TO_GEMINI_EVENT: Partial<Record<HookEvent, string>> = {
+const GEMINI_HOOK_EVENTS: HookEventMap = {
   PreToolUse: "BeforeTool",
   PostToolUse: "AfterTool",
   UserPromptSubmit: "BeforeAgent",
@@ -42,15 +42,10 @@ const AGNOS_TO_GEMINI_EVENT: Partial<Record<HookEvent, string>> = {
   Notification: "Notification",
   SessionStart: "SessionStart",
   SessionEnd: "SessionEnd",
+  BeforeModel: "BeforeModel",
+  AfterModel: "AfterModel",
+  BeforeToolSelection: "BeforeToolSelection",
 };
-
-const GEMINI_TO_AGNOS_EVENT: Record<string, HookEvent> = Object.fromEntries(
-  Object.entries(AGNOS_TO_GEMINI_EVENT).map(([agnos, gemini]) => [gemini, agnos as HookEvent]),
-);
-
-const GEMINI_HOOK_EVENTS: ReadonlySet<HookEvent> = new Set(
-  Object.keys(AGNOS_TO_GEMINI_EVENT) as HookEvent[],
-);
 
 /**
  * Gemini CLI (Google's official terminal agent). Reads hierarchical `GEMINI.md`
@@ -62,6 +57,7 @@ const geminiCli: AgentAdapter = {
   id: "gemini-cli",
   displayName: "Gemini CLI",
   paths: { skillsDir: GEMINI_SKILLS_DIR, rulesFilename: GEMINI_RULES, rulesRoot: "." },
+  hookEvents: GEMINI_HOOK_EVENTS,
 
   render: {
     async rules(state, ctx) {
@@ -150,19 +146,6 @@ async function updateSettingsKey(
   await writeIfChanged(file, content, ctx, label);
 }
 
-/** Rename an event-keyed record through a name map, dropping unmapped keys. */
-function renameEventKeys(
-  native: Record<string, unknown>,
-  map: Record<string, string>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [event, groups] of Object.entries(native)) {
-    const mapped = map[event];
-    if (mapped) out[mapped] = groups;
-  }
-  return out;
-}
-
 // ---------- mcp ----------
 
 async function writeGeminiMcp(servers: ResolvedMcp[], ctx: MaterializeContext): Promise<void> {
@@ -239,22 +222,14 @@ function toGeminiServer(decl: ResolvedMcp): Record<string, unknown> {
 
 async function writeGeminiHooks(entries: HookEntry[], ctx: MaterializeContext): Promise<void> {
   // Gemini handlers carry no user-facing status text, so drop `message`.
-  const { hooks, dropped } = groupHooks(entries, {
-    events: GEMINI_HOOK_EVENTS,
-    withMessage: false,
-  });
-  if (dropped > 0) {
-    ctx.logger.warn(
-      `gemini-cli: skipped ${dropped} hook${dropped === 1 ? "" : "s"} for unsupported events`,
-    );
-  }
-  const renamed = renameEventKeys(hooks, AGNOS_TO_GEMINI_EVENT as Record<string, string>);
-  const value = Object.keys(renamed).length > 0 ? renamed : undefined;
+  // Unsupported events are surfaced at `hooks add` time; render just skips them.
+  const { hooks } = renderNativeHooks(entries, GEMINI_HOOK_EVENTS, { withMessage: false });
+  const value = Object.keys(hooks).length > 0 ? hooks : undefined;
   await updateSettingsKey(
     "hooks",
     value,
     ctx,
-    `${GEMINI_SETTINGS} (${Object.keys(renamed).length} hook events)`,
+    `${GEMINI_SETTINGS} (${Object.keys(hooks).length} hook events)`,
   );
 }
 
@@ -265,10 +240,7 @@ async function importGeminiHooks(ctx: MaterializeContext): Promise<HookEntry[]> 
     ctx.logger.warn(`${GEMINI_SETTINGS} is not valid JSON; skipping hooks import`);
     return [];
   }
-  const native = settings.data["hooks"];
-  if (!native || typeof native !== "object" || Array.isArray(native)) return [];
-  const renamed = renameEventKeys(native as Record<string, unknown>, GEMINI_TO_AGNOS_EVENT);
-  return flattenHooks(renamed);
+  return scrapeNativeHooks(settings.data["hooks"], GEMINI_HOOK_EVENTS);
 }
 
 // ---------- skills (scrape) ----------
