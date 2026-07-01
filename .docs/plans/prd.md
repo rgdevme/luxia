@@ -1,6 +1,6 @@
 ---
 type: PRD
-# title: PRD — @luxia/agnos v0.1
+title: PRD — @luxia/agnos v0.1
 description: Product requirements document for collapsing the 8-package monorepo into a single `@luxia/agnos` package and redesigning the domain model around config writers and a single config reader (agents).
 resource: ""
 tags: [refactor, v0.1, architecture]

@@ -1,12 +1,8 @@
-## Coding Standards
+---
+title: Coding standards
+---
 
 Enforced repo-wide. Non-negotiable.
-
-### Branch management
-
-- **`main` branch is locked**: Never push to `main` directly, instead create a branch and a PR.
-- **Creating a PR**: Use the `GH_TOKEN` value declared in `.env.agent` in the main branch to execute the github​ cli tool `gh`.
-- **Using reading environmental varialbes**: Do not ever print or show the contents of any .env files or environmental variables.
 
 ### Package Manager
 
@@ -80,12 +76,6 @@ Never use other package manages, like `npm`, `yarn`, or `bun`.
 - Don't test private helper:. Go through the public API.
 - Testing: Core and critical functionality must be tested.
 - CI/CD gate: All code must pass `lint → typecheck → test → build` before being considered done.
-
-### Commits
-
-- Conventional multi-line messages: subject < 70 chars in imperative mood; body explains why.
-- Always group related changes logically and split unrelated work.
-- Never amend pushed commits without explicit approval. Never --no-verify.
 
 ### Principles
 

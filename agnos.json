@@ -4,7 +4,12 @@
   "agents": ["claude-code", "codex"],
   "rules": {
     "files": {
-      "./AGENTS.md": []
+      "./AGENTS.md": [
+        "./.rules/coding.md",
+        "./.rules/secrets.md",
+        "./.rules/git.md",
+        "./.rules/docs.md"
+      ]
     }
   },
   "skills": {},
