@@ -4,9 +4,11 @@ import path from "node:path";
 import os from "node:os";
 import type { HookEntry, MaterializeContext, ResolvedMcp } from "../../src/core/index.js";
 import { createLogger, SCHEMA_VERSION } from "../../src/core/index.js";
+import type { HookEvent } from "../../src/core/index.js";
 import claudeCode from "../../src/agents/adapters/claude-code/index.js";
 import codex from "../../src/agents/adapters/codex/index.js";
 import geminiCli from "../../src/agents/adapters/gemini-cli/index.js";
+import { supportsHookEvent } from "../../src/agents/adapters/hooks-map.js";
 
 let tmp: string;
 
@@ -166,9 +168,9 @@ describe("codex adapter", () => {
     ];
     await codex.render!["hooks"]!(withUnsupported, ctx);
     const scraped = (await codex.scrape!["hooks"]!(ctx)) as HookEntry[];
-    // Notification dropped; message dropped (codex has no statusMessage)
+    // Notification dropped (unsupported by codex); message preserved via statusMessage.
     expect(scraped).toEqual([
-      { event: "PreToolUse", matcher: "git", type: "command", command: "echo guard" },
+      { event: "PreToolUse", matcher: "git", type: "command", command: "echo guard", message: "m" },
       { event: "SessionStart", type: "command", command: "date" },
     ]);
   });
@@ -318,5 +320,87 @@ describe("gemini-cli adapter", () => {
     expect(claims).toContain(path.join(tmp, "GEMINI.md"));
     expect(claims).toContain(path.join(tmp, ".gemini", "skills"));
     expect(claims).not.toContain(path.join(tmp, ".gemini", "settings.json"));
+  });
+});
+
+describe("adapter hook-event coverage", () => {
+  // The full native event set each agent documents. Every one must be mapped so
+  // the central registry drops nothing (guards against a doc event going stale).
+  const NATIVE: Record<string, HookEvent[]> = {
+    "claude-code": [
+      "SessionStart",
+      "SessionEnd",
+      "Setup",
+      "UserPromptSubmit",
+      "UserPromptExpansion",
+      "PreToolUse",
+      "PermissionRequest",
+      "PermissionDenied",
+      "PostToolUse",
+      "PostToolUseFailure",
+      "PostToolBatch",
+      "Notification",
+      "MessageDisplay",
+      "SubagentStart",
+      "SubagentStop",
+      "TaskCreated",
+      "TaskCompleted",
+      "Stop",
+      "StopFailure",
+      "TeammateIdle",
+      "InstructionsLoaded",
+      "ConfigChange",
+      "CwdChanged",
+      "FileChanged",
+      "WorktreeCreate",
+      "WorktreeRemove",
+      "PreCompact",
+      "PostCompact",
+      "Elicitation",
+      "ElicitationResult",
+    ],
+    codex: [
+      "SessionStart",
+      "SubagentStart",
+      "PreToolUse",
+      "PermissionRequest",
+      "PostToolUse",
+      "PreCompact",
+      "PostCompact",
+      "UserPromptSubmit",
+      "SubagentStop",
+      "Stop",
+    ],
+    // Gemini's native names differ; these are the canonical events they map to.
+    "gemini-cli": [
+      "SessionStart",
+      "SessionEnd",
+      "UserPromptSubmit",
+      "Stop",
+      "BeforeModel",
+      "AfterModel",
+      "BeforeToolSelection",
+      "PreToolUse",
+      "PostToolUse",
+      "PreCompact",
+      "Notification",
+    ],
+  };
+
+  const adapters = { "claude-code": claudeCode, codex, "gemini-cli": geminiCli };
+
+  for (const [id, events] of Object.entries(NATIVE)) {
+    it(`${id} maps every one of its ${events.length} native events`, () => {
+      const map = adapters[id as keyof typeof adapters].hookEvents;
+      const unmapped = events.filter((e) => !supportsHookEvent(map, e));
+      expect(unmapped).toEqual([]);
+    });
+  }
+
+  it("reflects the events each agent genuinely lacks", () => {
+    expect(supportsHookEvent(codex.hookEvents, "Notification")).toBe(false);
+    expect(supportsHookEvent(codex.hookEvents, "SessionEnd")).toBe(false);
+    expect(supportsHookEvent(geminiCli.hookEvents, "SubagentStop")).toBe(false);
+    expect(supportsHookEvent(claudeCode.hookEvents, "BeforeModel")).toBe(false);
   });
 });
