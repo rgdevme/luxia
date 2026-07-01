@@ -45,7 +45,7 @@ afterEach(async () => {
 describe("agents init multiselect step", () => {
   it("writes the curated default agent set non-interactively (-y)", async () => {
     await runDomainInitSteps(agentsDomain, ctxFor(), { yes: true, dryRun: false });
-    expect((await readCfg()).agents).toEqual(["claude-code", "codex"]);
+    expect((await readCfg()).agents).toEqual(["claude-code", "codex", "gemini-cli"]);
   });
 
   it("preserves an existing selection rather than reapplying the default", async () => {
@@ -57,7 +57,9 @@ describe("agents init multiselect step", () => {
   it("under --dry logs the array value and writes nothing", async () => {
     const ctx = ctxFor();
     await runDomainInitSteps(agentsDomain, ctx, { yes: false, dryRun: true });
-    expect(logs.some((l) => l.includes('select = ["claude-code","codex"]'))).toBe(true);
+    expect(logs.some((l) => l.includes('select = ["claude-code","codex","gemini-cli"]'))).toBe(
+      true,
+    );
     expect((await readCfg()).agents).toBeUndefined();
   });
 });

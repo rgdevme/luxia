@@ -3,9 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import type { HookEntry, MaterializeContext, ResolvedMcp } from "../../src/core/index.js";
-import { createLogger } from "../../src/core/index.js";
+import { createLogger, SCHEMA_VERSION } from "../../src/core/index.js";
 import claudeCode from "../../src/agents/adapters/claude-code/index.js";
 import codex from "../../src/agents/adapters/codex/index.js";
+import geminiCli from "../../src/agents/adapters/gemini-cli/index.js";
 
 let tmp: string;
 
@@ -177,5 +178,106 @@ describe("codex adapter", () => {
     const claims = await codex.claims!(ctx);
     expect(claims).toContain(path.join(tmp, ".codex"));
     expect(claims).toContain(path.join(tmp, ".agents", "skills"));
+  });
+});
+
+describe("gemini-cli adapter", () => {
+  it("mcp render → scrape round-trips and preserves other settings keys", async () => {
+    const ctx = ctxFor(tmp);
+    await fs.mkdir(path.join(tmp, ".gemini"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmp, ".gemini", "settings.json"),
+      JSON.stringify({ theme: "dark" }),
+    );
+    await geminiCli.render!["mcp"]!(SERVERS, ctx);
+    const settings = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    expect(settings.theme).toBe("dark"); // untouched
+    expect(settings.mcpServers.fs).toEqual({
+      command: "npx",
+      args: ["-y", "server-fs"],
+      env: { TOKEN: "x" },
+    });
+    const scraped = (await geminiCli.scrape!["mcp"]!(ctx)) as ResolvedMcp[];
+    expect(scraped).toEqual([
+      {
+        name: "fs",
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "server-fs"],
+        env: { TOKEN: "x" },
+      },
+    ]);
+  });
+
+  it("http transport maps to httpUrl and round-trips", async () => {
+    const ctx = ctxFor(tmp);
+    const remote: ResolvedMcp[] = [
+      {
+        name: "hosted",
+        command: "https://mcp.acme.com/mcp",
+        transport: "http",
+        headers: { Authorization: "Bearer t" },
+      },
+    ];
+    await geminiCli.render!["mcp"]!(remote, ctx);
+    const written = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    expect(written.mcpServers.hosted).toEqual({
+      httpUrl: "https://mcp.acme.com/mcp",
+      headers: { Authorization: "Bearer t" },
+    });
+    const scraped = (await geminiCli.scrape!["mcp"]!(ctx)) as ResolvedMcp[];
+    expect(scraped).toEqual([
+      {
+        name: "hosted",
+        transport: "http",
+        command: "https://mcp.acme.com/mcp",
+        headers: { Authorization: "Bearer t" },
+      },
+    ]);
+  });
+
+  it("sse transport maps to url and round-trips", async () => {
+    const ctx = ctxFor(tmp);
+    const remote: ResolvedMcp[] = [
+      { name: "events", command: "https://mcp.acme.com/sse", transport: "sse" },
+    ];
+    await geminiCli.render!["mcp"]!(remote, ctx);
+    const written = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    expect(written.mcpServers.events).toEqual({ url: "https://mcp.acme.com/sse" });
+    const scraped = (await geminiCli.scrape!["mcp"]!(ctx)) as ResolvedMcp[];
+    expect(scraped).toEqual([
+      { name: "events", transport: "sse", command: "https://mcp.acme.com/sse" },
+    ]);
+  });
+
+  it("drops the mcpServers key when no servers remain, keeping other settings", async () => {
+    const ctx = ctxFor(tmp);
+    await fs.mkdir(path.join(tmp, ".gemini"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmp, ".gemini", "settings.json"),
+      JSON.stringify({ theme: "dark", mcpServers: { old: { command: "x" } } }),
+    );
+    await geminiCli.render!["mcp"]!([], ctx);
+    const settings = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    expect(settings).toEqual({ theme: "dark" });
+  });
+
+  it("claims the GEMINI.md mirror and settings file", async () => {
+    const ctx = ctxFor(tmp);
+    await fs.writeFile(
+      path.join(tmp, "agnos.json"),
+      JSON.stringify({ schemaVersion: SCHEMA_VERSION, rules: { files: { "AGENTS.md": [] } } }),
+    );
+    const claims = await geminiCli.claims!(ctx);
+    expect(claims).toContain(path.join(tmp, "GEMINI.md"));
+    expect(claims).toContain(path.join(tmp, ".gemini", "settings.json"));
   });
 });
