@@ -149,15 +149,22 @@ async function updateSettingsKey(
 // ---------- mcp ----------
 
 async function writeGeminiMcp(servers: ResolvedMcp[], ctx: MaterializeContext): Promise<void> {
+  // `command` carries the executable (stdio) or the remote URL (http/sse); an
+  // entry without it can't produce valid Gemini config, so skip it with a warning.
+  const usable = servers.filter((m) => {
+    if (m.command) return true;
+    ctx.logger.warn(`gemini-cli: skipping mcp server "${m.name}" (no command/url)`);
+    return false;
+  });
   const value =
-    servers.length > 0
-      ? Object.fromEntries(servers.map((m) => [m.name, toGeminiServer(m)]))
+    usable.length > 0
+      ? Object.fromEntries(usable.map((m) => [m.name, toGeminiServer(m)]))
       : undefined;
   await updateSettingsKey(
     "mcpServers",
     value,
     ctx,
-    `${GEMINI_SETTINGS} (${servers.length} servers)`,
+    `${GEMINI_SETTINGS} (${usable.length} servers)`,
   );
 }
 
@@ -196,23 +203,25 @@ function fromGeminiServer(name: string, entry: unknown): McpDeclaration | undefi
   return decl;
 }
 
+// Callers guarantee `decl.command` is set (writeGeminiMcp filters); each field
+// is still guarded so a stray empty value never lands in the config.
 function toGeminiServer(decl: ResolvedMcp): Record<string, unknown> {
   if (decl.transport === "http") {
     return {
-      httpUrl: decl.command ?? "",
+      ...(decl.command ? { httpUrl: decl.command } : {}),
       ...(decl.headers ? { headers: decl.headers } : {}),
       ...(decl.env ? { env: decl.env } : {}),
     };
   }
   if (decl.transport === "sse") {
     return {
-      url: decl.command ?? "",
+      ...(decl.command ? { url: decl.command } : {}),
       ...(decl.headers ? { headers: decl.headers } : {}),
       ...(decl.env ? { env: decl.env } : {}),
     };
   }
   return {
-    command: decl.command ?? "",
+    ...(decl.command ? { command: decl.command } : {}),
     ...(decl.args ? { args: decl.args } : {}),
     ...(decl.env ? { env: decl.env } : {}),
   };

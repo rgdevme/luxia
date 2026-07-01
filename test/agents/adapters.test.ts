@@ -272,6 +272,20 @@ describe("gemini-cli adapter", () => {
     expect(settings).toEqual({ theme: "dark" });
   });
 
+  it("skips an mcp server with no command/url rather than writing an empty value", async () => {
+    const ctx = ctxFor(tmp);
+    const servers: ResolvedMcp[] = [
+      { name: "broken", transport: "http" }, // no command → invalid
+      { name: "ok", command: "npx", args: ["-y", "x"], transport: "stdio" },
+    ];
+    await geminiCli.render!["mcp"]!(servers, ctx);
+    const written = JSON.parse(
+      await fs.readFile(path.join(tmp, ".gemini", "settings.json"), "utf8"),
+    );
+    expect(written.mcpServers.broken).toBeUndefined();
+    expect(written.mcpServers.ok).toEqual({ command: "npx", args: ["-y", "x"] });
+  });
+
   it("hooks render translates the event vocabulary and round-trips the mapped ones", async () => {
     const ctx = ctxFor(tmp);
     const withUnsupported: HookEntry[] = [
