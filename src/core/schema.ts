@@ -82,16 +82,40 @@ export const hookEntrySchema = z
 /** Hooks registry: a flat array of entries. */
 export const hooksConfigSchema = z.array(hookEntrySchema);
 
-export const metadataSchema = z.record(z.string(), z.string());
-
 /**
- * Docs domain. Watches `root`, compiles an index. `metadata` merges onto the
- * opinionated defaults (title/description/read_when/agent_cant).
+ * Docs domain. Watches `root`, compiles an index. The doc-frontmatter shape is
+ * fixed (see `docFrontmatterSchema`) and not user-overridable.
  */
 export const docsConfigSchema = z.object({
   root: z.string().min(1).default(".docs"),
-  metadata: metadataSchema.optional(),
 });
+
+/**
+ * Fixed frontmatter shape every doc must carry, aligned with Google's Open
+ * Knowledge Format. `type`/`title`/`description`/`timestamp` are required and
+ * non-empty; `resource`/`tags` must be present but may be empty. Unknown keys
+ * are tolerated (OKF: consumers ignore fields they don't recognize). The
+ * `.describe()` hints are surfaced when a doc's metadata is incomplete.
+ */
+export const docFrontmatterSchema = z
+  .object({
+    type: z
+      .string()
+      .min(1)
+      .describe("Concept kind, e.g. 'Technical Doc', 'Playbook', 'BigQuery Table'."),
+    title: z.string().min(1).describe("Short, human-readable title of the document."),
+    description: z
+      .string()
+      .min(1)
+      .describe("One- or two-sentence summary of what the document covers."),
+    resource: z.string().describe("URI uniquely identifying the underlying asset. May be empty."),
+    tags: z.array(z.string()).describe("List of categorization strings. May be empty."),
+    // YAML auto-parses an unquoted ISO 8601 datetime into a Date, so accept both.
+    timestamp: z
+      .union([z.string().min(1), z.date()])
+      .describe("ISO 8601 datetime of the last change."),
+  })
+  .passthrough();
 
 export const agnosConfigSchema = z
   .object({

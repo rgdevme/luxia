@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
  * bundled build the readers live in `dist/*.js`, so the templates must sit at
  * `dist/templates/`. Template filenames are unique across domains.
  */
-const TEMPLATE_DIRS = ["src/domains/rules/templates", "src/domains/docs/templates"];
+const TEMPLATE_DIRS = ["src/domains/rules/templates"];
 
 async function main() {
   try {

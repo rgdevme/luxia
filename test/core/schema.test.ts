@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   agentRefSchema,
   agnosConfigSchema,
+  docFrontmatterSchema,
   docsConfigSchema,
   hookEntrySchema,
   hooksConfigSchema,
@@ -35,11 +36,47 @@ describe("schemas", () => {
     expect(parsed.files["./api/AGENTS.md"]).toEqual([]);
   });
 
-  it("docsConfigSchema defaults root to .docs and accepts metadata", () => {
+  it("docsConfigSchema defaults root to .docs and no longer carries metadata", () => {
     expect(docsConfigSchema.parse({})).toEqual({ root: ".docs" });
     const parsed = docsConfigSchema.parse({ root: "documentation", metadata: { owner: "team" } });
     expect(parsed.root).toBe("documentation");
-    expect(parsed.metadata?.["owner"]).toBe("team");
+    expect((parsed as Record<string, unknown>)["metadata"]).toBeUndefined();
+  });
+
+  it("docFrontmatterSchema requires type/title/description/timestamp and allows empty resource/tags", () => {
+    const ok = docFrontmatterSchema.safeParse({
+      type: "Technical Doc",
+      title: "Auth",
+      description: "How auth works",
+      resource: "",
+      tags: [],
+      timestamp: "2026-06-30T00:00:00Z",
+    });
+    expect(ok.success).toBe(true);
+
+    // Missing required fields and absent resource/tags keys all fail.
+    expect(docFrontmatterSchema.safeParse({ title: "Only title" }).success).toBe(false);
+    expect(
+      docFrontmatterSchema.safeParse({
+        type: "Doc",
+        title: "No timestamp",
+        description: "d",
+        resource: "",
+        tags: [],
+      }).success,
+    ).toBe(false);
+
+    // Unknown keys are tolerated (OKF passthrough).
+    const extra = docFrontmatterSchema.safeParse({
+      type: "Doc",
+      title: "T",
+      description: "d",
+      resource: "",
+      tags: [],
+      timestamp: "2026-06-30T00:00:00Z",
+      owner: "team",
+    });
+    expect(extra.success).toBe(true);
   });
 
   it("hookEntrySchema accepts a valid command hook and rejects unknown events / extra keys", () => {

@@ -146,17 +146,12 @@
     },
     "docs": {
       "type": "object",
-      "description": "Docs domain configuration. Watches `root`, compiles an index from the docs' frontmatter metadata.",
+      "description": "Docs domain configuration. Watches `root`, compiles an index from the docs' frontmatter metadata. The frontmatter shape (type/title/description/resource/tags/timestamp) is fixed and not configurable.",
       "properties": {
         "root": {
           "type": "string",
           "minLength": 1,
           "description": "Directory where doc files live (default \".docs\")."
-        },
-        "metadata": {
-          "type": "object",
-          "description": "Map of frontmatter key → natural-language description, merged onto the opinionated defaults (title/description/read_when/agent_cant).",
-          "additionalProperties": { "type": "string" }
         }
       },
       "additionalProperties": false

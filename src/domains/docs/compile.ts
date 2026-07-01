@@ -3,24 +3,14 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import type { AgnosConfig, ResolveContext } from "../../core/index.js";
+import { docFrontmatterSchema } from "../../core/index.js";
 
 export const DEFAULT_DOCS_ROOT = ".docs";
 export const INDEX_FILE = "index.md";
+export const LOG_FILE = "log.md";
 
-/** Opinionated metadata every doc should carry; user `metadata` merges onto this. */
-export const DEFAULT_DOCS_METADATA: Record<string, string> = {
-  title: "Short, human-readable title of the document.",
-  description: "One- or two-sentence summary of what the document covers.",
-  read_when:
-    "Natural-language description of when an agent should read this document (e.g., 'when implementing authentication').",
-  agent_cant:
-    "What the agent must not do with this file. One of: read, write, delete (or a natural-language combination).",
-};
-
-/** Effective metadata = opinionated defaults with the user's map merged on top. */
-export function effectiveMetadata(config: AgnosConfig): Record<string, string> {
-  return { ...DEFAULT_DOCS_METADATA, ...(config.docs?.metadata ?? {}) };
-}
+/** OKF reserved filenames excluded from the concept-document scan. */
+const RESERVED_FILES = new Set([INDEX_FILE, LOG_FILE]);
 
 interface DocEntry {
   rel: string;
@@ -64,7 +54,7 @@ function renderIndexBody(docs: DocEntry[]): string {
   });
   const lines: string[] = [];
   for (const section of order) {
-    lines.push(`### ${section}`);
+    lines.push(`### ${section}`, "");
     const items = (groups.get(section) ?? []).sort((a, b) => a.title.localeCompare(b.title));
     for (const d of items) {
       lines.push(`- [${d.title}](${d.rel})${d.description ? `: ${d.description}` : ""}`);
@@ -74,15 +64,24 @@ function renderIndexBody(docs: DocEntry[]): string {
   return lines.join("\n").trimEnd();
 }
 
+/** The fixed frontmatter shape rendered as `key: <hint>` lines, in schema order. */
+function metadataShape(): string {
+  return Object.entries(docFrontmatterSchema.shape)
+    .map(([key, schema]) => `${key}: ${schema.description ?? ""}`)
+    .join("\n");
+}
+
 export interface CompileResult {
   written: boolean;
-  missing: { file: string; keys: string[] }[];
+  /** Relative paths of docs whose frontmatter does not satisfy `docFrontmatterSchema`. */
+  incomplete: string[];
 }
 
 /**
  * Compile a deterministic, byte-stable index from the docs under `docs.root`.
- * Missing declared metadata keys warn and continue (§13.6); the index file
- * excludes itself from the scan and carries a `title` so `rules` can inject it.
+ * Docs whose frontmatter is incomplete warn and continue; the reserved
+ * `index.md`/`log.md` files are excluded from the scan, and the index carries a
+ * `title` so `rules` can inject it.
  */
 export async function compileDocsIndex(
   config: AgnosConfig,
@@ -90,18 +89,15 @@ export async function compileDocsIndex(
 ): Promise<CompileResult> {
   const root = path.resolve(ctx.projectRoot, config.docs?.root ?? DEFAULT_DOCS_ROOT);
   const indexAbs = path.join(root, INDEX_FILE);
-  const meta = effectiveMetadata(config);
-  const metaKeys = Object.keys(meta);
 
-  const files = (await listDocs(root)).filter((abs) => abs !== indexAbs);
+  const files = (await listDocs(root)).filter((abs) => !RESERVED_FILES.has(path.basename(abs)));
   const docs: DocEntry[] = [];
-  const missing: { file: string; keys: string[] }[] = [];
+  const incomplete: string[] = [];
 
   for (const abs of files) {
     const data = (matter(await fs.readFile(abs, "utf8")).data ?? {}) as Record<string, unknown>;
-    const miss = metaKeys.filter((k) => data[k] === undefined || data[k] === "");
     const rel = path.relative(root, abs).split(path.sep).join("/");
-    if (miss.length > 0) missing.push({ file: rel, keys: miss });
+    if (!docFrontmatterSchema.safeParse(data).success) incomplete.push(rel);
     const segs = rel.split("/");
     docs.push({
       rel,
@@ -130,13 +126,18 @@ export async function compileDocsIndex(
     }
   }
 
-  if (missing.length > 0) {
-    const shape = metaKeys.map((k) => `${k}: ${meta[k]}`).join("\n");
+  if (incomplete.length > 0) {
+    const shape = ["```markdown", metadataShape(), "```"]
+      .join("\n")
+      .split("\n")
+      .map((line) => ` > ${line}`)
+      .join("\n");
     ctx.logger.warn(
-      `The following files are missing some metadata properties:\n${shape}\n` +
-        missing.map((m) => `- ${m.file}: ${m.keys.join(", ")}`).join("\n"),
+      `The following files' metadata is incomplete:\n` +
+        incomplete.map((f) => `- ${f}`).join("\n") +
+        `\n\nMetadata shape:\n${shape}`,
     );
   }
 
-  return { written, missing };
+  return { written, incomplete };
 }

@@ -109,6 +109,7 @@ export type { AgnosState } from "./state.js";
 export {
   agentRefSchema,
   agnosConfigSchema,
+  docFrontmatterSchema,
   docsConfigSchema,
   hookEntrySchema,
   hookEventSchema,

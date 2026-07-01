@@ -1,8 +1,10 @@
 ---
+type: Plan
 title: Implementation Plan — @luxia/agnos v0.1
 description: Milestone-by-milestone sequencing plan for the v0.1 refactor, covering branch protocol, milestone dependency chain, and file-location mapping from the old monorepo to the new single-package layout.
-read_when: When executing or reviewing any milestone of the v0.1 refactor, determining which branch to work on, or understanding the sequencing and dependency order of milestones M1–M9.
-agent_cant: delete
+resource: ""
+tags: [refactor, v0.1, milestones]
+timestamp: 2026-06-30T00:00:00Z
 ---
 
 # Implementation Plan — `@luxia/agnos` v0.1
