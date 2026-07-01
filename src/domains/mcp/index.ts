@@ -6,7 +6,7 @@ import type {
   Domain,
   McpDeclaration,
 } from "../../core/index.js";
-import { readConfigOrDefault, withSpinner } from "../../core/index.js";
+import { readConfigOrDefault } from "../../core/index.js";
 import { jsonEqual, mergeByIdentity, type ArrayMergeResult, type MergePolicy } from "../merge.js";
 import {
   MIGRATE_FLAGS,
@@ -116,12 +116,12 @@ async function addFromRegistry(
   mcp: McpDeclaration[],
   term: string,
 ): Promise<void> {
-  // Spinner (not a log line) so it clears before the interactive picker prompts.
-  const results = await withSpinner(
-    `Searching the MCP registry for "${term}"…`,
-    () => searchServers(term),
-    { quiet: ctx.flags.quiet },
-  );
+  // `waitFor` shows an ephemeral spinner (no `done`) so it clears before the
+  // interactive picker prompts, leaving no stray line above it.
+  const results = await ctx.logger.info({
+    message: `Searching the MCP registry for "${term}"…`,
+    waitFor: searchServers(term),
+  });
   if (results.length === 0) {
     ctx.logger.info(
       `no servers found for "${term}". Run \`agnos mcp add\` with no term to configure one manually.`,
@@ -340,9 +340,9 @@ const commands: Record<string, CommandSpec> = {
       const updates = new Map<string, McpDeclaration>();
       let current = 0;
       let missing = 0;
-      await withSpinner(
-        `Checking ${targets.length} server${targets.length === 1 ? "" : "s"} for updates…`,
-        async () => {
+      await ctx.logger.info({
+        message: `Checking ${targets.length} server${targets.length === 1 ? "" : "s"} for updates…`,
+        waitFor: (async () => {
           for (const decl of targets) {
             const latest = await getServerLatest(decl.source!);
             if (!latest) {
@@ -362,9 +362,8 @@ const commands: Record<string, CommandSpec> = {
               ctx.logger.warn(`${decl.name}: latest version has no matching deployment; skipped`);
             }
           }
-        },
-        { quiet: ctx.flags.quiet },
-      );
+        })(),
+      });
       if (updates.size === 0) {
         const extra = missing > 0 ? `, ${missing} missing` : "";
         ctx.logger.info(`all up to date (${current} current${extra})`);
@@ -451,6 +450,7 @@ export const mcpDomain: Domain = {
   description: "Manage MCP servers in agnos.json (rendered per-agent by the agents domain)",
   kind: "writer",
   priority: 40,
+  color: "blue",
   commands,
 };
 

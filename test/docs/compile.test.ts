@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import matter from "gray-matter";
-import type { AgnosConfig, ResolveContext } from "../../src/core/index.js";
+import type { AgnosConfig, LogParts, ResolveContext } from "../../src/core/index.js";
 import { createLogger } from "../../src/core/index.js";
 import { compileDocsIndex } from "../../src/domains/docs/index.js";
 
@@ -139,19 +139,15 @@ describe("compileDocsIndex", () => {
     expect(idx).toContain("[Guide](guide.md)");
   });
 
-  it("warns with the incomplete-files list and the metadata shape", async () => {
+  it("warns with the incomplete-files list", async () => {
     await doc("partial.md", { title: "Partial" });
-    const warnings: string[] = [];
+    const warnings: LogParts[] = [];
     const ctx = ctxFor(tmp);
-    ctx.logger = { ...ctx.logger, warn: (m: string) => warnings.push(m) };
+    ctx.logger = { ...ctx.logger, warn: (m) => warnings.push(m as LogParts) };
     await compileDocsIndex(config, ctx);
     expect(warnings).toHaveLength(1);
-    const msg = warnings[0]!;
-    expect(msg).toContain("The following files' metadata is incomplete:");
-    expect(msg).toContain("- partial.md");
-    expect(msg).toContain("Metadata shape:");
-    expect(msg).toContain(" > ```markdown");
-    expect(msg).toContain(" > type:");
-    expect(msg).toContain(" > timestamp:");
+    const { message, extra } = warnings[0]!;
+    expect(message).toBe("The following files' metadata is incomplete:");
+    expect(extra).toContain("- partial.md");
   });
 });

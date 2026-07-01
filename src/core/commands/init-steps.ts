@@ -2,6 +2,7 @@ import { confirm, input, select } from "@inquirer/prompts";
 import type { Domain, InitStep, ResolveContext } from "../types/public.js";
 import type { PluginRegistry } from "../plugin-loader.js";
 import { orderedDomains } from "../plugin-loader.js";
+import { withDomain } from "../logger.js";
 import { exclusiveCheckbox } from "../prompts.js";
 
 export interface RunStepsOptions {
@@ -22,20 +23,25 @@ export async function runDomainInitSteps(
   const steps = domain.initSteps;
   if (!steps || steps.length === 0) return;
 
+  // Scope the logger (and the ctx handed to steps/callbacks) to this domain so
+  // every init line carries its `[domain]` prefix; the id in messages is then
+  // just the step (the domain is already in the prefix).
+  const dctx: ResolveContext = { ...ctx, logger: withDomain(ctx.logger, domain) };
+
   for (const step of steps) {
     try {
-      if (step.when && !(await step.when(ctx))) {
-        ctx.logger.debug(`skipping ${domain.id}.${step.id} (when predicate false)`);
+      if (step.when && !(await step.when(dctx))) {
+        dctx.logger.debug(`skipping ${step.id} (when predicate false)`);
         continue;
       }
-      const value = await resolveStepValue(step, opts, ctx);
+      const value = await resolveStepValue(step, opts, dctx);
       if (opts.dryRun) {
-        ctx.logger.info(`would: ${domain.id}.${step.id} = ${formatValue(value)}`);
+        dctx.logger.info(`would: set ${step.id} = ${formatValue(value)}`);
         continue;
       }
-      await invokeCallback(step, value, ctx);
+      await invokeCallback(step, value, dctx);
     } catch (err) {
-      ctx.logger.error(`${domain.id}.${step.id} failed: ${(err as Error).message}`);
+      dctx.logger.error({ message: `${step.id} failed`, status: (err as Error).message });
     }
   }
 }

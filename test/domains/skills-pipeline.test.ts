@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { AgnosConfig, CommandContext, ResolveContext } from "../../src/core/index.js";
+import type {
+  AgnosConfig,
+  CommandContext,
+  LogParts,
+  ResolveContext,
+} from "../../src/core/index.js";
 import { createLogger } from "../../src/core/index.js";
 import { createSkillSteps, updateSkills } from "../../src/domains/skills/steps.js";
 import { runSkillPipeline } from "../../src/domains/skills/pipeline.js";
@@ -101,16 +106,12 @@ describe("skills domain run", () => {
     await h.flush();
     await fs.writeFile(path.join(tmp, "skill-src", "SKILL.md"), "# Changed\n");
 
-    const warns: string[] = [];
+    const warns: LogParts[] = [];
+    // Real logger (so `info`'s `waitFor` runs the pipeline and is awaited); only
+    // `warn` is overridden to capture the aggregated drift report.
     const ctx = {
       ...ctxFor(),
-      logger: {
-        info() {},
-        warn: (m: string) => warns.push(m),
-        error() {},
-        debug() {},
-        success() {},
-      },
+      logger: { ...createLogger({ quiet: true }), warn: (m: LogParts) => warns.push(m) },
       flags: { dry: false, once: true, quiet: false, help: false, init: false, yes: true },
     };
     await skillsDomain.run!(
@@ -118,10 +119,11 @@ describe("skills domain run", () => {
       ctx as never,
     );
 
-    const out = warns.join("\n");
-    expect(out).toContain("Skills need to be updated:");
-    expect(out).toContain("1 changed");
-    expect(out).toContain("Please run: agnos skills update");
+    expect(warns).toHaveLength(1);
+    const { message, extra } = warns[0]!;
+    expect(message).toContain("skills need updating");
+    expect(message).toContain("1 changed");
+    expect(extra).toBe("run: agnos skills update");
   });
 });
 

@@ -16,10 +16,14 @@ export type {
   InitStep,
   InitStepBase,
   InitStepDefault,
+  DomainColor,
   LinkKind,
   Linker,
   LockFile,
   Logger,
+  LogInput,
+  LogParts,
+  LogTask,
   MaterializeContext,
   McpDeclaration,
   ParsedFlags,
@@ -34,8 +38,7 @@ export type {
   SkillsConfig,
 } from "./types/public.js";
 
-export { createLogger, createSpinner, dim, withSpinner } from "./logger.js";
-export type { Spinner } from "./logger.js";
+export { createLogger, dim, formatLog, withDomain } from "./logger.js";
 export { exclusiveCheckbox } from "./prompts.js";
 export type { ExclusiveChoice, ExclusiveConfig, PickChoice } from "./prompts.js";
 export {

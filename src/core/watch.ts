@@ -2,6 +2,8 @@ import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import type { DomainRunOptions, RunContext } from "./types/public.js";
 import { readConfigOrDefault } from "./config.js";
+import { workspaceRelativePath } from "./context.js";
+import { withDomain } from "./logger.js";
 import { orderedDomains, type PluginRegistry, type RegisteredDomain } from "./plugin-loader.js";
 import { runFrom, runOne } from "./run.js";
 
@@ -110,9 +112,10 @@ export async function startWatch(
         ...(ignore.length > 0 ? { ignored: (p: string) => ignore.includes(path.resolve(p)) } : {}),
       });
       const from = dom.domain.priority;
+      const domLog = withDomain(ctx.logger, dom.domain);
       const onEvent = (event: string, file: string): void => {
-        const rel = path.relative(ctx.projectRoot, file) || file;
-        ctx.logger.info(`${rel} ${eventLabel(event)} — re-running ${dom.domain.id}…`);
+        const rel = workspaceRelativePath(ctx, file) || file;
+        domLog.info({ message: rel, status: eventLabel(event) });
         request(from, false);
       };
       watcher
@@ -144,7 +147,7 @@ export async function startWatch(
     });
     const scopedFrom = inScope[0]?.domain.priority ?? cfgFrom;
     const onConfig = (): void => {
-      ctx.logger.info("agnos.json changed — re-running…");
+      ctx.logger.info("agnos.json changed");
       request(scoped ? scopedFrom : cfgFrom, true);
     };
     configWatcher.on("change", onConfig).on("add", onConfig).on("unlink", onConfig);

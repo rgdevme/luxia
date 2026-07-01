@@ -2,13 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
 import type { AgnosConfig, Domain, ResolveContext } from "../../core/index.js";
-import {
-  readConfigOrDefault,
-  readState,
-  withSpinner,
-  writeConfig,
-  writeState,
-} from "../../core/index.js";
+import { readConfigOrDefault, readState, writeConfig, writeState } from "../../core/index.js";
 import { injectSections, slugify, type Section } from "./inject.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
@@ -31,7 +25,7 @@ async function loadSection(
   try {
     raw = await fs.readFile(abs, "utf8");
   } catch {
-    ctx.logger.warn(`rules: injectable not found, skipping: ${rel}`);
+    ctx.logger.warn({ message: "injectable not found, skipping", status: rel });
     return null;
   }
   const parsed = matter(raw);
@@ -64,9 +58,10 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
       if (!section) continue;
       const prior = seen.get(section.slug);
       if (prior) {
-        ctx.logger.warn(
-          `rules: duplicate title "${section.title}" for ${canonical} (${prior} and ${rel}); skipping ${rel}`,
-        );
+        ctx.logger.warn({
+          message: `duplicate title "${section.title}" for ${canonical} (${prior} and ${rel})`,
+          status: `skipping ${rel}`,
+        });
         continue;
       }
       seen.set(section.slug, rel);
@@ -90,7 +85,7 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
     }
     await fs.mkdir(path.dirname(canonAbs), { recursive: true });
     await fs.writeFile(canonAbs, next, "utf8");
-    ctx.logger.info(`rules: injected ${sections.length} section(s) into ${canonical}`);
+    ctx.logger.success({ message: `injected ${sections.length} section(s)`, status: canonical });
   }
 
   // Persist the managed-slug map so a later run can prune the sections of
@@ -98,11 +93,12 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
   if (!ctx.dryRun) await writeState(ctx.statePath, { ...state, rulesSections: nextSections });
 
   if (missingTitle.length > 0) {
-    ctx.logger.warn(
-      `The following files are missing some metadata properties:\n` +
-        `title: short, human-readable section title (used as the injection boundary)\n` +
-        missingTitle.map((f) => `- ${f}: title`).join("\n"),
-    );
+    // A fragment needs a `title` to become an injectable section; the rules
+    // authoring conventions live in the doc-authoring skill.
+    ctx.logger.warn({
+      message: "The following fragments are missing a title and were skipped:",
+      extra: missingTitle.map((f) => `- ${f}`),
+    });
   }
 }
 
@@ -111,6 +107,7 @@ export const rulesDomain: Domain = {
   description: "Inject titled sections from fragment files into canonical rules files",
   kind: "writer",
   priority: 30,
+  color: "green",
   initSteps: [
     {
       id: "canonical",
@@ -143,7 +140,7 @@ export const rulesDomain: Domain = {
     const config = await readConfigOrDefault(ctx.configPath);
     // No canonical files declared (empty/undefined `rules.files`) → skip.
     if (Object.keys(config.rules?.files ?? {}).length === 0) return undefined;
-    await withSpinner("Injecting rules", () => injectRules(config, ctx), { quiet: opts.quiet });
+    await ctx.logger.info({ message: "Injecting rules", waitFor: injectRules(config, ctx) });
     return undefined;
   },
   // Watch every injectable fragment declared across all canonical files. Editing

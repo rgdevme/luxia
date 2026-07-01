@@ -6,6 +6,7 @@ import {
   runAll,
   runAllDomainInitSteps,
   runOne,
+  withDomain,
 } from "./index.js";
 import type { CommandContext, DomainRunOptions, ParsedFlags, RunContext } from "./index.js";
 import { startWatch } from "./watch.js";
@@ -105,7 +106,13 @@ async function main(): Promise<void> {
         fail(`unknown subcommand "${sub}" for ${domainId}`);
         return;
       }
-      const cmdCtx: CommandContext = { ...ctx, args: rest };
+      // Scope the logger to the owning domain so command output carries its
+      // `[domain]` prefix and color, matching run-mode output.
+      const cmdCtx: CommandContext = {
+        ...ctx,
+        args: rest,
+        logger: withDomain(ctx.logger, dom.domain),
+      };
       await cmd.run(cmdCtx);
       return;
     }

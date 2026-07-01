@@ -137,12 +137,56 @@ export interface ResolvedMcp extends McpDeclaration {
   resolvedPackageDir?: string;
 }
 
+/** A domain's identity color, used (dimmed) for its `[domain]` log prefix. */
+export type DomainColor =
+  | "cyan"
+  | "magenta"
+  | "green"
+  | "blue"
+  | "yellow"
+  | "gray"
+  | "white"
+  | "red";
+
+/**
+ * Structured payload for a log line, rendered as `[domain] message [status]`
+ * with any `extra` lines below it (see {@link Logger}). A plain string is
+ * shorthand for `{ message }`.
+ */
+export interface LogParts {
+  /** The primary text, colored by log level. */
+  message: string;
+  /** Optional trailing status, rendered italic + dimmed (e.g. "changed"). */
+  status?: string;
+  /** Optional detail lines, rendered white below the message (e.g. a file list). */
+  extra?: string | string[];
+}
+
+export type LogInput = string | LogParts;
+
+/**
+ * A log call that owns an async task. While `waitFor` is pending a spinner shows
+ * the message (in the standardized shape); on resolution the spinner clears (or
+ * is replaced by `done`) and the method returns the resolved value — so it
+ * doubles as the `await`.
+ */
+export interface LogTask<T> extends LogParts {
+  waitFor: Promise<T>;
+  /** Line to replace the spinner with on success. Omit to just clear it. */
+  done?: LogInput | ((value: T) => LogInput);
+}
+
 export interface Logger {
-  info(msg: string): void;
-  warn(msg: string): void;
-  error(msg: string): void;
-  debug(msg: string): void;
-  success(msg: string): void;
+  info<T>(msg: LogTask<T>): Promise<T>;
+  info(msg: LogInput): void;
+  warn<T>(msg: LogTask<T>): Promise<T>;
+  warn(msg: LogInput): void;
+  error<T>(msg: LogTask<T>): Promise<T>;
+  error(msg: LogInput): void;
+  debug<T>(msg: LogTask<T>): Promise<T>;
+  debug(msg: LogInput): void;
+  success<T>(msg: LogTask<T>): Promise<T>;
+  success(msg: LogInput): void;
 }
 
 export type LinkKind = "symlink" | "junction" | "hardlink" | "copy";
@@ -559,6 +603,8 @@ export interface Domain {
   description: string;
   kind: "writer" | "reader";
   priority: number;
+  /** Identity color for this domain's `[domain]` log prefix. Defaults to gray. */
+  color?: DomainColor;
   run?(opts: DomainRunOptions, ctx: RunContext): Promise<DomainRunHandle | undefined>;
   /**
    * Absolute content paths this domain watches in watch mode (besides

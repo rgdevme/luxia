@@ -33,9 +33,10 @@ export async function mirrorRules(
       });
       if (kind !== "already-linked") created.push(kind);
     } catch (err) {
-      ctx.logger.warn(
-        `rules: could not mirror ${agentFilename} for ${rel}: ${(err as Error).message}`,
-      );
+      ctx.logger.warn({
+        message: `could not mirror ${agentFilename} for ${rel}`,
+        status: (err as Error).message,
+      });
     }
   }
   noteRuleLinkMode(created, agentFilename, ctx);
@@ -53,12 +54,13 @@ function noteRuleLinkMode(
   ctx: MaterializeContext,
 ): void {
   if (created.includes("copy")) {
-    ctx.logger.warn(
-      `rules: copied ${agentFilename} (changes to the source won't propagate).\n${describeSymlinkFailure()}`,
-    );
+    ctx.logger.warn({
+      message: `copied ${agentFilename} (changes to the source won't propagate)`,
+      extra: describeSymlinkFailure(),
+    });
   } else if (created.includes("hardlink")) {
     ctx.logger.info(
-      `rules: hardlinked ${agentFilename} (content stays in sync). ` +
+      `hardlinked ${agentFilename} (content stays in sync). ` +
         `Enable Developer Mode / an elevated shell for symlinks.`,
     );
   }
@@ -103,7 +105,10 @@ export async function linkSkills(
   try {
     await ensureLink(canonicalDir, linkPath, ctx.linker, { fallback: "copy", owned: true });
   } catch (err) {
-    ctx.logger.warn(`skills: could not link ${rel}: ${(err as Error).message}`);
+    ctx.logger.warn({
+      message: `could not link skills dir ${rel}`,
+      status: (err as Error).message,
+    });
   }
 }
 

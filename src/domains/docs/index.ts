@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgnosConfig, Domain } from "../../core/index.js";
-import { readConfigOrDefault, withSpinner, writeConfig } from "../../core/index.js";
+import { readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { compileDocsIndex, DEFAULT_DOCS_ROOT, INDEX_FILE, LOG_FILE } from "./compile.js";
 
 export * from "./compile.js";
@@ -11,6 +11,7 @@ export const docsDomain: Domain = {
   description: "Compile a documentation index from docs.root",
   kind: "writer",
   priority: 20,
+  color: "cyan",
   initSteps: [
     {
       id: "root",
@@ -35,11 +36,10 @@ export const docsDomain: Domain = {
     const config = await readConfigOrDefault(ctx.configPath);
     // Nothing to do unless a docs root is configured (empty/undefined → skip).
     if (!config.docs?.root) return undefined;
-    await withSpinner(
-      `Compiling docs index from ${config.docs.root}`,
-      () => compileDocsIndex(config, ctx),
-      { quiet: opts.quiet },
-    );
+    await ctx.logger.info({
+      message: `Compiling docs index from ${config.docs.root}`,
+      waitFor: compileDocsIndex(config, ctx),
+    });
     return undefined;
   },
   // Watch the docs tree itself; the supervisor ignores the generated index.md

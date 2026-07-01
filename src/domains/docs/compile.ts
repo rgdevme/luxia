@@ -64,13 +64,6 @@ function renderIndexBody(docs: DocEntry[]): string {
   return lines.join("\n").trimEnd();
 }
 
-/** The fixed frontmatter shape rendered as `key: <hint>` lines, in schema order. */
-function metadataShape(): string {
-  return Object.entries(docFrontmatterSchema.shape)
-    .map(([key, schema]) => `${key}: ${schema.description ?? ""}`)
-    .join("\n");
-}
-
 export interface CompileResult {
   written: boolean;
   /** Relative paths of docs whose frontmatter does not satisfy `docFrontmatterSchema`. */
@@ -127,16 +120,12 @@ export async function compileDocsIndex(
   }
 
   if (incomplete.length > 0) {
-    const shape = ["```markdown", metadataShape(), "```"]
-      .join("\n")
-      .split("\n")
-      .map((line) => ` > ${line}`)
-      .join("\n");
-    ctx.logger.warn(
-      `The following files' metadata is incomplete:\n` +
-        incomplete.map((f) => `- ${f}`).join("\n") +
-        `\n\nMetadata shape:\n${shape}`,
-    );
+    // The expected frontmatter shape lives in the doc-authoring skill, so the
+    // warning just names the offending files (relative, forward-slashed).
+    ctx.logger.warn({
+      message: "The following files' metadata is incomplete:",
+      extra: incomplete.map((f) => `- ${f}`),
+    });
   }
 
   return { written, incomplete };
