@@ -113,6 +113,27 @@ describe("injectRules", () => {
     expect(out).not.toContain("second");
   });
 
+  it("expands directories and globs by declaration order then alphabetical path", async () => {
+    await frag("frag/dir/b.md", "B", "b body");
+    await frag("frag/dir/a.md", "A", "a body");
+    await frag("frag/glob/d.md", "D", "d body");
+    await frag("frag/glob/c.md", "C", "c body");
+    await frag("frag/one.md", "One", "one body");
+
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      rules: { files: { "./AGENTS.md": ["./frag/one.md", "./frag/glob/*.md", "./frag/dir"] } },
+    };
+
+    await injectRules(config, ctxFor(tmp));
+    const out = await read("AGENTS.md");
+
+    expect(out.indexOf("## One")).toBeLessThan(out.indexOf("## C"));
+    expect(out.indexOf("## C")).toBeLessThan(out.indexOf("## D"));
+    expect(out.indexOf("## D")).toBeLessThan(out.indexOf("## A"));
+    expect(out.indexOf("## A")).toBeLessThan(out.indexOf("## B"));
+  });
+
   it("prunes a section when its fragment is removed from the config", async () => {
     await frag("frag/a.md", "Alpha", "a body");
     await frag("frag/b.md", "Beta", "b body");

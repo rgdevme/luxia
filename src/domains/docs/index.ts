@@ -52,7 +52,8 @@ export const docsDomain: Domain = {
     const root = config.docs?.root;
     if (!root) return [];
     const base = path.resolve(ctx.projectRoot, root);
-    return [path.join(base, INDEX_FILE), path.join(base, LOG_FILE)];
+    const configured = (config.docs?.ignore ?? []).map((pattern) => path.join(base, pattern));
+    return [path.join(base, INDEX_FILE), path.join(base, LOG_FILE), ...configured];
   },
 };
 

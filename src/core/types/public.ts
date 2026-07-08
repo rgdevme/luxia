@@ -10,6 +10,8 @@ export type AgentRef = string;
 export interface DocsConfig {
   /** Docs directory, relative to project root. Defaults to ".docs". */
   root?: string;
+  /** Glob patterns, relative to docs.root, excluded from docs indexing. */
+  ignore?: string[];
 }
 
 export interface AgnosConfig {
@@ -60,8 +62,9 @@ export interface LockFile {
 
 export interface RulesDeclaration {
   /**
-   * Map of canonical rules file → injectable fragment files. The rules domain
-   * injects each fragment as a titled section into its canonical file.
+   * Map of canonical rules file → injectable fragment paths. Each path may be
+   * a file, directory, or glob pattern. The rules domain injects each resolved
+   * fragment as a titled section into its canonical file.
    */
   files: Record<string, string[]>;
 }

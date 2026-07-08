@@ -3,6 +3,7 @@ import chokidar, { type FSWatcher } from "chokidar";
 import type { DomainRunOptions, RunContext } from "./types/public.js";
 import { readConfigOrDefault } from "./config.js";
 import { workspaceRelativePath } from "./context.js";
+import { matchesAbsolutePatterns } from "./glob.js";
 import { withDomain } from "./logger.js";
 import { orderedDomains, type PluginRegistry, type RegisteredDomain } from "./plugin-loader.js";
 import { runFrom, runOne } from "./run.js";
@@ -103,13 +104,13 @@ export async function startWatch(
         (p) => path.resolve(p) !== path.resolve(ctx.configPath),
       );
       if (paths.length === 0) continue;
-      const ignore = ((await dom.domain.watchIgnore?.(config, ctx)) ?? []).map((p) =>
-        path.resolve(p),
-      );
+      const ignore = (await dom.domain.watchIgnore?.(config, ctx)) ?? [];
       const watcher = chokidar.watch(paths, {
         ignoreInitial: true,
         awaitWriteFinish: AWAIT_WRITE_FINISH,
-        ...(ignore.length > 0 ? { ignored: (p: string) => ignore.includes(path.resolve(p)) } : {}),
+        ...(ignore.length > 0
+          ? { ignored: (p: string) => matchesAbsolutePatterns(p, ignore) }
+          : {}),
       });
       const from = dom.domain.priority;
       const domLog = withDomain(ctx.logger, dom.domain);
