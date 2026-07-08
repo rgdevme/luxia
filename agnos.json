@@ -1,20 +1,16 @@
 {
-  "$schema": "https://unpkg.com/@luxia/agnos/schema.json",
+  "$schema": "./schema.json",
   "schemaVersion": 1,
   "agents": ["claude-code", "codex"],
   "rules": {
     "files": {
-      "./AGENTS.md": [
-        "./.rules/coding.md",
-        "./.rules/secrets.md",
-        "./.rules/git.md",
-        "./.rules/docs.md"
-      ]
+      "./AGENTS.md": [".docs/.rules/*"]
     }
   },
   "skills": {},
   "mcp": [],
   "docs": {
+    "ignore": [".rules"],
     "root": ".docs"
   }
 }
