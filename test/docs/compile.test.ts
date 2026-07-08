@@ -139,6 +139,25 @@ describe("compileDocsIndex", () => {
     expect(idx).toContain("[Guide](guide.md)");
   });
 
+  it("ignores configured files and directories relative to docs.root", async () => {
+    await doc("guide.md", full("Guide", "kept"));
+    await doc("drafts/plan.md", full("Plan", "ignored directory"));
+    await doc("nested/ignore.tmp.md", full("Temp", "ignored glob"));
+    await doc("nested/keep.md", full("Keep", "kept nested"));
+
+    const res = await compileDocsIndex(
+      { schemaVersion: 1, docs: { root: ".docs", ignore: ["drafts", "**/*.tmp.md"] } },
+      ctxFor(tmp),
+    );
+
+    expect(res.incomplete).toEqual([]);
+    const idx = await readIndex();
+    expect(idx).toContain("[Guide](guide.md): kept");
+    expect(idx).toContain("[Keep](nested/keep.md): kept nested");
+    expect(idx).not.toContain("Plan");
+    expect(idx).not.toContain("Temp");
+  });
+
   it("warns with the incomplete-files list", async () => {
     await doc("partial.md", { title: "Partial" });
     const warnings: LogParts[] = [];

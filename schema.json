@@ -27,7 +27,7 @@
       "properties": {
         "files": {
           "type": "object",
-          "description": "Map of canonical rules file path → array of injectable fragment file paths.",
+          "description": "Map of canonical rules file path → array of injectable fragment paths. Each fragment path may be a file, directory, or glob pattern.",
           "additionalProperties": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 }
@@ -176,6 +176,11 @@
           "type": "string",
           "minLength": 1,
           "description": "Directory where doc files live (default \".docs\")."
+        },
+        "ignore": {
+          "type": "array",
+          "description": "Glob patterns, relative to docs.root, excluded from docs indexing.",
+          "items": { "type": "string", "minLength": 1 }
         }
       },
       "additionalProperties": false

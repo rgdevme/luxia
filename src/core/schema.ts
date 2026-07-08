@@ -116,6 +116,7 @@ export const hooksConfigSchema = z.array(hookEntrySchema);
  */
 export const docsConfigSchema = z.object({
   root: z.string().min(1).default(".docs"),
+  ignore: z.array(z.string().min(1)).default([]),
 });
 
 /**

@@ -3,6 +3,13 @@ import path from "node:path";
 import matter from "gray-matter";
 import type { AgnosConfig, Domain, ResolveContext } from "../../core/index.js";
 import { readConfigOrDefault, readState, writeConfig, writeState } from "../../core/index.js";
+import {
+  hasGlobPattern,
+  matchesRelativePatterns,
+  normalizeRelativePath,
+  relativePosix,
+  walkEntries,
+} from "../../core/glob.js";
 import { injectSections, slugify, type Section } from "./inject.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
@@ -11,27 +18,117 @@ export * from "./inject.js";
 
 const DEFAULT_CANONICAL = "./AGENTS.md";
 
+interface FragmentPath {
+  absolutePath: string;
+  relativePath: string;
+}
+
+async function statOrNull(abs: string): Promise<Awaited<ReturnType<typeof fs.stat>> | null> {
+  try {
+    return await fs.stat(abs);
+  } catch {
+    return null;
+  }
+}
+
+function compareFragmentPath(a: FragmentPath, b: FragmentPath): number {
+  return a.relativePath.localeCompare(b.relativePath);
+}
+
+function uniqueSortedFragments(fragments: FragmentPath[]): FragmentPath[] {
+  return [...new Map(fragments.map((fragment) => [fragment.absolutePath, fragment])).values()].sort(
+    compareFragmentPath,
+  );
+}
+
+async function listMarkdownFragments(root: string, ctx: ResolveContext): Promise<FragmentPath[]> {
+  const entries = await walkEntries(root);
+  return entries
+    .filter((entry) => entry.kind === "file")
+    .filter((entry) => entry.absolutePath.endsWith(".md"))
+    .map((entry) => ({
+      absolutePath: entry.absolutePath,
+      relativePath: relativePosix(ctx.projectRoot, entry.absolutePath),
+    }))
+    .sort(compareFragmentPath);
+}
+
+async function resolveInjectableDeclaration(
+  declared: string,
+  ctx: ResolveContext,
+): Promise<FragmentPath[]> {
+  const absolutePath = path.resolve(ctx.projectRoot, declared);
+  const direct = await statOrNull(absolutePath);
+  if (direct?.isFile()) {
+    return [{ absolutePath, relativePath: relativePosix(ctx.projectRoot, absolutePath) }];
+  }
+  if (direct?.isDirectory()) {
+    return await listMarkdownFragments(absolutePath, ctx);
+  }
+
+  if (!hasGlobPattern(declared)) {
+    ctx.logger.warn({ message: "injectable not found, skipping", status: declared });
+    return [];
+  }
+
+  const matches: FragmentPath[] = [];
+  const entries = await walkEntries(ctx.projectRoot);
+  for (const entry of entries) {
+    if (!matchesRelativePatterns(entry.relativePath, [declared])) {
+      continue;
+    }
+
+    if (entry.kind === "file") {
+      matches.push({ absolutePath: entry.absolutePath, relativePath: entry.relativePath });
+    } else {
+      matches.push(...(await listMarkdownFragments(entry.absolutePath, ctx)));
+    }
+  }
+
+  const resolved = uniqueSortedFragments(matches);
+  if (resolved.length === 0) {
+    ctx.logger.warn({ message: "injectable pattern matched no files, skipping", status: declared });
+  }
+  return resolved;
+}
+
+function resolveWatchPath(declared: string, projectRoot: string): string {
+  const normalized = normalizeRelativePath(declared);
+  if (!hasGlobPattern(normalized)) {
+    return path.resolve(projectRoot, declared);
+  }
+
+  const baseSegments: string[] = [];
+  for (const segment of normalized.split("/")) {
+    if (hasGlobPattern(segment)) {
+      break;
+    }
+    baseSegments.push(segment);
+  }
+
+  return path.resolve(projectRoot, ...baseSegments);
+}
+
 /**
  * Read an injectable fragment and turn it into a titled section. Returns null
  * (with the missing-property recorded) when the fragment lacks a `title`.
  */
 async function loadSection(
-  rel: string,
+  fragment: FragmentPath,
   ctx: ResolveContext,
   missing: string[],
 ): Promise<Section | null> {
-  const abs = path.resolve(ctx.projectRoot, rel);
   let raw: string;
   try {
-    raw = await fs.readFile(abs, "utf8");
+    raw = await fs.readFile(fragment.absolutePath, "utf8");
   } catch {
-    ctx.logger.warn({ message: "injectable not found, skipping", status: rel });
+    ctx.logger.warn({ message: "injectable not found, skipping", status: fragment.relativePath });
     return null;
   }
   const parsed = matter(raw);
   const title = typeof parsed.data["title"] === "string" ? parsed.data["title"].trim() : "";
   if (!title) {
-    missing.push(rel);
+    missing.push(fragment.relativePath);
     return null;
   }
   return { slug: slugify(title), title, body: parsed.content };
@@ -53,19 +150,22 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
   for (const [canonical, injectables] of Object.entries(files)) {
     const sections: Section[] = [];
     const seen = new Map<string, string>(); // slug → first fragment path
-    for (const rel of injectables) {
-      const section = await loadSection(rel, ctx, missingTitle);
-      if (!section) continue;
-      const prior = seen.get(section.slug);
-      if (prior) {
-        ctx.logger.warn({
-          message: `duplicate title "${section.title}" for ${canonical} (${prior} and ${rel})`,
-          status: `skipping ${rel}`,
-        });
-        continue;
+    for (const declared of injectables) {
+      const fragments = await resolveInjectableDeclaration(declared, ctx);
+      for (const fragment of fragments) {
+        const section = await loadSection(fragment, ctx, missingTitle);
+        if (!section) continue;
+        const prior = seen.get(section.slug);
+        if (prior) {
+          ctx.logger.warn({
+            message: `duplicate title "${section.title}" for ${canonical} (${prior} and ${fragment.relativePath})`,
+            status: `skipping ${fragment.relativePath}`,
+          });
+          continue;
+        }
+        seen.set(section.slug, fragment.relativePath);
+        sections.push(section);
       }
-      seen.set(section.slug, rel);
-      sections.push(section);
     }
 
     const canonAbs = path.resolve(ctx.projectRoot, canonical);
@@ -149,7 +249,7 @@ export const rulesDomain: Domain = {
     const files = config.rules?.files ?? {};
     const seen = new Set<string>();
     for (const injectables of Object.values(files)) {
-      for (const rel of injectables) seen.add(path.resolve(ctx.projectRoot, rel));
+      for (const rel of injectables) seen.add(resolveWatchPath(rel, ctx.projectRoot));
     }
     return [...seen];
   },

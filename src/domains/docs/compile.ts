@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import type { AgnosConfig, ResolveContext } from "../../core/index.js";
 import { docFrontmatterSchema } from "../../core/index.js";
+import { matchesRelativePatterns, walkEntries } from "../../core/glob.js";
 
 export const DEFAULT_DOCS_ROOT = ".docs";
 export const INDEX_FILE = "index.md";
@@ -19,23 +19,13 @@ interface DocEntry {
   description: string;
 }
 
-async function listDocs(root: string): Promise<string[]> {
-  const out: string[] = [];
-  async function walk(dir: string): Promise<void> {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const abs = path.join(dir, e.name);
-      if (e.isDirectory()) await walk(abs);
-      else if (e.isFile() && e.name.endsWith(".md")) out.push(abs);
-    }
-  }
-  await walk(root);
-  return out;
+async function listDocs(root: string, ignore: readonly string[]): Promise<string[]> {
+  const entries = await walkEntries(root);
+  return entries
+    .filter((entry) => entry.kind === "file")
+    .filter((entry) => entry.absolutePath.endsWith(".md"))
+    .filter((entry) => !matchesRelativePatterns(entry.relativePath, ignore))
+    .map((entry) => entry.absolutePath);
 }
 
 function renderIndexBody(docs: DocEntry[]): string {
@@ -83,7 +73,9 @@ export async function compileDocsIndex(
   const root = path.resolve(ctx.projectRoot, config.docs?.root ?? DEFAULT_DOCS_ROOT);
   const indexAbs = path.join(root, INDEX_FILE);
 
-  const files = (await listDocs(root)).filter((abs) => !RESERVED_FILES.has(path.basename(abs)));
+  const files = (await listDocs(root, config.docs?.ignore ?? [])).filter(
+    (abs) => !RESERVED_FILES.has(path.basename(abs)),
+  );
   const docs: DocEntry[] = [];
   const incomplete: string[] = [];
 

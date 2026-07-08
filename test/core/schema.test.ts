@@ -37,10 +37,18 @@ describe("schemas", () => {
   });
 
   it("docsConfigSchema defaults root to .docs and no longer carries metadata", () => {
-    expect(docsConfigSchema.parse({})).toEqual({ root: ".docs" });
+    expect(docsConfigSchema.parse({})).toEqual({ root: ".docs", ignore: [] });
     const parsed = docsConfigSchema.parse({ root: "documentation", metadata: { owner: "team" } });
     expect(parsed.root).toBe("documentation");
+    expect(parsed.ignore).toEqual([]);
     expect((parsed as Record<string, unknown>)["metadata"]).toBeUndefined();
+  });
+
+  it("docsConfigSchema accepts ignore glob patterns", () => {
+    expect(docsConfigSchema.parse({ ignore: ["drafts/**", "**/*.tmp.md"] }).ignore).toEqual([
+      "drafts/**",
+      "**/*.tmp.md",
+    ]);
   });
 
   it("docFrontmatterSchema requires type/title/description/timestamp and allows empty resource/tags", () => {
