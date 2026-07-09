@@ -28,7 +28,7 @@ import {
 } from "../cli-helpers.js";
 import { runSkillPipeline } from "./pipeline.js";
 import { mergeSkillSources } from "./migrate.js";
-import { createSkillSteps, updateSkills } from "./steps.js";
+import { createSkillSteps, pruneSkills, updateSkills } from "./steps.js";
 
 export * from "./pipeline.js";
 export * from "./migrate.js";
@@ -288,15 +288,16 @@ const commands: Record<string, CommandSpec> = {
         const message = anyInstalled
           ? "Select skills to add (already-installed skills are preselected):"
           : "Select skills to add:";
-        const choices = candidates.map((c, i) => ({
-          name: choiceLabel(c),
-          value: String(i),
-          group: c.name, // selecting one auto-deselects same-named candidates
-          checked: isInstalled(c),
-          ...(capDescription(c.skill.description)
-            ? { description: capDescription(c.skill.description)! }
-            : {}),
-        }));
+        const choices = candidates.map((c, i) => {
+          const description = capDescription(c.skill.description);
+          return {
+            name: choiceLabel(c),
+            value: String(i),
+            group: c.name, // selecting one auto-deselects same-named candidates
+            checked: isInstalled(c),
+            ...(description ? { description } : {}),
+          };
+        });
         const picked = await multiSelectExclusive(
           ctx,
           message,
@@ -307,7 +308,11 @@ const commands: Record<string, CommandSpec> = {
           ctx.logger.info("nothing selected");
           return;
         }
-        chosen = picked.map((i) => candidates[Number(i)]!);
+        chosen = picked.map((i) => {
+          const candidate = candidates[Number(i)];
+          if (!candidate) throw new Error(`invalid skill selection: ${i}`);
+          return candidate;
+        });
       }
 
       // Expand each pick into a concrete per-skill composite ref. Storage shape
@@ -364,8 +369,10 @@ const commands: Record<string, CommandSpec> = {
           declared.map(async (n) => {
             const { description } = await readSkillMeta(path.join(skillsDir, n, "SKILL.md"));
             const desc = capDescription(description);
+            const source = all[n];
+            if (!source) throw new Error(`skill "${n}" is not declared`);
             return {
-              name: `${n} ${colors.dim(all[n]!)}`,
+              name: `${n} ${colors.dim(source)}`,
               value: n,
               ...(desc ? { description: desc } : {}),
             };
@@ -420,6 +427,12 @@ const commands: Record<string, CommandSpec> = {
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
       const sources = config.skills?.sources ?? {};
+      const pruned = await pruneSkills(config, ctx);
+      if (pruned.removed.length > 0 || pruned.unpinned.length > 0) {
+        ctx.logger.success(
+          `pruned ${pruned.removed.length} skill(s), ${pruned.unpinned.length} lock entr${pruned.unpinned.length === 1 ? "y" : "ies"}`,
+        );
+      }
       if (Object.keys(sources).length === 0) {
         ctx.logger.info("no skills declared");
         return;
@@ -429,6 +442,21 @@ const commands: Record<string, CommandSpec> = {
       await handle.flush();
       if (res.installed.length > 0)
         ctx.logger.success(`installed ${res.installed.length} skill(s)`);
+    },
+  },
+  prune: {
+    name: "prune",
+    description: "Remove materialized skills and lock entries no longer declared",
+    async run(ctx) {
+      const config = await readConfigOrDefault(ctx.configPath);
+      const pruned = await pruneSkills(config, ctx);
+      if (pruned.removed.length === 0 && pruned.unpinned.length === 0) {
+        ctx.logger.info("no stale skills to prune");
+        return;
+      }
+      ctx.logger.success(
+        `pruned ${pruned.removed.length} skill(s), ${pruned.unpinned.length} lock entr${pruned.unpinned.length === 1 ? "y" : "ies"}`,
+      );
     },
   },
   update: {
@@ -441,6 +469,7 @@ const commands: Record<string, CommandSpec> = {
       const config = await readConfigOrDefault(ctx.configPath);
       const declared = Object.keys(config.skills?.sources ?? {});
       const n = ctx.args.length > 0 ? ctx.args.length : declared.length;
+      await pruneSkills(config, ctx);
       const updated = await ctx.logger.info({
         message: `Updating ${n} skill${n === 1 ? "" : "s"}…`,
         waitFor: updateSkills(ctx.args, config, ctx),
@@ -540,6 +569,7 @@ export const skillsDomain: Domain = {
     const sources = config.skills?.sources ?? {};
     // No skill sources declared → nothing to fetch/verify.
     const count = Object.keys(sources).length;
+    await pruneSkills(config, ctx);
     if (count === 0) return undefined;
     // Run the offline prep pipeline (fetch → integrity → install). Failures are
     // bucketed and reported as "Skills need to be updated: …" without throwing,

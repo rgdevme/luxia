@@ -43,10 +43,12 @@ describe("schema.json stays aligned with the zod schema", () => {
   });
 
   it("mcp transport enum matches mcpDeclarationSchema", () => {
-    const json = schema.properties["mcp"]?.items as {
-      properties: { transport: { enum: string[] } };
+    const json = schema.properties["mcp"] as {
+      properties: { servers: { items: { properties: { transport: { enum: string[] } } } } };
     };
     const zodTransport = mcpDeclarationSchema.shape.transport.unwrap().options;
-    expect(sorted(json.properties.transport.enum)).toEqual(sorted(zodTransport));
+    expect(sorted(json.properties.servers.items.properties.transport.enum)).toEqual(
+      sorted(zodTransport),
+    );
   });
 });

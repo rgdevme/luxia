@@ -29,7 +29,7 @@ function fakeFetch(...responses: Response[]): { fetch: typeof fetch; urls: strin
 }
 
 describe("registry — toDeclarations", () => {
-  it("maps an npm package to an npx -y stdio command with env placeholders", () => {
+  it("maps an npm package to an npx -y stdio command with env key names", () => {
     const server: RegistryServer = {
       name: "io.github.acme/weather",
       title: "Weather",
@@ -54,7 +54,7 @@ describe("registry — toDeclarations", () => {
       command: "npx",
       transport: "stdio",
       args: ["-y", "@acme/weather@1.2.3", "--verbose"],
-      env: { API_KEY: "" },
+      env: ["API_KEY"],
     });
   });
 

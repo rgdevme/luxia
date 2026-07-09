@@ -9,7 +9,7 @@ import type {
   ResolveContext,
 } from "../../src/core/index.js";
 import { createLogger } from "../../src/core/index.js";
-import { createSkillSteps, updateSkills } from "../../src/domains/skills/steps.js";
+import { createSkillSteps, pruneSkills, updateSkills } from "../../src/domains/skills/steps.js";
 import { runSkillPipeline } from "../../src/domains/skills/pipeline.js";
 import skillsDomain from "../../src/domains/skills/index.js";
 
@@ -37,9 +37,22 @@ const cfg = (): AgnosConfig => ({
 const SOURCES = { mytool: "file:./skill-src" };
 const fetchSrc = async (steps: Awaited<ReturnType<typeof createSkillSteps>>["steps"]) => {
   const f = await steps.fetch("mytool", "file:./skill-src");
-  return f.src!;
+  if (!f.src) throw new Error("expected mytool fetch to resolve");
+  return f.src;
 };
 const installed = path.join(".agnos", "skills", "mytool", "SKILL.md");
+
+function resolveSkillsDomainRun(): NonNullable<typeof skillsDomain.run> {
+  const run = skillsDomain.run;
+  if (!run) throw new Error("skills domain run is not registered");
+  return run;
+}
+
+function resolveSkillsCommand(name: string) {
+  const command = skillsDomain.commands?.[name];
+  if (!command) throw new Error(`skills command "${name}" is not registered`);
+  return command;
+}
 
 beforeEach(async () => {
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-skills-"));
@@ -94,6 +107,39 @@ describe("skills prep pipeline (steps)", () => {
     expect(await h2.steps.integrity("mytool", await fetchSrc(h2.steps))).toBe(true);
     expect(await fs.readFile(path.join(tmp, installed), "utf8")).toContain("Changed");
   });
+
+  it("pruneSkills removes undeclared materialized skills and stale lock entries", async () => {
+    const ctx = ctxFor();
+    const h = await createSkillSteps(cfg(), ctx);
+    await runSkillPipeline(SOURCES, h.steps, ctx.logger);
+    await h.flush();
+    await fs.mkdir(path.join(tmp, ".agnos", "skills", "oldtool"), { recursive: true });
+    await fs.writeFile(path.join(tmp, ".agnos", "skills", "oldtool", "SKILL.md"), "# Old\n");
+    await fs.writeFile(path.join(tmp, ".agnos", "skills", "note.txt"), "keep me");
+
+    const lockPath = path.join(tmp, "agnos.lock.json");
+    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+      skills: Record<string, unknown>;
+    };
+    lock.skills["file:./old-src"] = {
+      computedHash: "a".repeat(64),
+      resolvedAt: "2026-07-09T00:00:00.000Z",
+    };
+    await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+
+    const pruned = await pruneSkills(cfg(), ctx);
+
+    expect(pruned.removed).toEqual(["oldtool"]);
+    expect(pruned.unpinned).toEqual(["file:./old-src"]);
+    await expect(fs.access(path.join(tmp, ".agnos", "skills", "oldtool"))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(tmp, ".agnos", "skills", "note.txt")),
+    ).resolves.toBeUndefined();
+    const nextLock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+      skills: Record<string, unknown>;
+    };
+    expect(Object.keys(nextLock.skills)).toEqual(["file:./skill-src"]);
+  });
 });
 
 describe("skills domain run", () => {
@@ -114,16 +160,36 @@ describe("skills domain run", () => {
       logger: { ...createLogger({ quiet: true }), warn: (m: LogParts) => warns.push(m) },
       flags: { dry: false, once: true, quiet: false, help: false, init: false, yes: true },
     };
-    await skillsDomain.run!(
+    await resolveSkillsDomainRun()(
       { dry: false, once: true, quiet: false, interactive: false },
       ctx as never,
     );
 
     expect(warns).toHaveLength(1);
-    const { message, extra } = warns[0]!;
+    const firstWarn = warns[0];
+    if (!firstWarn) throw new Error("expected skills warning");
+    const { message, extra } = firstWarn;
     expect(message).toContain("skills need updating");
     expect(message).toContain("1 changed");
     expect(extra).toBe("run: agnos skills update");
+  });
+
+  it("prunes stale materialized skills during the normal domain run", async () => {
+    await fs.writeFile(path.join(tmp, "agnos.json"), JSON.stringify(cfg()));
+    await fs.mkdir(path.join(tmp, ".agnos", "skills", "oldtool"), { recursive: true });
+    await fs.writeFile(path.join(tmp, ".agnos", "skills", "oldtool", "SKILL.md"), "# Old\n");
+    const ctx = {
+      ...ctxFor(),
+      flags: { dry: false, once: true, quiet: false, help: false, init: false, yes: true },
+    };
+
+    await resolveSkillsDomainRun()(
+      { dry: false, once: true, quiet: false, interactive: false },
+      ctx as never,
+    );
+
+    await expect(fs.access(path.join(tmp, ".agnos", "skills", "oldtool"))).rejects.toThrow();
+    await expect(fs.access(path.join(tmp, installed))).resolves.toBeUndefined();
   });
 });
 
@@ -147,7 +213,7 @@ describe("skills migrate command", () => {
         missing: true,
       },
     };
-    await skillsDomain.commands!["migrate"]!.run(ctx);
+    await resolveSkillsCommand("migrate").run(ctx);
     const out = JSON.parse(await fs.readFile(path.join(tmp, "agnos.json"), "utf8"));
     expect(out.skills.sources).toEqual({ pdf: "github:o/r/skills/pdf" });
   });

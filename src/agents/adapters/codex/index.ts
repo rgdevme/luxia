@@ -9,7 +9,7 @@ import type {
   McpDeclaration,
   ResolvedMcp,
 } from "../../../core/index.js";
-import { importMcpServers, pickEnv, pickStringArray } from "../../../core/index.js";
+import { importMcpServers, pickEnv, pickEnvKeys, pickStringArray } from "../../../core/index.js";
 import { identityEventMap, renderNativeHooks, scrapeNativeHooks } from "../hooks-map.js";
 import { linkSkills, mirrorRules, removePaths, writeIfChanged } from "../shared.js";
 
@@ -144,7 +144,7 @@ function fromCodexServer(name: string, entry: unknown): McpDeclaration | undefin
   const decl: McpDeclaration = { name, transport, command };
   const args = pickStringArray(e["args"]);
   if (args && args.length > 0) decl.args = args;
-  const env = pickEnv(e["env"]);
+  const env = pickEnvKeys(e["env"]);
   if (env) decl.env = env;
   const headers = pickEnv(e["headers"]);
   if (headers) decl.headers = headers;

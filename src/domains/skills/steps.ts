@@ -7,6 +7,7 @@ import {
   hashSkillDir,
   parseCompositeSkillRef,
   readLock,
+  removeSkill,
   resolveGitCommit,
   resolveLocalCommit,
   upsertSkill,
@@ -72,6 +73,58 @@ export interface SkillStepsHandle {
   steps: SkillSteps;
   /** Persist the lock if `install` pinned any new skills. */
   flush(): Promise<void>;
+}
+
+export interface PruneSkillsResult {
+  removed: string[];
+  unpinned: string[];
+}
+
+export async function pruneSkills(
+  config: AgnosConfig,
+  ctx: ResolveContext,
+): Promise<PruneSkillsResult> {
+  const sources = config.skills?.sources ?? {};
+  const desiredNames = new Set(Object.keys(sources));
+  const desiredSources = new Set(Object.values(sources));
+  const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
+  let lock = await readLock(ctx.projectRoot);
+  let dirty = false;
+  const result: PruneSkillsResult = { removed: [], unpinned: [] };
+
+  let children: string[];
+  try {
+    children = await fs.readdir(skillsDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    children = [];
+  }
+
+  for (const name of children) {
+    if (desiredNames.has(name)) continue;
+    const candidate = path.join(skillsDir, name);
+    if (!(await isSkillDir(candidate))) continue;
+    result.removed.push(name);
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: remove skill "${name}"`);
+    } else {
+      await fs.rm(candidate, { recursive: true, force: true });
+    }
+  }
+
+  for (const source of Object.keys(lock.skills)) {
+    if (desiredSources.has(source)) continue;
+    result.unpinned.push(source);
+    if (ctx.dryRun) {
+      ctx.logger.info(`would: unpin skill source ${source}`);
+    } else {
+      lock = removeSkill(lock, source);
+      dirty = true;
+    }
+  }
+
+  if (dirty) await writeLock(ctx.projectRoot, lock);
+  return result;
 }
 
 /**

@@ -26,6 +26,7 @@ export type {
   LogParts,
   LogTask,
   MaterializeContext,
+  McpConfig,
   McpDeclaration,
   ParsedFlags,
   ParsedSourceRef,
@@ -67,7 +68,7 @@ export { runDomainInitSteps, runAllDomainInitSteps } from "./commands/init-steps
 export type { RunStepsOptions } from "./commands/init-steps.js";
 export { createLinker, describeSymlinkFailure, ensureLink } from "./fs/link.js";
 export type { EnsureLinkResult } from "./fs/link.js";
-export { importMcpServers, pickEnv, pickStringArray } from "./agent-helpers.js";
+export { importMcpServers, pickEnv, pickEnvKeys, pickStringArray } from "./agent-helpers.js";
 export { createRepoFetcher } from "./resolver.js";
 export {
   parseSource,
@@ -119,6 +120,7 @@ export {
   hookEventSchema,
   hooksConfigSchema,
   lockFileSchema,
+  mcpConfigSchema,
   mcpDeclarationSchema,
   rulesDeclarationSchema,
   SCHEMA_VERSION,

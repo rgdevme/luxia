@@ -19,6 +19,12 @@ export function pickEnv(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Coerce an env object to its declared key names, dropping the values. */
+export function pickEnvKeys(value: unknown): string[] | undefined {
+  const env = pickEnv(value);
+  return env ? Object.keys(env) : undefined;
+}
+
 /**
  * Read an agent's native MCP config file and return the centralizable
  * declarations. Handles the shared skeleton — missing file → [], read/parse

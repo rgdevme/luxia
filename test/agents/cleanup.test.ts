@@ -91,10 +91,39 @@ describe("renderAgent", () => {
     const config: AgnosConfig = {
       schemaVersion: 1,
       agents: ["claude-code"],
-      mcp: [{ name: "fs", command: "pnpx" }],
+      mcp: { servers: [{ name: "fs", command: "pnpx" }] },
     };
     await renderAgent(claudeCode, config, ctx);
     const written = JSON.parse(await fs.readFile(path.join(tmp, ".mcp.json"), "utf8"));
     expect(written.mcpServers.fs.command).toBe("pnpx");
+  });
+
+  it("resolves declared mcp env keys from .env.local", async () => {
+    const ctx = ctxFor(tmp);
+    await fs.writeFile(path.join(tmp, ".env.local"), "TOKEN=secret\nFROM=team@example.com\n");
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      agents: ["claude-code"],
+      mcp: { servers: [{ name: "fs", command: "pnpx", env: ["TOKEN", "FROM"] }] },
+    };
+    await renderAgent(claudeCode, config, ctx);
+    const written = JSON.parse(await fs.readFile(path.join(tmp, ".mcp.json"), "utf8"));
+    expect(written.mcpServers.fs.env).toEqual({ TOKEN: "secret", FROM: "team@example.com" });
+  });
+
+  it("does not write mcp config when declared env keys are missing", async () => {
+    const warnings: string[] = [];
+    const ctx = {
+      ...ctxFor(tmp),
+      logger: { ...createLogger({ quiet: true }), warn: (m) => warnings.push(String(m)) },
+    };
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      agents: ["claude-code"],
+      mcp: { servers: [{ name: "fs", command: "pnpx", env: ["TOKEN"] }] },
+    };
+    await renderAgent(claudeCode, config, ctx);
+    await expect(fs.access(path.join(tmp, ".mcp.json"))).rejects.toThrow();
+    expect(warnings.some((w) => w.includes("mcp env file") && w.includes(".env.local"))).toBe(true);
   });
 });

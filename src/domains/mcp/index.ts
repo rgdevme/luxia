@@ -54,6 +54,14 @@ function isRemote(transport: McpDeclaration["transport"]): boolean {
   return transport === "sse" || transport === "http";
 }
 
+function getMcpServers(config: AgnosConfig): McpDeclaration[] {
+  return config.mcp?.servers ?? [];
+}
+
+function withMcpServers(config: AgnosConfig, servers: McpDeclaration[]): AgnosConfig {
+  return { ...config, mcp: { ...config.mcp, servers } };
+}
+
 function confirmMessage(server: RegistryServer): string {
   const title = server.title ?? server.name;
   const desc = server.description ? `\n  ${colors.dim(server.description)}` : "";
@@ -102,8 +110,8 @@ async function resolveDeployment(
 }
 
 function collectPlaceholders(decl: McpDeclaration, into: string[]): void {
-  for (const [key, value] of Object.entries(decl.env ?? {})) {
-    if (value === "") into.push(`${decl.name}.env.${key}`);
+  for (const key of decl.env ?? []) {
+    into.push(`${decl.name}.env.${key}`);
   }
   for (const [key, value] of Object.entries(decl.headers ?? {})) {
     if (value === "") into.push(`${decl.name}.headers.${key}`);
@@ -176,7 +184,7 @@ async function addFromRegistry(
   await writeChange(
     ctx,
     `added ${additions.length} mcp server(s): ${additions.map((d) => d.name).join(", ")}`,
-    { ...config, mcp: [...mcp, ...additions] },
+    withMcpServers(config, [...mcp, ...additions]),
   );
   if (placeholders.length > 0) {
     ctx.logger.info(`fill in before use: ${placeholders.join(", ")}`);
@@ -196,6 +204,18 @@ async function promptKeyValues(
     out[key] = await textPrompt(ctx, `Value for ${key}:`, { default: "" });
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+async function promptKeyNames(ctx: CommandContext, kind: string): Promise<string[] | undefined> {
+  const out: string[] = [];
+  for (;;) {
+    const key = (
+      await textPrompt(ctx, `Add ${kind} (name, blank to finish):`, { default: "" })
+    ).trim();
+    if (!key) break;
+    out.push(key);
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 async function addManually(
@@ -235,7 +255,7 @@ async function addManually(
     ).trim();
     const args = argsLine ? argsLine.split(/\s+/) : [];
     if (args.length > 0) decl.args = args;
-    const env = await promptKeyValues(ctx, "env var");
+    const env = await promptKeyNames(ctx, "env var");
     if (env) decl.env = env;
   } else {
     decl.command = (
@@ -243,11 +263,11 @@ async function addManually(
     ).trim();
     const headers = await promptKeyValues(ctx, "header");
     if (headers) decl.headers = headers;
-    const env = await promptKeyValues(ctx, "env var");
+    const env = await promptKeyNames(ctx, "env var");
     if (env) decl.env = env;
   }
 
-  await writeChange(ctx, `added mcp server "${decl.name}"`, { ...config, mcp: [...mcp, decl] });
+  await writeChange(ctx, `added mcp server "${decl.name}"`, withMcpServers(config, [...mcp, decl]));
 }
 
 function mergeValues(
@@ -263,13 +283,21 @@ function mergeValues(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function mergeKeys(
+  next: string[] | undefined,
+  existing: string[] | undefined,
+): string[] | undefined {
+  const out = [...new Set([...(next ?? []), ...(existing ?? [])])];
+  return out.length > 0 ? out : undefined;
+}
+
 function rebuildFrom(latest: RegistryServer, existing: McpDeclaration): McpDeclaration | undefined {
   const built = toDeclarations(latest).map((c) => c.build());
   const wantRemote = isRemote(existing.transport);
   const match = built.find((d) => isRemote(d.transport) === wantRemote) ?? built[0];
   if (!match) return undefined;
   match.name = existing.name;
-  const env = mergeValues(match.env, existing.env);
+  const env = mergeKeys(match.env, existing.env);
   if (env) match.env = env;
   else delete match.env;
   const headers = mergeValues(match.headers, existing.headers);
@@ -312,7 +340,7 @@ const commands: Record<string, CommandSpec> = {
     ],
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
-      const mcp = config.mcp ?? [];
+      const mcp = getMcpServers(config);
       const term = ctx.args[0];
       if (term) await addFromRegistry(ctx, config, mcp, term);
       else await addManually(ctx, config, mcp);
@@ -331,7 +359,7 @@ const commands: Record<string, CommandSpec> = {
     ],
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
-      const mcp = config.mcp ?? [];
+      const mcp = getMcpServers(config);
       if (!mcp.some((m) => m.source)) {
         ctx.logger.info("no registry-managed mcp servers to update");
         return;
@@ -372,7 +400,10 @@ const commands: Record<string, CommandSpec> = {
       await writeChange(
         ctx,
         `updated ${updates.size} mcp server(s): ${[...updates.keys()].join(", ")}`,
-        { ...config, mcp: mcp.map((m) => updates.get(m.name) ?? m) },
+        withMcpServers(
+          config,
+          mcp.map((m) => updates.get(m.name) ?? m),
+        ),
       );
     },
   },
@@ -389,7 +420,7 @@ const commands: Record<string, CommandSpec> = {
     ],
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
-      const mcp = config.mcp ?? [];
+      const mcp = getMcpServers(config);
       if (mcp.length === 0) {
         ctx.logger.info("no mcp servers to remove");
         return;
@@ -413,10 +444,14 @@ const commands: Record<string, CommandSpec> = {
       const present = new Set(mcp.map((m) => m.name));
       const missing = targets.filter((n) => !present.has(n));
       if (missing.length > 0) throw new Error(`mcp server(s) not found: ${missing.join(", ")}`);
-      await writeChange(ctx, `removed ${targets.length} mcp server(s): ${targets.join(", ")}`, {
-        ...config,
-        mcp: mcp.filter((m) => !targets.includes(m.name)),
-      });
+      await writeChange(
+        ctx,
+        `removed ${targets.length} mcp server(s): ${targets.join(", ")}`,
+        withMcpServers(
+          config,
+          mcp.filter((m) => !targets.includes(m.name)),
+        ),
+      );
     },
   },
   migrate: {
@@ -426,16 +461,17 @@ const commands: Record<string, CommandSpec> = {
     async run(ctx) {
       const discovered = (await scrapeActive("mcp", ctx)) as McpDeclaration[];
       const config = await readConfigOrDefault(ctx.configPath);
-      const res = mergeMcp(config.mcp ?? [], discovered, policyFromFlags(ctx));
+      const res = mergeMcp(getMcpServers(config), discovered, policyFromFlags(ctx));
       if (res.aborted) {
         throw new Error(
           `mcp migrate aborted: ${res.conflicts} conflict(s). Re-run with --force or --missing.`,
         );
       }
-      await writeChange(ctx, `mcp migrate: +${res.added} added, ${res.overwritten} overwritten`, {
-        ...config,
-        mcp: res.items,
-      });
+      await writeChange(
+        ctx,
+        `mcp migrate: +${res.added} added, ${res.overwritten} overwritten`,
+        withMcpServers(config, res.items),
+      );
     },
   },
 };

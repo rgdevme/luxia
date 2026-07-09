@@ -11,6 +11,7 @@ import type {
 import {
   importMcpServers,
   pickEnv,
+  pickEnvKeys,
   pickStringArray,
   readConfigOrDefault,
 } from "../../../core/index.js";
@@ -187,7 +188,7 @@ function fromGeminiServer(name: string, entry: unknown): McpDeclaration | undefi
   const remote = httpUrl ?? url;
   if (remote) {
     const decl: McpDeclaration = { name, transport: httpUrl ? "http" : "sse", command: remote };
-    const env = pickEnv(e["env"]);
+    const env = pickEnvKeys(e["env"]);
     if (env) decl.env = env;
     const headers = pickEnv(e["headers"]);
     if (headers) decl.headers = headers;
@@ -198,7 +199,7 @@ function fromGeminiServer(name: string, entry: unknown): McpDeclaration | undefi
   const decl: McpDeclaration = { name, transport: "stdio", command };
   const args = pickStringArray(e["args"]);
   if (args && args.length > 0) decl.args = args;
-  const env = pickEnv(e["env"]);
+  const env = pickEnvKeys(e["env"]);
   if (env) decl.env = env;
   return decl;
 }

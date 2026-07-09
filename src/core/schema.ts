@@ -41,9 +41,14 @@ export const mcpDeclarationSchema = z.object({
   version: z.string().min(1).optional(),
   command: z.string().min(1).optional(),
   args: z.array(z.string()).optional(),
-  env: z.record(z.string(), z.string()).optional(),
+  env: z.array(z.string().min(1)).optional(),
   headers: z.record(z.string(), z.string()).optional(),
   transport: z.enum(["stdio", "sse", "http"]).optional(),
+});
+
+export const mcpConfigSchema = z.object({
+  envFile: z.string().min(1).optional(),
+  servers: z.array(mcpDeclarationSchema).optional(),
 });
 
 /**
@@ -153,7 +158,7 @@ export const agnosConfigSchema = z
     agents: z.array(agentRefSchema).optional(),
     rules: rulesDeclarationSchema.optional(),
     skills: skillsConfigSchema.optional(),
-    mcp: z.array(mcpDeclarationSchema).optional(),
+    mcp: mcpConfigSchema.optional(),
     hooks: hooksConfigSchema.optional(),
     docs: docsConfigSchema.optional(),
   })

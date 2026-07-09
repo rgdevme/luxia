@@ -8,9 +8,11 @@
     }
   },
   "skills": {},
-  "mcp": [],
+  "mcp": {
+    "servers": []
+  },
   "docs": {
-    "ignore": [".rules"],
-    "root": ".docs"
+    "root": ".docs",
+    "ignore": [".rules"]
   }
 }

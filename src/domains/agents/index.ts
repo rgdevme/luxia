@@ -16,6 +16,7 @@ import { adapterById, ADAPTERS, DEFAULT_AGENT_IDS } from "../../agents/adapters/
 import { removePaths } from "../../agents/adapters/shared.js";
 import { supportsHookEvent } from "../../agents/adapters/hooks-map.js";
 import { multiSelectInteractive, writeChange } from "../cli-helpers.js";
+import { resolveMcpServers } from "./mcp-env.js";
 
 const ADD_HINT =
   "pass agent ids to add (e.g. `agnos agents add claude-code`) — interactive selection needs a TTY";
@@ -52,11 +53,20 @@ export function resolveSlices(config: AgnosConfig, ctx: ResolveContext): Record<
   const hasSkills = Object.keys(config.skills?.sources ?? {}).length > 0;
   return {
     rules: Object.keys(config.rules?.files ?? {}),
-    mcp: (config.mcp ?? []).map((m) => ({ ...m })) as ResolvedMcp[],
+    mcp: (config.mcp?.servers ?? []).map((m) => ({ ...m })) as ResolvedMcp[],
     hooks: config.hooks ?? [],
     // Empty string signals "no skills" → the adapter ensures the link is absent.
     skills: hasSkills ? buildPaths(ctx.projectRoot, config).skillsDir : "",
   };
+}
+
+async function resolveSlice(
+  slice: (typeof SLICES)[number],
+  config: AgnosConfig,
+  ctx: MaterializeContext,
+): Promise<unknown> {
+  if (slice === "mcp") return await resolveMcpServers(config.mcp, ctx);
+  return resolveSlices(config, ctx)[slice];
 }
 
 /** Active agent adapters, from `agnos.json#agents` (unknown ids warn + skip). */
@@ -92,12 +102,11 @@ export async function renderAgent(
   config: AgnosConfig,
   ctx: MaterializeContext,
 ): Promise<void> {
-  const slices = resolveSlices(config, ctx);
   for (const slice of SLICES) {
     const fn = adapter.render?.[slice];
     if (!fn) continue;
     try {
-      await fn(slices[slice], ctx);
+      await fn(await resolveSlice(slice, config, ctx), ctx);
     } catch (err) {
       ctx.logger.warn(`${adapter.id}: ${slice} render failed: ${(err as Error).message}`);
     }

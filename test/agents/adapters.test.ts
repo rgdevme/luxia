@@ -62,7 +62,7 @@ describe("claude-code adapter", () => {
         transport: "stdio",
         command: "npx",
         args: ["-y", "server-fs"],
-        env: { TOKEN: "x" },
+        env: ["TOKEN"],
       },
     ]);
   });
@@ -133,7 +133,7 @@ describe("codex adapter", () => {
         transport: "stdio",
         command: "npx",
         args: ["-y", "server-fs"],
-        env: { TOKEN: "x" },
+        env: ["TOKEN"],
       },
     ]);
   });
@@ -208,7 +208,7 @@ describe("gemini-cli adapter", () => {
         transport: "stdio",
         command: "npx",
         args: ["-y", "server-fs"],
-        env: { TOKEN: "x" },
+        env: ["TOKEN"],
       },
     ]);
   });
