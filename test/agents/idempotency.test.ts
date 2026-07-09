@@ -44,7 +44,7 @@ describe("idempotent rendering", () => {
     const config: AgnosConfig = {
       schemaVersion: 1,
       agents: ["claude-code"],
-      mcp: [{ name: "gh", command: "npx", args: ["-y", "s"], transport: "stdio" }],
+      mcp: { servers: [{ name: "gh", command: "npx", args: ["-y", "s"], transport: "stdio" }] },
       hooks: [
         { event: "PreToolUse", matcher: "git", type: "command", command: "echo x", message: "m" },
       ],

@@ -88,17 +88,19 @@ describe("mcp subcommands", () => {
       vi.fn(async () => regResponse(listing)),
     );
     await run(mcpDomain, "add", ["weather"]);
-    expect((await readCfg()).mcp).toEqual([
-      {
-        name: "weather",
-        source: "io.github.acme/weather",
-        version: "1.2.3",
-        command: "npx",
-        transport: "stdio",
-        args: ["-y", "@acme/weather@1.2.3"],
-        env: { API_KEY: "" },
-      },
-    ]);
+    expect((await readCfg()).mcp).toEqual({
+      servers: [
+        {
+          name: "weather",
+          source: "io.github.acme/weather",
+          version: "1.2.3",
+          command: "npx",
+          transport: "stdio",
+          args: ["-y", "@acme/weather@1.2.3"],
+          env: ["API_KEY"],
+        },
+      ],
+    });
   });
 
   it("manual add (no term) is guarded when non-interactive", async () => {
@@ -107,18 +109,20 @@ describe("mcp subcommands", () => {
 
   it("update bumps a stale registry-managed server, preserving user env; leaves manual servers", async () => {
     await writeCfg({
-      mcp: [
-        {
-          name: "weather",
-          source: "io.github.acme/weather",
-          version: "1.0.0",
-          command: "npx",
-          transport: "stdio",
-          args: ["-y", "@acme/weather@1.0.0"],
-          env: { API_KEY: "secret" },
-        },
-        { name: "manual", command: "node", transport: "stdio" },
-      ],
+      mcp: {
+        servers: [
+          {
+            name: "weather",
+            source: "io.github.acme/weather",
+            version: "1.0.0",
+            command: "npx",
+            transport: "stdio",
+            args: ["-y", "@acme/weather@1.0.0"],
+            env: ["API_KEY"],
+          },
+          { name: "manual", command: "node", transport: "stdio" },
+        ],
+      },
     });
     const latest = {
       server: {
@@ -141,11 +145,11 @@ describe("mcp subcommands", () => {
     );
     await run(mcpDomain, "update", []);
     const cfg = await readCfg();
-    const weather = cfg.mcp?.find((m) => m.name === "weather");
+    const weather = cfg.mcp?.servers?.find((m) => m.name === "weather");
     expect(weather?.version).toBe("2.0.0");
     expect(weather?.args).toEqual(["-y", "@acme/weather@2.0.0"]);
-    expect(weather?.env).toEqual({ API_KEY: "secret" });
-    expect(cfg.mcp?.find((m) => m.name === "manual")).toEqual({
+    expect(weather?.env).toEqual(["API_KEY"]);
+    expect(cfg.mcp?.servers?.find((m) => m.name === "manual")).toEqual({
       name: "manual",
       command: "node",
       transport: "stdio",
@@ -154,16 +158,18 @@ describe("mcp subcommands", () => {
 
   it("remove drops named servers; missing throws; no-arg is guarded", async () => {
     await writeCfg({
-      mcp: [
-        { name: "gh", command: "npx", transport: "stdio" },
-        { name: "fs", command: "npx", transport: "stdio" },
-      ],
+      mcp: {
+        servers: [
+          { name: "gh", command: "npx", transport: "stdio" },
+          { name: "fs", command: "npx", transport: "stdio" },
+        ],
+      },
     });
     await expect(run(mcpDomain, "remove", ["nope"])).rejects.toThrow(/not found/);
     // no names + non-interactive (yes flag / no TTY) → guarded, doesn't prompt
     await expect(run(mcpDomain, "remove", [])).rejects.toThrow(/specify server/i);
     await run(mcpDomain, "remove", ["gh", "fs"]);
-    expect((await readCfg()).mcp).toEqual([]);
+    expect((await readCfg()).mcp).toEqual({ servers: [] });
   });
 
   it("migrate imports servers from an active agent's native config", async () => {
@@ -173,7 +179,7 @@ describe("mcp subcommands", () => {
       JSON.stringify({ mcpServers: { gh: { command: "npx", args: ["s"] } } }),
     );
     await run(mcpDomain, "migrate", [], { missing: true });
-    expect((await readCfg()).mcp?.map((m) => m.name)).toEqual(["gh"]);
+    expect((await readCfg()).mcp?.servers?.map((m) => m.name)).toEqual(["gh"]);
   });
 });
 

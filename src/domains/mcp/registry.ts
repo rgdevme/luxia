@@ -141,7 +141,15 @@ function argValues(args?: RegistryArgument[]): string[] {
   return out;
 }
 
-function envFrom(vars?: KeyValueInput[]): Record<string, string> | undefined {
+function envFrom(vars?: KeyValueInput[]): string[] | undefined {
+  const out: string[] = [];
+  for (const v of vars ?? []) {
+    if (v.name) out.push(v.name);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function headersFrom(vars?: KeyValueInput[]): Record<string, string> | undefined {
   const out: Record<string, string> = {};
   for (const v of vars ?? []) {
     if (v.name) out[v.name] = v.value ?? v.default ?? "";
@@ -184,7 +192,7 @@ function buildRemoteDecl(server: RegistryServer, remote: RegistryTransport): Mcp
     command: remote.url ?? "",
     transport,
   };
-  const headers = envFrom(remote.headers);
+  const headers = headersFrom(remote.headers);
   if (headers) decl.headers = headers;
   return decl;
 }

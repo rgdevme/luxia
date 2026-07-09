@@ -10,7 +10,7 @@ export const DEFAULT_CONFIG: AgnosConfig = {
   agents: [],
   rules: { files: {} },
   skills: {},
-  mcp: [],
+  mcp: { servers: [] },
 };
 
 export async function readConfig(configPath: string): Promise<AgnosConfig> {

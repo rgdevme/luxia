@@ -139,10 +139,22 @@ describe("schemas", () => {
         name: "github",
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-github"],
-        env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" },
+        env: ["GITHUB_TOKEN"],
         transport: "stdio",
       }),
     ).toBeDefined();
+  });
+
+  it("agnosConfigSchema accepts mcp envFile and server declarations", () => {
+    const parsed = agnosConfigSchema.parse({
+      schemaVersion: 1,
+      mcp: {
+        envFile: ".env.local",
+        servers: [{ name: "github", command: "npx", env: ["GITHUB_TOKEN"] }],
+      },
+    });
+    expect(parsed.mcp?.envFile).toBe(".env.local");
+    expect(parsed.mcp?.servers?.[0]?.env).toEqual(["GITHUB_TOKEN"]);
   });
 
   it("agnosConfigSchema requires schemaVersion=1 and rejects older configs", () => {

@@ -34,7 +34,7 @@ describe("config", () => {
       agents: ["claude-code"],
       rules: { files: { "./AGENTS.md": [] } },
       skills: { sources: { pdf: "github:foo/bar/skills/pdf" } },
-      mcp: [],
+      mcp: { servers: [] },
     };
     await writeConfig(configPath, config);
 

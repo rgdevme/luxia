@@ -55,55 +55,67 @@
       "additionalProperties": false
     },
     "mcp": {
-      "type": "array",
-      "description": "MCP server declarations, rendered into per-agent MCP config (.mcp.json for Claude Code, .codex/config.toml for Codex).",
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Local name for this MCP server."
-          },
-          "source": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Registry reverse-DNS identifier (set when added from the MCP registry; enables version updates)."
-          },
-          "version": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Installed registry server version, used to detect updates."
-          },
-          "command": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Executable to run (stdio transport), or the server URL (sse/http transport)."
-          },
-          "args": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Arguments passed to `command`."
-          },
-          "env": {
-            "type": "object",
-            "description": "Environment variables. Values may contain ${VAR} references resolved at render time.",
-            "additionalProperties": { "type": "string" }
-          },
-          "headers": {
-            "type": "object",
-            "description": "HTTP headers for remote (sse/http) transports, e.g. auth tokens.",
-            "additionalProperties": { "type": "string" }
-          },
-          "transport": {
-            "type": "string",
-            "enum": ["stdio", "sse", "http"],
-            "description": "Transport protocol the agent uses to talk to this server."
-          }
+      "type": "object",
+      "description": "MCP configuration. Declares server definitions and the env file used to resolve declared server env keys when materializing agent files.",
+      "properties": {
+        "envFile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Project-relative env file used to resolve MCP server env keys. Defaults to \".env.local\"."
         },
-        "required": ["name"],
-        "additionalProperties": false
-      }
+        "servers": {
+          "type": "array",
+          "description": "MCP server declarations, rendered into per-agent MCP config (.mcp.json for Claude Code, .codex/config.toml for Codex).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Local name for this MCP server."
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Registry reverse-DNS identifier (set when added from the MCP registry; enables version updates)."
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Installed registry server version, used to detect updates."
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Executable to run (stdio transport), or the server URL (sse/http transport)."
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Arguments passed to `command`."
+              },
+              "env": {
+                "type": "array",
+                "description": "Env variable names to resolve from mcp.envFile when materializing agent MCP files.",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "headers": {
+                "type": "object",
+                "description": "HTTP headers for remote (sse/http) transports, e.g. auth tokens.",
+                "additionalProperties": { "type": "string" }
+              },
+              "transport": {
+                "type": "string",
+                "enum": ["stdio", "sse", "http"],
+                "description": "Transport protocol the agent uses to talk to this server."
+              }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "hooks": {
       "type": "array",

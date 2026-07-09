@@ -21,7 +21,7 @@ export interface AgnosConfig {
   agents?: AgentRef[];
   rules?: RulesDeclaration;
   skills?: SkillsConfig;
-  mcp?: McpDeclaration[];
+  mcp?: McpConfig;
   hooks?: HooksDeclaration;
   docs?: DocsConfig;
   [domain: string]: unknown;
@@ -77,10 +77,16 @@ export interface McpDeclaration {
   version?: string;
   command?: string;
   args?: string[];
-  env?: Record<string, string>;
+  env?: string[];
   /** HTTP headers for remote (sse/http) transports — e.g. auth tokens. */
   headers?: Record<string, string>;
   transport?: "stdio" | "sse" | "http";
+}
+
+export interface McpConfig {
+  /** Env file to load for declared MCP env keys. Defaults to ".env.local". */
+  envFile?: string;
+  servers?: McpDeclaration[];
 }
 
 // ---------- Hooks domain ----------
@@ -170,7 +176,8 @@ export interface ResolvedSkill {
   absolutePath: string;
 }
 
-export interface ResolvedMcp extends McpDeclaration {
+export interface ResolvedMcp extends Omit<McpDeclaration, "env"> {
+  env?: Record<string, string>;
   resolvedPackageDir?: string;
 }
 
