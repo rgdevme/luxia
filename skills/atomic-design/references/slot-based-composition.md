@@ -128,7 +128,7 @@ Consumers compose through the parent API:
 
 The parent still renders the title and body in the order defined by `ComponentBRoot`.
 
-With `prepareComponentSlots`, missing single slots resolve to `null`, missing array slots resolve to `[]`, duplicate single slots use the last matching child, duplicate array slots collect every matching child, and unknown children are ignored unless `strict: true` is passed.
+With `prepareComponentSlots`, missing single slots resolve to `null`, missing array slots resolve to `[]`, duplicate single slots use the last matching child, duplicate array slots collect every matching child, and unknown children are ignored.
 
 ## Implementation Rules
 

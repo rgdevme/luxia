@@ -1,107 +1,41 @@
 import { Children, isValidElement, useMemo } from "react";
 import type { ReactElement, ReactNode } from "react";
 
-export interface PrepareComponentSlotsOptions {
-  strict?: boolean;
-}
-
-type SlotComponent<Props = never> = (props: Props) => ReactNode;
-
+type SlotComponent = (props: never) => ReactNode;
 type SlotDefinition = SlotComponent | readonly SlotComponent[];
-type SlotDefinitions = Record<string, SlotDefinition>;
+type PreparedSlots = Record<string, ReactElement | ReactElement[] | null>;
 
-type SlotProps<Component> = Component extends SlotComponent<infer Props> ? Props : never;
+export function prepareComponentSlots(
+  definitions: Record<string, SlotDefinition>,
+): (children: ReactNode) => PreparedSlots {
+  const entries = Object.entries(definitions);
 
-type PreparedSlot<Definition> = Definition extends readonly (infer Component)[]
-  ? Component extends SlotComponent
-    ? ReactElement<SlotProps<Component>>[]
-    : never
-  : Definition extends SlotComponent
-    ? ReactElement<SlotProps<Definition>> | null
-    : never;
-
-type PreparedSlots<Definitions extends SlotDefinitions> = {
-  [Key in keyof Definitions]: PreparedSlot<Definitions[Key]>;
-};
-
-type SlotEntries<Definitions extends SlotDefinitions> = {
-  [Key in keyof Definitions]: [Key, Definitions[Key]];
-}[keyof Definitions][];
-
-function buildInitialSlots<Definitions extends SlotDefinitions>(
-  slotEntries: SlotEntries<Definitions>,
-): PreparedSlots<Definitions> {
-  const preparedSlots = {} as PreparedSlots<Definitions>;
-
-  for (const [key, definition] of slotEntries) {
-    preparedSlots[key] = (
-      Array.isArray(definition) ? [] : null
-    ) as PreparedSlots<Definitions>[typeof key];
-  }
-
-  return preparedSlots;
-}
-
-function getSlotComponents(definition: SlotDefinition): readonly SlotComponent[] {
-  return Array.isArray(definition) ? definition : [definition];
-}
-
-function resolveSlotEntry<Definitions extends SlotDefinitions>(
-  slotEntries: SlotEntries<Definitions>,
-  child: ReactElement,
-): SlotEntries<Definitions>[number] | undefined {
-  for (const slotEntry of slotEntries) {
-    const [, definition] = slotEntry;
-
-    for (const slotComponent of getSlotComponents(definition)) {
-      if (child.type === slotComponent) {
-        return slotEntry;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-export function prepareComponentSlots<Definitions extends SlotDefinitions>(
-  definitions: Definitions,
-  options: PrepareComponentSlotsOptions = {},
-): (children: ReactNode) => PreparedSlots<Definitions> {
-  const slotEntries = Object.entries(definitions) as SlotEntries<Definitions>;
-  const { strict = false } = options;
-
-  return function usePreparedComponentSlots(children: ReactNode): PreparedSlots<Definitions> {
+  return function usePreparedComponentSlots(children: ReactNode): PreparedSlots {
     return useMemo(() => {
-      const preparedSlots = buildInitialSlots(slotEntries);
+      const preparedSlots: PreparedSlots = {};
+
+      for (const [key, definition] of entries) {
+        preparedSlots[key] = Array.isArray(definition) ? [] : null;
+      }
 
       for (const child of Children.toArray(children)) {
-        if (!isValidElement(child)) {
-          if (strict) {
-            throw new Error("Unexpected non-element child passed to slot-based component.");
-          }
+        if (!isValidElement(child)) continue;
 
-          continue;
-        }
+        const match = entries.find(([, definition]) => {
+          const slotComponents = Array.isArray(definition) ? definition : [definition];
+          return slotComponents.includes(child.type as SlotComponent);
+        });
 
-        const slotEntry = resolveSlotEntry(slotEntries, child);
+        if (match == null) continue;
 
-        if (slotEntry == null) {
-          if (strict) {
-            throw new Error("Unexpected child passed to slot-based component.");
-          }
-
-          continue;
-        }
-
-        const [key, definition] = slotEntry;
+        const [key, definition] = match;
 
         if (Array.isArray(definition)) {
-          const slotChildren = preparedSlots[key] as ReactElement[];
-          slotChildren.push(child);
+          (preparedSlots[key] as ReactElement[]).push(child);
           continue;
         }
 
-        preparedSlots[key] = child as PreparedSlots<Definitions>[typeof key];
+        preparedSlots[key] = child;
       }
 
       return preparedSlots;
