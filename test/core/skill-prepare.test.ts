@@ -6,6 +6,7 @@ import { prepareSkills } from "../../src/core/skill-prepare.js";
 import { hashSkillDir } from "../../src/core/skill-hash.js";
 import { readLock, writeLock, upsertSkill, emptyLock } from "../../src/core/lock.js";
 import { createLogger } from "../../src/core/logger.js";
+import { createLinker } from "../../src/core/fs/link.js";
 import type { AgnosConfig, ResolveContext } from "../../src/core/types/public.js";
 
 let root: string;
@@ -28,22 +29,22 @@ async function seedSkill(rel: string, body = "# Test\n\n"): Promise<void> {
 }
 
 function makeCtx(): ResolveContext {
+  const storeDir = path.join(root, "store");
+  const logger = createLogger({ quiet: true });
   return {
     projectRoot: root,
     configPath: path.join(root, "agnos.json"),
     statePath: path.join(root, ".agnos", "state.json"),
     agnosRoot: path.join(root, ".agnos"),
-    cacheDir: path.join(root, ".agnos", "cache"),
-    logger: createLogger({ quiet: true }),
+    storeDir,
+    logger,
     // Stub fetcher: every call returns the shared repoCache root. The composite
     // ref's subPath then locates the actual skill within it.
-    fetcher: { fetch: async () => ({ path: repoCache }) },
-    linker: {
-      canSymlinkFiles: async () => true,
-      canSymlinkDirs: async () => true,
-      link: async () => ({ kind: "symlink" }),
-      unlink: async () => {},
+    fetcher: {
+      fetch: async () => ({ path: repoCache, ref: "main", commit: "deadbeef" }),
+      cleanup: async () => {},
     },
+    linker: createLinker({ probeDir: path.join(root, ".agnos", "tmp"), logger }),
   };
 }
 

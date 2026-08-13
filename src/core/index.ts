@@ -22,6 +22,7 @@ export type {
   Linker,
   LockFile,
   Logger,
+  LoggerProgress,
   LogInput,
   LogParts,
   LogTask,
@@ -61,6 +62,8 @@ export {
   SCHEMA_URL,
 } from "./config.js";
 export { buildResolveContext, workspaceRelativePath } from "./context.js";
+export { resolveGlobalStoreDir } from "./store-path.js";
+export type { GlobalStorePathOptions } from "./store-path.js";
 export { loadPlugins, orderedDomains, refToId, resolveAgentByRef } from "./plugin-loader.js";
 export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
 export { runAll, runOne, runFrom } from "./run.js";
@@ -89,6 +92,8 @@ export type { CommitResolution } from "./commit-resolver.js";
 export { findSkillsInRepo, readSkillMeta } from "./skill-discovery.js";
 export type { DiscoveredSkill } from "./skill-discovery.js";
 export { hashSkillDir } from "./skill-hash.js";
+export { materializeSkill } from "./skill-materialize.js";
+export type { MaterializeSkillResult } from "./skill-materialize.js";
 export { prepareSkills } from "./skill-prepare.js";
 export type { PrepareResult } from "./skill-prepare.js";
 export {

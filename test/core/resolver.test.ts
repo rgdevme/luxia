@@ -30,6 +30,10 @@ function installGitMock(): void {
           cb(null, { stdout: "ref: refs/heads/main\tHEAD\n", stderr: "" });
           return;
         }
+        if (gitArgs.includes("rev-parse")) {
+          cb(null, { stdout: "deadbeef\n", stderr: "" });
+          return;
+        }
         if (gitArgs[0] === "clone") {
           // dest is the last positional arg; drop a SKILL.md so the dir is non-empty.
           const dest = gitArgs[gitArgs.length - 1]!;
@@ -60,8 +64,7 @@ describe("createRepoFetcher (sparse git clone)", () => {
 
   function fetcher() {
     return createRepoFetcher({
-      projectRoot: root,
-      cacheDir: path.join(root, ".agnos", "cache"),
+      stagingDir: path.join(root, ".agnos", "tmp", "repos"),
     });
   }
 
@@ -72,6 +75,7 @@ describe("createRepoFetcher (sparse git clone)", () => {
     const res = await fetcher().fetch(source);
 
     expect(res.ref).toBe("main"); // from the mocked ls-remote symref
+    expect(res.commit).toBe("deadbeef");
     await expect(
       fs.access(path.join(res.path, "skills", "demo", "SKILL.md")),
     ).resolves.toBeUndefined();
@@ -95,24 +99,41 @@ describe("createRepoFetcher (sparse git clone)", () => {
     expect(sparse[sparse.length - 1]).toBe("skills/pdf");
   });
 
-  it("reuses the cached clone on a second fetch", async () => {
+  it("reuses a staged checkout during the same session", async () => {
     const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
     if (source.kind !== "git") throw new Error("expected git source");
+    const repoFetcher = fetcher();
 
-    await fetcher().fetch(source);
+    await repoFetcher.fetch(source);
     const clonesAfterFirst = calls.filter((c) => c[1] === "clone").length;
-    await fetcher().fetch(source);
+    await repoFetcher.fetch(source);
     const clonesAfterSecond = calls.filter((c) => c[1] === "clone").length;
     expect(clonesAfterFirst).toBe(1);
-    expect(clonesAfterSecond).toBe(1); // no re-clone
+    expect(clonesAfterSecond).toBe(1);
   });
 
-  it("re-clones when noCache is set", async () => {
+  it("coalesces concurrent fetches for the same source", async () => {
     const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
     if (source.kind !== "git") throw new Error("expected git source");
+    const repoFetcher = fetcher();
 
-    await fetcher().fetch(source);
-    await fetcher().fetch(source, { noCache: true });
+    const [first, second] = await Promise.all([
+      repoFetcher.fetch(source),
+      repoFetcher.fetch(source),
+    ]);
+
+    expect(first.path).toBe(second.path);
+    expect(calls.filter((c) => c[1] === "ls-remote")).toHaveLength(1);
+    expect(calls.filter((c) => c[1] === "clone")).toHaveLength(1);
+  });
+
+  it("re-clones when fresh is set", async () => {
+    const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
+    const repoFetcher = fetcher();
+
+    await repoFetcher.fetch(source);
+    await repoFetcher.fetch(source, { fresh: true });
     expect(calls.filter((c) => c[1] === "clone").length).toBe(2);
   });
 
@@ -125,5 +146,19 @@ describe("createRepoFetcher (sparse git clone)", () => {
     expect(calls.some((c) => c[1] === "ls-remote")).toBe(false);
     const clone = calls.find((c) => c[1] === "clone")!;
     expect(clone[clone.indexOf("--branch") + 1]).toBe("canary");
+  });
+
+  it("removes every checkout created during the session", async () => {
+    const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
+    const repoFetcher = fetcher();
+
+    const fetched = await repoFetcher.fetch(source);
+    await expect(fs.access(fetched.path)).resolves.toBeUndefined();
+
+    await repoFetcher.cleanup();
+
+    await expect(fs.access(fetched.path)).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".agnos", "cache", "repos"))).rejects.toThrow();
   });
 });

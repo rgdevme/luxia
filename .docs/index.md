@@ -12,3 +12,7 @@ title: Documentation Index
 - [Config Matching](technical/config-matching.md): How agnos resolves glob-aware documentation ignores and rule fragments.
 - [MCP Env Resolution](technical/mcp-env-resolution.md): How MCP env key declarations are resolved into secret-bearing agent files.
 - [Skills Reconciliation](technical/skills-reconciliation.md): How declared skill sources are reconciled with materialized skills and lock entries.
+
+### technical-decisions
+
+- [Global Skill Store](technical-decisions/global-skill-store.md): Records why Agnos shares verified skill content globally while keeping project materializations independent.

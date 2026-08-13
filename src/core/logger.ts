@@ -1,5 +1,12 @@
 import colors from "yoctocolors-cjs";
-import type { DomainColor, Logger, LogInput, LogParts, LogTask } from "./types/public.js";
+import type {
+  DomainColor,
+  Logger,
+  LoggerProgress,
+  LogInput,
+  LogParts,
+  LogTask,
+} from "./types/public.js";
 
 /** Dim/grey secondary text (e.g. an inline description). No-op off a TTY. */
 export function dim(msg: string): string {
@@ -85,6 +92,7 @@ function clearActiveLine(): void {
 }
 
 interface SpinnerHandle {
+  update(parts: LogParts): void;
   stop(): void;
 }
 
@@ -102,7 +110,7 @@ function startSpinner(
   fmt: { domain?: string; color?: DomainColor },
   quiet: boolean,
 ): SpinnerHandle {
-  if (quiet || !process.stderr.isTTY) return { stop() {} };
+  if (quiet || !process.stderr.isTTY) return { update() {}, stop() {} };
   if (timer) clearInterval(timer); // supersede any running spinner
   let message = LEVEL_COLOR[level](parts.message);
   if (parts.status) message += ` ${colors.dim(colors.italic(parts.status))}`;
@@ -112,6 +120,14 @@ function startSpinner(
   renderActive();
   timer = setInterval(renderActive, 80);
   return {
+    update(next): void {
+      if (active !== self) return;
+      let message = LEVEL_COLOR[level](next.message);
+      if (next.status) message += ` ${colors.dim(colors.italic(next.status))}`;
+      self.message = message;
+      clearActiveLine();
+      renderActive();
+    },
     stop(): void {
       if (active !== self) return; // a newer spinner took over; leave it alone
       if (timer) clearInterval(timer);
@@ -194,6 +210,17 @@ function makeLogger(state: LoggerState): Logger {
     };
 
   const logger = {
+    progress(msg: LogInput): LoggerProgress {
+      const handle = startSpinner("info", toParts(msg), fmt, suppressed("info"));
+      return {
+        update(next): void {
+          handle.update(toParts(next));
+        },
+        stop(): void {
+          handle.stop();
+        },
+      };
+    },
     info: make("info"),
     success: make("success"),
     warn: make("warn"),
@@ -241,6 +268,17 @@ export function indentedLogger(base: Logger, indent: string): Logger {
     (msg: any): any =>
       (fn as (m: unknown) => unknown)(pad(msg));
   return {
+    progress(msg: LogInput): LoggerProgress {
+      const handle = base.progress(pad(msg) as LogInput);
+      return {
+        update(next): void {
+          handle.update(pad(next) as LogInput);
+        },
+        stop(): void {
+          handle.stop();
+        },
+      };
+    },
     info: wrap(base.info),
     success: wrap(base.success),
     warn: wrap(base.warn),

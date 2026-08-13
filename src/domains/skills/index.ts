@@ -155,7 +155,9 @@ async function diagnose(
     ctx.logger.info("no skills declared");
     return;
   }
-  const { steps } = await createSkillSteps(config, ctx);
+  const { steps } = await createSkillSteps(config, ctx, {
+    verifyMaterialized: which === "integrity",
+  });
   const bad: string[] = [];
   await ctx.logger.info({
     message: `Checking ${count} skill${count === 1 ? "" : "s"}…`,
@@ -440,8 +442,10 @@ const commands: Record<string, CommandSpec> = {
       const handle = await createSkillSteps(config, ctx);
       const res = await runSkillPipeline(sources, handle.steps, ctx.logger);
       await handle.flush();
-      if (res.installed.length > 0)
-        ctx.logger.success(`installed ${res.installed.length} skill(s)`);
+      ctx.logger.success({
+        message: "Installing skills 100%",
+        status: `total ${res.progress.total} | reused ${res.progress.reused} | fetched ${res.progress.fetched}`,
+      });
     },
   },
   prune: {
@@ -575,12 +579,11 @@ export const skillsDomain: Domain = {
     // bucketed and reported as "Skills need to be updated: …" without throwing,
     // so the overall run continues (§13.1).
     const handle = await createSkillSteps(config, ctx);
-    await ctx.logger.info({
-      message: `Downloading and installing ${count} skill${count === 1 ? "" : "s"}`,
-      waitFor: (async () => {
-        await runSkillPipeline(sources, handle.steps, ctx.logger);
-        await handle.flush();
-      })(),
+    const result = await runSkillPipeline(sources, handle.steps, ctx.logger);
+    await handle.flush();
+    ctx.logger.success({
+      message: "Installing skills 100%",
+      status: `total ${result.progress.total} | reused ${result.progress.reused} | fetched ${result.progress.fetched}`,
     });
     return undefined;
   },

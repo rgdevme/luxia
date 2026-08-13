@@ -113,7 +113,11 @@ async function main(): Promise<void> {
         args: rest,
         logger: withDomain(ctx.logger, dom.domain),
       };
-      await cmd.run(cmdCtx);
+      try {
+        await cmd.run(cmdCtx);
+      } finally {
+        await cmdCtx.fetcher.cleanup();
+      }
       return;
     }
 

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { lockFileSchema } from "./schema.js";
 import type { LockFile, SkillLockEntry } from "./types/public.js";
 
@@ -43,7 +44,46 @@ export async function writeLock(projectRoot: string, lock: LockFile): Promise<vo
   for (const k of orderedKeys) orderedSkills[k] = lock.skills[k]!;
   const ordered: LockFile = { version: lock.version, skills: orderedSkills };
   const json = JSON.stringify(ordered, null, 2) + "\n";
-  await fs.writeFile(p, json, "utf8");
+  const temporary = `${p}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, json, "utf8");
+    await publishLock(temporary, p, json);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
+}
+
+async function publishLock(
+  temporary: string,
+  destination: string,
+  contents: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await fs.rename(temporary, destination);
+      return;
+    } catch (error) {
+      const current = await fs.readFile(destination, "utf8").catch(() => null);
+      if (current === contents) return;
+      if (!isTransient(error) || attempt === 7) {
+        throw new Error(`failed to publish ${LOCK_FILE}: ${(error as Error).message}`, {
+          cause: error,
+        });
+      }
+      await wait(25 * (attempt + 1));
+    }
+  }
+}
+
+function isTransient(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EACCES" || code === "EBUSY" || code === "EEXIST" || code === "EPERM";
+}
+
+async function wait(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 export function upsertSkill(lock: LockFile, key: string, entry: SkillLockEntry): LockFile {

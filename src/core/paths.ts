@@ -12,7 +12,7 @@ export interface ProjectPaths {
   projectRoot: string;
   configPath: string;
   agnosRoot: string;
-  cacheDir: string;
+  tempDir: string;
   skillsDir: string;
   statePath: string;
 }
@@ -24,7 +24,7 @@ export function buildPaths(projectRoot: string, config?: AgnosConfig): ProjectPa
     projectRoot,
     configPath: path.join(projectRoot, CONFIG_FILE),
     agnosRoot,
-    cacheDir: path.join(agnosRoot, "cache"),
+    tempDir: path.join(agnosRoot, "tmp"),
     skillsDir: path.isAbsolute(skillsRel) ? skillsRel : path.join(projectRoot, skillsRel),
     statePath: path.join(agnosRoot, STATE_FILE),
   };
