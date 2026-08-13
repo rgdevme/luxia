@@ -7,3 +7,4 @@ pnpm-lock.yaml
 test-output
 scratch
 packages/*/dist
+.env.example

@@ -20,7 +20,7 @@ const recordingLogger = (): Logger => ({
 const ctxFor = (): ResolveContext => ({
   agnosRoot: tmp,
   projectRoot: tmp,
-  cacheDir: path.join(tmp, ".agnos", "cache"),
+  storeDir: path.join(tmp, "store"),
   configPath: path.join(tmp, "agnos.json"),
   statePath: path.join(tmp, ".agnos", "state.json"),
   logger: recordingLogger(),

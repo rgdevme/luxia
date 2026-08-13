@@ -36,6 +36,7 @@ describe("state", () => {
     let s = await readState(statePath);
     s = markAgentInstalled(s, "claude-code");
     s = markDomainInitialized(s, "skills");
+    s.materializedSkills = { pdf: "a".repeat(64) };
     await writeState(statePath, s);
     const reloaded = await readState(statePath);
     expect(reloaded).toEqual(s);

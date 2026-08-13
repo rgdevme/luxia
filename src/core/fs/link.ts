@@ -4,20 +4,20 @@ import os from "node:os";
 import type { LinkKind, Linker, Logger } from "../types/public.js";
 
 interface LinkerOptions {
-  cacheDir: string;
+  probeDir: string;
   logger: Logger;
   copyFallback?: boolean;
 }
 
-export function createLinker({ cacheDir, logger, copyFallback }: LinkerOptions): Linker {
+export function createLinker({ probeDir, logger, copyFallback }: LinkerOptions): Linker {
   let cachedFileProbe: boolean | undefined;
 
   async function probeFileSymlink(): Promise<boolean> {
     if (cachedFileProbe !== undefined) return cachedFileProbe;
-    await fs.mkdir(cacheDir, { recursive: true });
-    const probeDir = await fs.mkdtemp(path.join(cacheDir, "link-probe-"));
-    const target = path.join(probeDir, "target");
-    const link = path.join(probeDir, "link");
+    await fs.mkdir(probeDir, { recursive: true });
+    const sessionDir = await fs.mkdtemp(path.join(probeDir, "link-probe-"));
+    const target = path.join(sessionDir, "target");
+    const link = path.join(sessionDir, "link");
     try {
       await fs.writeFile(target, "");
       await fs.symlink(target, link, "file");
@@ -26,7 +26,7 @@ export function createLinker({ cacheDir, logger, copyFallback }: LinkerOptions):
       logger.debug(`file symlink probe failed: ${(err as Error).message}`);
       cachedFileProbe = false;
     } finally {
-      await fs.rm(probeDir, { recursive: true, force: true });
+      await fs.rm(sessionDir, { recursive: true, force: true });
     }
     return cachedFileProbe;
   }

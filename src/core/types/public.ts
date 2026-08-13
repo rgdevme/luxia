@@ -220,7 +220,17 @@ export interface LogTask<T> extends LogParts {
   done?: LogInput | ((value: T) => LogInput);
 }
 
+/** A live TTY log line that can be replaced in place until work completes. */
+export interface LoggerProgress {
+  /** Replace the progress line with current text. */
+  update(msg: LogInput): void;
+  /** Clear the progress line and release its terminal state. */
+  stop(): void;
+}
+
 export interface Logger {
+  /** Start a live progress line. It is inert in quiet and non-TTY output. */
+  progress(msg: LogInput): LoggerProgress;
   info<T>(msg: LogTask<T>): Promise<T>;
   info(msg: LogInput): void;
   warn<T>(msg: LogTask<T>): Promise<T>;
@@ -244,15 +254,16 @@ export interface Linker {
 
 /**
  * Repository fetcher. Materializes a parsed git or local source into a
- * cache-managed directory and returns the root path. The result represents
+ * transient directory and returns the root path. The result represents
  * the repository root, not a specific skill — domains walk into it to find
  * what they need (e.g. domain-skills looks under `./skills/*`).
  */
 export interface RepoFetcher {
   fetch(
     source: ParsedSourceRef,
-    opts?: { ref?: string; noCache?: boolean },
-  ): Promise<{ path: string; ref?: string }>;
+    opts?: { ref?: string; fresh?: boolean },
+  ): Promise<{ path: string; ref?: string; commit?: string }>;
+  cleanup(): Promise<void>;
 }
 
 /**
@@ -273,7 +284,7 @@ export type ParsedSourceRef =
 export interface ResolveContext {
   agnosRoot: string;
   projectRoot: string;
-  cacheDir: string;
+  storeDir: string;
   configPath: string;
   statePath: string;
   logger: Logger;

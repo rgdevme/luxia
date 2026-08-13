@@ -14,6 +14,8 @@ export interface AgnosState {
    * `##` sections untouched.
    */
   rulesSections?: Record<string, string[]>;
+  /** Materialized skill name to the content hash last installed by Agnos. */
+  materializedSkills?: Record<string, string>;
 }
 
 const DEFAULT_STATE: AgnosState = {
@@ -22,6 +24,7 @@ const DEFAULT_STATE: AgnosState = {
   initializedDomains: [],
   importedDomains: {},
   rulesSections: {},
+  materializedSkills: {},
 };
 
 export async function readState(statePath: string): Promise<AgnosState> {
@@ -91,6 +94,7 @@ function normalize(parsed: Partial<AgnosState>): AgnosState {
       : [],
     importedDomains: normalizeStringListMap(parsed.importedDomains),
     rulesSections: normalizeStringListMap(parsed.rulesSections),
+    materializedSkills: normalizeStringMap(parsed.materializedSkills),
   };
 }
 
@@ -103,4 +107,13 @@ function normalizeStringListMap(value: unknown): Record<string, string[]> {
     out[k] = v.filter((x): x is string => typeof x === "string");
   }
   return out;
+}
+
+function normalizeStringMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }

@@ -11,7 +11,11 @@ async function runDomain(
   // Scope the logger to this domain so everything it prints carries the
   // domain's `[domain]` prefix and color automatically.
   const scoped: RunContext = { ...ctx, logger: withDomain(ctx.logger, dom.domain) };
-  await dom.domain.run(opts, scoped);
+  try {
+    await dom.domain.run(opts, scoped);
+  } finally {
+    await scoped.fetcher.cleanup?.();
+  }
 }
 
 /**

@@ -21,7 +21,7 @@ function base(root: string) {
   return {
     agnosRoot: root,
     projectRoot: root,
-    cacheDir: path.join(root, ".agnos", "cache"),
+    storeDir: path.join(root, "store"),
     configPath: path.join(root, "agnos.json"),
     statePath: path.join(root, ".agnos", "state.json"),
     logger: createLogger({ quiet: true }),

@@ -16,7 +16,7 @@ describe("ensureLink", () => {
 
   function linker() {
     return createLinker({
-      cacheDir: path.join(dir, ".cache"),
+      probeDir: path.join(dir, ".tmp"),
       logger: createLogger(),
       copyFallback: true,
     });

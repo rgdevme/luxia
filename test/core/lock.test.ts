@@ -69,6 +69,19 @@ describe("lock (per-skill)", () => {
     expect(raw.indexOf('"a-key"')).toBeLessThan(raw.indexOf('"z-key"'));
   });
 
+  it("publishes concurrent equivalent writes atomically", async () => {
+    const root = await tmpRoot();
+    const lock = upsertSkill(emptyLock(), "github:foo/bar/skills/pdf", {
+      computedHash: "a".repeat(64),
+      resolvedAt: "2026-08-13T00:00:00.000Z",
+    });
+
+    await Promise.all(Array.from({ length: 16 }, async () => writeLock(root, lock)));
+
+    expect(await readLock(root)).toEqual(lock);
+    expect((await fs.readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
   it("rejects invalid JSON", async () => {
     const root = await tmpRoot();
     await fs.writeFile(path.join(root, "agnos.lock.json"), "not json");

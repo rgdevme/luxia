@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { type GitSource, type LocalSource, type ParsedSource } from "./source.js";
@@ -14,8 +14,8 @@ const DISCOVERY_SUBDIR = "skills";
 export interface RepoFetchOptions {
   /** Optional commit SHA (or branch/tag) to fetch. Defaults to provider default branch. */
   ref?: string;
-  /** Bypass any cached download; force a fresh fetch. */
-  noCache?: boolean;
+  /** Replace any matching checkout already staged during this run. */
+  fresh?: boolean;
 }
 
 export interface RepoFetchResult {
@@ -23,25 +23,56 @@ export interface RepoFetchResult {
   path: string;
   /** Git ref actually fetched (the explicit ref, or the resolved default branch). */
   ref?: string;
+  /** Commit SHA checked out for a Git source. */
+  commit?: string;
 }
 
 export interface RepoFetcher {
-  /** Fetch a repository source to a cache-managed directory and return the root path. */
+  /** Fetch a repository source to a transient directory and return the root path. */
   fetch(source: ParsedSource, opts?: RepoFetchOptions): Promise<RepoFetchResult>;
+  /** Remove every transient checkout created by this fetcher. */
+  cleanup(): Promise<void>;
 }
 
 export interface CreateRepoFetcherOptions {
-  projectRoot: string;
-  cacheDir: string;
+  stagingDir: string;
 }
 
 export function createRepoFetcher(opts: CreateRepoFetcherOptions): RepoFetcher {
+  const inFlight = new Map<string, Promise<RepoFetchResult>>();
+  const sessionDir = path.join(opts.stagingDir, randomUUID());
   return {
     async fetch(source, fetchOpts) {
       if (source.kind === "local") {
         return { path: source.absolutePath };
       }
-      return fetchGit(source, opts, fetchOpts);
+      const subdir = source.subPath ?? DISCOVERY_SUBDIR;
+      const requestedRef = fetchOpts?.ref ?? source.ref ?? "default";
+      const key = `${source.canonical}@${requestedRef}@${subdir}@${fetchOpts?.fresh ? "fresh" : "staged"}`;
+      const pending = inFlight.get(key);
+      if (pending) return pending;
+
+      const fetch = fetchGit(source, { stagingDir: sessionDir }, fetchOpts);
+      inFlight.set(key, fetch);
+      try {
+        return await fetch;
+      } finally {
+        if (inFlight.get(key) === fetch) inFlight.delete(key);
+      }
+    },
+    async cleanup() {
+      await Promise.allSettled([...inFlight.values()]);
+      inFlight.clear();
+      try {
+        await fs.rm(sessionDir, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 50,
+        });
+      } catch {
+        return;
+      }
     },
   };
 }
@@ -61,20 +92,35 @@ async function fetchGit(
   const explicitRef = opts?.ref ?? source.ref;
   const ref = explicitRef ?? (await resolveDefaultBranch(source).catch(() => null)) ?? undefined;
 
-  // Cache is keyed by repo + ref + subtree so discovery and per-skill installs
-  // don't clobber each other.
-  const cacheKey = hashKey(`${source.canonical}@${ref ?? "HEAD"}@${subdir}`);
-  const destDir = path.join(cfg.cacheDir, "repos", cacheKey);
+  const destDir = resolveRepoStagingDir(source, cfg.stagingDir, ref);
+  const stagingKey = path.basename(destDir);
 
-  if (!opts?.noCache && (await dirHasFiles(destDir))) {
-    return { path: destDir, ref };
+  if (!opts?.fresh && (await dirHasFiles(destDir))) {
+    const commit = await resolveCheckoutCommit(destDir);
+    return { path: destDir, ref, ...(commit ? { commit } : {}) };
   }
 
+  const parent = path.dirname(destDir);
+  const temporary = path.join(parent, `.tmp-${stagingKey}-${randomUUID()}`);
   await fs.rm(destDir, { recursive: true, force: true });
-  await fs.mkdir(path.dirname(destDir), { recursive: true });
+  await fs.rm(temporary, { recursive: true, force: true });
+  await fs.mkdir(parent, { recursive: true });
 
-  await sparseClone(buildCloneUrl(source), destDir, ref, subdir);
-  return { path: destDir, ref };
+  try {
+    const commit = await sparseClone(buildCloneUrl(source), temporary, ref, subdir);
+    await fs.rename(temporary, destDir);
+    return { path: destDir, ref, ...(commit ? { commit } : {}) };
+  } catch (error) {
+    throw new Error(`failed to fetch ${source.canonical}`, { cause: error });
+  } finally {
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
+}
+
+function resolveRepoStagingDir(source: GitSource, stagingDir: string, ref?: string): string {
+  const subdir = source.subPath ?? DISCOVERY_SUBDIR;
+  const stagingKey = hashKey(`${source.canonical}@${ref ?? "HEAD"}@${subdir}`);
+  return path.join(stagingDir, stagingKey);
 }
 
 /**
@@ -89,7 +135,7 @@ async function sparseClone(
   dest: string,
   ref: string | undefined,
   subdir: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const cloneArgs = ["clone", "--no-checkout", "--depth", "1", "--filter=blob:none"];
   if (ref) cloneArgs.push("--branch", ref);
   cloneArgs.push(url, dest);
@@ -118,6 +164,13 @@ async function sparseClone(
     ]);
     await execFile("git", ["-C", dest, "checkout", "FETCH_HEAD"]);
   }
+  return resolveCheckoutCommit(dest);
+}
+
+async function resolveCheckoutCommit(directory: string): Promise<string | undefined> {
+  const result = await execFile("git", ["-C", directory, "rev-parse", "HEAD"]);
+  const commit = result.stdout.trim();
+  return commit || undefined;
 }
 
 async function dirHasFiles(p: string): Promise<boolean> {

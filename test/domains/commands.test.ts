@@ -16,13 +16,13 @@ let capturedLogger: Logger | undefined;
 const ctxFor = (args: string[], extra: Record<string, unknown> = {}): CommandContext => ({
   agnosRoot: tmp,
   projectRoot: tmp,
-  cacheDir: path.join(tmp, ".agnos", "cache"),
+  storeDir: path.join(tmp, "store"),
   configPath: path.join(tmp, "agnos.json"),
   statePath: path.join(tmp, ".agnos", "state.json"),
   logger: capturedLogger ?? createLogger({ quiet: true }),
   // Real fetcher: for `file:` (local) sources it just returns the absolute path,
   // so skills `add` discovery works without any network access.
-  fetcher: createRepoFetcher({ projectRoot: tmp, cacheDir: path.join(tmp, ".agnos", "cache") }),
+  fetcher: createRepoFetcher({ stagingDir: path.join(tmp, ".agnos", "tmp", "repos") }),
   linker: {} as never,
   dryRun: false,
   args,

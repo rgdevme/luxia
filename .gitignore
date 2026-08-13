@@ -13,6 +13,7 @@ scratch/
 
 # ENV
 .env*
+!.env.example
 
 # AGENTS
 .agents/

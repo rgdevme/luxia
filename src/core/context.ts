@@ -4,6 +4,7 @@ import { createRepoFetcher } from "./resolver.js";
 import { createLogger } from "./logger.js";
 import { buildPaths, ensureDir } from "./paths.js";
 import { readConfigOrDefault } from "./config.js";
+import { resolveGlobalStoreDir } from "./store-path.js";
 import type { AgnosConfig, Logger, ResolveContext } from "./types/public.js";
 
 export interface BuildContextOptions {
@@ -12,29 +13,32 @@ export interface BuildContextOptions {
   dryRun?: boolean;
   logger?: Logger;
   config?: AgnosConfig;
+  storeDir?: string;
 }
 
 export async function buildResolveContext(opts: BuildContextOptions): Promise<ResolveContext> {
   const config =
     opts.config ?? (await readConfigOrDefault(path.join(opts.projectRoot, "agnos.json")));
   const paths = buildPaths(opts.projectRoot, config);
+  const logger = opts.logger ?? createLogger();
   if (!opts.dryRun) {
     await ensureDir(paths.agnosRoot);
-    await ensureDir(paths.cacheDir);
+    await ensureDir(paths.tempDir);
   }
-  const logger = opts.logger ?? createLogger();
   const linker = createLinker({
-    cacheDir: paths.cacheDir,
+    probeDir: path.join(paths.tempDir, "link-probes"),
     logger,
     copyFallback: opts.copyFallback,
   });
-  const fetcher = createRepoFetcher({ projectRoot: opts.projectRoot, cacheDir: paths.cacheDir });
+  const fetcher = createRepoFetcher({
+    stagingDir: path.join(paths.tempDir, "repos"),
+  });
   return {
     projectRoot: opts.projectRoot,
     configPath: paths.configPath,
     statePath: paths.statePath,
     agnosRoot: paths.agnosRoot,
-    cacheDir: paths.cacheDir,
+    storeDir: opts.storeDir ?? resolveGlobalStoreDir(),
     logger,
     fetcher,
     linker,
