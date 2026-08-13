@@ -221,7 +221,7 @@ Injects titled sections (by frontmatter `title`) from fragment files into your c
 
 ### `skills`
 
-Fetches, pins, verifies, and installs skills into the canonical skills dir (linked per-agent by `agents`).
+Fetches, pins, verifies, and installs skills into the canonical skills dir (linked per-agent by `agents`). Install work is concurrent, with live percentage, total, reused, and fetched counters. Each unique locked skill tree is stored once in a user-level content store shared across repositories. Projects receive independent materializations, so removing the store does not break installed skills. Git checkouts are isolated under `.agnos/tmp/repos/` for the current run and always removed afterward. Set `AGNOS_STORE_DIR` to override the operating system data location used by the store.
 
 | Subcommand  | Args / Flags                                                                                  | Description                                                                                                                                                                                                                                                |
 | ----------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
