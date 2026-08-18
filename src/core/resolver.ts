@@ -16,6 +16,8 @@ export interface RepoFetchOptions {
   ref?: string;
   /** Replace any matching checkout already staged during this run. */
   fresh?: boolean;
+  /** Repository subtree used when the source does not name an explicit path. */
+  discoverySubdir?: string;
 }
 
 export interface RepoFetchResult {
@@ -46,7 +48,7 @@ export function createRepoFetcher(opts: CreateRepoFetcherOptions): RepoFetcher {
       if (source.kind === "local") {
         return { path: source.absolutePath };
       }
-      const subdir = source.subPath ?? DISCOVERY_SUBDIR;
+      const subdir = source.subPath ?? fetchOpts?.discoverySubdir ?? DISCOVERY_SUBDIR;
       const requestedRef = fetchOpts?.ref ?? source.ref ?? "default";
       const key = `${source.canonical}@${requestedRef}@${subdir}@${fetchOpts?.fresh ? "fresh" : "staged"}`;
       const pending = inFlight.get(key);
@@ -84,7 +86,7 @@ async function fetchGit(
 ): Promise<RepoFetchResult> {
   // Only fetch the subtree we actually need: a source's in-repo path when it
   // pins one skill, else the conventional top-level `skills/` for discovery.
-  const subdir = source.subPath ?? DISCOVERY_SUBDIR;
+  const subdir = source.subPath ?? opts?.discoverySubdir ?? DISCOVERY_SUBDIR;
 
   // Explicit override wins, then the source's own ref. With neither, ask the
   // provider for the default branch (ls-remote) so a `main`-only assumption
@@ -92,7 +94,7 @@ async function fetchGit(
   const explicitRef = opts?.ref ?? source.ref;
   const ref = explicitRef ?? (await resolveDefaultBranch(source).catch(() => null)) ?? undefined;
 
-  const destDir = resolveRepoStagingDir(source, cfg.stagingDir, ref);
+  const destDir = resolveRepoStagingDir(source, cfg.stagingDir, ref, opts?.discoverySubdir);
   const stagingKey = path.basename(destDir);
 
   if (!opts?.fresh && (await dirHasFiles(destDir))) {
@@ -117,8 +119,13 @@ async function fetchGit(
   }
 }
 
-function resolveRepoStagingDir(source: GitSource, stagingDir: string, ref?: string): string {
-  const subdir = source.subPath ?? DISCOVERY_SUBDIR;
+function resolveRepoStagingDir(
+  source: GitSource,
+  stagingDir: string,
+  ref: string | undefined,
+  discoverySubdir = DISCOVERY_SUBDIR,
+): string {
+  const subdir = source.subPath ?? discoverySubdir;
   const stagingKey = hashKey(`${source.canonical}@${ref ?? "HEAD"}@${subdir}`);
   return path.join(stagingDir, stagingKey);
 }

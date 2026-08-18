@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import type { AgnosConfig, ResolveContext } from "../../src/core/index.js";
 import { createLogger } from "../../src/core/index.js";
-import { injectRules } from "../../src/domains/rules/index.js";
+import rulesDomain, { injectRules } from "../../src/domains/rules/index.js";
 
 let tmp: string;
 
@@ -38,6 +38,54 @@ afterEach(async () => {
 });
 
 describe("injectRules", () => {
+  it("resolves declarations from the project root when rules.dir is absent", async () => {
+    await frag(".docs/.rules/coding.md", "Coding", "coding body");
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      rules: { files: { "./AGENTS.md": [".docs/.rules"] } },
+    };
+
+    await injectRules(config, ctxFor(tmp));
+
+    expect(await read("AGENTS.md")).toContain("coding body");
+  });
+
+  it("resolves declarations from rules.dir when configured", async () => {
+    await frag(".docs/.rules/coding.md", "Coding", "coding body");
+    await frag(".docs/index.md", "Documentation", "docs body");
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      rules: {
+        dir: ".docs/.rules",
+        files: { "./AGENTS.md": [".", "../index.md"] },
+      },
+    };
+
+    await injectRules(config, ctxFor(tmp));
+
+    const output = await read("AGENTS.md");
+    expect(output).toContain("coding body");
+    expect(output).toContain("docs body");
+  });
+
+  it("resolves relative glob and watch paths from rules.dir", async () => {
+    await frag(".docs/.rules/nested/testing.md", "Testing", "testing body");
+    const config: AgnosConfig = {
+      schemaVersion: 1,
+      rules: {
+        dir: ".docs/.rules",
+        files: { "./AGENTS.md": ["nested/*.md"] },
+      },
+    };
+
+    await injectRules(config, ctxFor(tmp));
+
+    expect(await read("AGENTS.md")).toContain("testing body");
+    expect(rulesDomain.watchPaths?.(config, ctxFor(tmp))).toEqual([
+      path.join(tmp, ".docs", ".rules", "nested"),
+    ]);
+  });
+
   it("injects titled fragments and is idempotent", async () => {
     await frag("frag/sec.md", "Security", "no secrets");
     const config: AgnosConfig = {
