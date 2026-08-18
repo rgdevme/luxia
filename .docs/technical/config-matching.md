@@ -18,6 +18,8 @@ timestamp: 2026-07-08T00:00:00Z
 
 ## Rule fragments
 
+- Fragment paths resolve relative to `rules.dir` when it is configured.
+- Fragment paths resolve relative to the project root when `rules.dir` is absent.
 - `rules.files` fragment entries may resolve to files, directories, or glob patterns.
 - Literal files preserve existing single-fragment behavior.
 - Directory entries expand to Markdown files recursively.
