@@ -3,8 +3,9 @@
   "schemaVersion": 1,
   "agents": ["claude-code", "codex"],
   "rules": {
+    "dir": ".docs/.rules",
     "files": {
-      "./AGENTS.md": [".docs/.rules/*"]
+      "./AGENTS.md": [".", "../index.md"]
     }
   },
   "skills": {},

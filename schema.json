@@ -25,9 +25,14 @@
       "type": "object",
       "description": "Rules domain. Maps each canonical rules file to the injectable fragment files whose titled sections are injected into it.",
       "properties": {
+        "dir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Base directory for injectable paths and destination for bootstrapped rule fragments."
+        },
         "files": {
           "type": "object",
-          "description": "Map of canonical rules file path → array of injectable fragment paths. Each fragment path may be a file, directory, or glob pattern.",
+          "description": "Map of canonical rules file path → array of injectable fragment paths. Paths are relative to rules.dir when configured, otherwise to the project root. Each path may be a file, directory, or glob pattern.",
           "additionalProperties": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 }

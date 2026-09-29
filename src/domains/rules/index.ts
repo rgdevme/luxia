@@ -8,15 +8,46 @@ import {
   matchesRelativePatterns,
   normalizeRelativePath,
   relativePosix,
+  toPosixPath,
   walkEntries,
 } from "../../core/glob.js";
 import { injectSections, slugify, type Section } from "./inject.js";
+import { bootstrapRulesCommand } from "./bootstrap.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
 export { readDefaultRulesTemplate };
 export * from "./inject.js";
 
 const DEFAULT_CANONICAL = "./AGENTS.md";
+const DEFAULT_RULES_DIR = ".docs/.rules";
+
+function resolveRulesBase(config: AgnosConfig, projectRoot: string): string {
+  const directory = config.rules?.dir;
+  if (!directory) return projectRoot;
+  return path.isAbsolute(directory)
+    ? path.resolve(directory)
+    : path.resolve(projectRoot, directory);
+}
+
+function rebaseProjectDeclaration(
+  declared: string,
+  projectRoot: string,
+  rulesBase: string,
+): string {
+  if (path.isAbsolute(declared)) return declared;
+  const rebased = path.relative(rulesBase, path.resolve(projectRoot, declared));
+  return rebased ? toPosixPath(rebased) : ".";
+}
+
+function resolveGlobSearchRoot(declared: string, base: string): string {
+  const normalized = normalizeRelativePath(declared);
+  const segments: string[] = [];
+  for (const segment of normalized.split("/")) {
+    if (hasGlobPattern(segment)) break;
+    segments.push(segment);
+  }
+  return path.resolve(base, ...segments);
+}
 
 interface FragmentPath {
   absolutePath: string;
@@ -55,9 +86,10 @@ async function listMarkdownFragments(root: string, ctx: ResolveContext): Promise
 
 async function resolveInjectableDeclaration(
   declared: string,
+  base: string,
   ctx: ResolveContext,
 ): Promise<FragmentPath[]> {
-  const absolutePath = path.resolve(ctx.projectRoot, declared);
+  const absolutePath = path.resolve(base, declared);
   const direct = await statOrNull(absolutePath);
   if (direct?.isFile()) {
     return [{ absolutePath, relativePath: relativePosix(ctx.projectRoot, absolutePath) }];
@@ -72,9 +104,11 @@ async function resolveInjectableDeclaration(
   }
 
   const matches: FragmentPath[] = [];
-  const entries = await walkEntries(ctx.projectRoot);
+  const searchRoot = resolveGlobSearchRoot(declared, base);
+  const entries = await walkEntries(searchRoot);
   for (const entry of entries) {
-    if (!matchesRelativePatterns(entry.relativePath, [declared])) {
+    const relativeToBase = relativePosix(base, entry.absolutePath);
+    if (!matchesRelativePatterns(relativeToBase, [declared])) {
       continue;
     }
 
@@ -92,21 +126,12 @@ async function resolveInjectableDeclaration(
   return resolved;
 }
 
-function resolveWatchPath(declared: string, projectRoot: string): string {
+function resolveWatchPath(declared: string, base: string): string {
   const normalized = normalizeRelativePath(declared);
   if (!hasGlobPattern(normalized)) {
-    return path.resolve(projectRoot, declared);
+    return path.resolve(base, declared);
   }
-
-  const baseSegments: string[] = [];
-  for (const segment of normalized.split("/")) {
-    if (hasGlobPattern(segment)) {
-      break;
-    }
-    baseSegments.push(segment);
-  }
-
-  return path.resolve(projectRoot, ...baseSegments);
+  return resolveGlobSearchRoot(declared, base);
 }
 
 /**
@@ -140,6 +165,7 @@ async function loadSection(
  */
 export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Promise<void> {
   const files = config.rules?.files ?? {};
+  const rulesBase = resolveRulesBase(config, ctx.projectRoot);
   const missingTitle: string[] = [];
   const state = await readState(ctx.statePath);
   const prevSections = state.rulesSections ?? {};
@@ -151,7 +177,7 @@ export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Pro
     const sections: Section[] = [];
     const seen = new Map<string, string>(); // slug → first fragment path
     for (const declared of injectables) {
-      const fragments = await resolveInjectableDeclaration(declared, ctx);
+      const fragments = await resolveInjectableDeclaration(declared, rulesBase, ctx);
       for (const fragment of fragments) {
         const section = await loadSection(fragment, ctx, missingTitle);
         if (!section) continue;
@@ -208,20 +234,67 @@ export const rulesDomain: Domain = {
   kind: "writer",
   priority: 30,
   color: "green",
+  commands: { bootstrap: bootstrapRulesCommand },
   initSteps: [
+    {
+      id: "directory",
+      type: "text",
+      message: "Rules directory path:",
+      default: async (ctx) => {
+        const config = await readConfigOrDefault(ctx.configPath);
+        return config.rules?.dir ?? DEFAULT_RULES_DIR;
+      },
+      async callback(value, ctx) {
+        const directory = value.trim() || DEFAULT_RULES_DIR;
+        const config = await readConfigOrDefault(ctx.configPath);
+        const rulesBase = path.resolve(ctx.projectRoot, directory);
+        const files = Object.fromEntries(
+          Object.entries(config.rules?.files ?? {}).map(([canonical, injectables]) => [
+            canonical,
+            config.rules?.dir
+              ? injectables
+              : injectables.map((declared) =>
+                  rebaseProjectDeclaration(declared, ctx.projectRoot, rulesBase),
+                ),
+          ]),
+        );
+        const next: AgnosConfig = {
+          ...config,
+          rules: { ...config.rules, dir: directory, files },
+        };
+        await writeConfig(ctx.configPath, next);
+      },
+    },
     {
       id: "canonical",
       type: "text",
       message: "Canonical rules file path:",
-      default: DEFAULT_CANONICAL,
+      default: async (ctx) => {
+        const config = await readConfigOrDefault(ctx.configPath);
+        return Object.keys(config.rules?.files ?? {})[0] ?? DEFAULT_CANONICAL;
+      },
       async callback(value, ctx) {
         const canonical = value.trim() || DEFAULT_CANONICAL;
         const config = (await readConfigOrDefault(ctx.configPath)) as AgnosConfig;
         const files = { ...(config.rules?.files ?? {}) };
-        if (!(canonical in files)) files[canonical] = [];
-        const next: AgnosConfig = { ...config, rules: { files } };
+        const rulesBase = resolveRulesBase(config, ctx.projectRoot);
+        const defaults = ["."];
+        if (config.docs?.root) {
+          defaults.push(
+            rebaseProjectDeclaration(
+              path.join(config.docs.root, "index.md"),
+              ctx.projectRoot,
+              rulesBase,
+            ),
+          );
+        }
+        files[canonical] = [...new Set([...(files[canonical] ?? []), ...defaults])];
+        const next: AgnosConfig = {
+          ...config,
+          rules: { ...config.rules, dir: config.rules?.dir ?? DEFAULT_RULES_DIR, files },
+        };
         if (ctx.dryRun) {
-          ctx.logger.info(`would: seed rules.files["${canonical}"] = []`);
+          ctx.logger.info(`would: add ${defaults.join(", ")} to rules.files["${canonical}"]`);
           return;
         }
         await writeConfig(ctx.configPath, next);
@@ -247,9 +320,10 @@ export const rulesDomain: Domain = {
   // a fragment re-injects its titled section into its canonical file(s).
   watchPaths(config, ctx) {
     const files = config.rules?.files ?? {};
+    const rulesBase = resolveRulesBase(config, ctx.projectRoot);
     const seen = new Set<string>();
     for (const injectables of Object.values(files)) {
-      for (const rel of injectables) seen.add(resolveWatchPath(rel, ctx.projectRoot));
+      for (const rel of injectables) seen.add(resolveWatchPath(rel, rulesBase));
     }
     return [...seen];
   },

@@ -114,7 +114,7 @@ agnos               # watch mode: keep agent files in sync as sources change
 
 Typical workflow:
 
-1. **`agnos --init`** creates `agnos.json` and walks you through picking agents, a docs root, a rules file, and a skills directory. Add `-y` to accept every default non-interactively.
+1. **`agnos --init`** creates `agnos.json` and walks you through picking agents, a docs root, a rules directory, a canonical rules file, and a skills directory. Add `-y` to accept every default non-interactively.
 2. **Edit `agnos.json`** (or use the domain subcommands like `agnos mcp add github` and `agnos skills add owner/repo`) to declare what you want.
 3. **`agnos`** in one terminal watches all domains and re-renders on change. Run **`agnos --once`** in CI or a pre-commit hook for a single deterministic pass, or **`agnos --dry`** to preview.
 
@@ -122,7 +122,7 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 
 ## Configuration (`agnos.json`)
 
-`agnos --init` walks you through building `agnos.json` interactively; running it seeds `agents`, `docs.root`, `rules.files`, and `skills.route`. `mcp` and `hooks` entries are added afterward via their subcommands (or by hand). Here's an example showing every domain populated at once:
+`agnos --init` walks you through building `agnos.json` interactively; running it seeds `agents`, `docs.root`, `rules.dir`, `rules.files`, and `skills.route`. `mcp` and `hooks` entries are added afterward via their subcommands (or by hand). Here's an example showing every domain populated at once:
 
 ```json
 {
@@ -131,8 +131,9 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
   "agents": ["claude-code", "codex", "gemini-cli"],
   "docs": { "root": ".docs" },
   "rules": {
+    "dir": ".docs/.rules",
     "files": {
-      "./AGENTS.md": ["./.docs/index.md", "./.rules/security.md", "./.rules/style.md"]
+      "./AGENTS.md": [".", "../index.md"]
     }
   },
   "skills": {
@@ -213,11 +214,12 @@ Compiles a documentation index from `docs.root`. Surface it to agents by listing
 
 ### `rules`
 
-Injects titled sections (by frontmatter `title`) from fragment files into your canonical rules file(s). Hand-written sections are preserved; removed fragments are pruned. No subcommands: configure via `agnos.json` or `agnos rules --init`.
+Injects titled sections (by frontmatter `title`) from fragment files into your canonical rules file(s). Hand-written sections are preserved; removed fragments are pruned. Configure the canonical files and bootstrap destination via `agnos.json` or `agnos rules --init`.
 
-| Command       | Args | Description                                        |
-| ------------- | ---- | -------------------------------------------------- |
-| `agnos rules` | none | Inject rules (watch mode unless `--once`/`--dry`). |
+| Command                 | Args / Flags                                                     | Description                                                                                                                             |
+| ----------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `agnos rules`           | none                                                             | Inject rules (watch mode unless `--once`/`--dry`).                                                                                      |
+| `agnos rules bootstrap` | `[source]` &nbsp;·&nbsp; `-p, --provider <p>` &nbsp;·&nbsp; `-y` | Fetch a rules catalog, select Markdown files, and overwrite matching files under `rules.dir`. Omitting `source` uses the Agnos catalog. |
 
 ### `skills`
 

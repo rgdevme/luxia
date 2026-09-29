@@ -36,6 +36,13 @@ describe("schemas", () => {
     expect(parsed.files["./api/AGENTS.md"]).toEqual([]);
   });
 
+  it("rulesDeclarationSchema accepts a bootstrap directory", () => {
+    expect(rulesDeclarationSchema.parse({ dir: ".docs/.rules" })).toEqual({
+      dir: ".docs/.rules",
+      files: {},
+    });
+  });
+
   it("docsConfigSchema defaults root to .docs and no longer carries metadata", () => {
     expect(docsConfigSchema.parse({})).toEqual({ root: ".docs", ignore: [] });
     const parsed = docsConfigSchema.parse({ root: "documentation", metadata: { owner: "team" } });

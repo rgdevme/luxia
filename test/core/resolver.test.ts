@@ -99,6 +99,16 @@ describe("createRepoFetcher (sparse git clone)", () => {
     expect(sparse[sparse.length - 1]).toBe("skills/pdf");
   });
 
+  it("uses a caller-provided discovery subtree when the source has no path", async () => {
+    const source = parseSource("github:rgdevme/luxia", { projectRoot: root });
+    if (source.kind !== "git") throw new Error("expected git source");
+
+    await fetcher().fetch(source, { discoverySubdir: ".rules" });
+    const sparse = calls.find((call) => call.includes("sparse-checkout"));
+    if (!sparse) throw new Error("expected sparse-checkout call");
+    expect(sparse[sparse.length - 1]).toBe(".rules");
+  });
+
   it("reuses a staged checkout during the same session", async () => {
     const source = parseSource("github:vercel-labs/agent-skills", { projectRoot: root });
     if (source.kind !== "git") throw new Error("expected git source");

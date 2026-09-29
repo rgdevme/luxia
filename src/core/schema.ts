@@ -11,6 +11,7 @@ export const SCHEMA_VERSION = 1;
  * file. Replaces the former `filename`/`root`/`dirs` canonical-tree model.
  */
 export const rulesDeclarationSchema = z.object({
+  dir: z.string().min(1).optional(),
   files: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
 });
 

@@ -61,9 +61,12 @@ export interface LockFile {
 }
 
 export interface RulesDeclaration {
+  /** Base directory for injectable paths and destination for bootstrapped fragments. */
+  dir?: string;
   /**
-   * Map of canonical rules file → injectable fragment paths. Each path may be
-   * a file, directory, or glob pattern. The rules domain injects each resolved
+   * Map of canonical rules file → injectable fragment paths. Paths are relative
+   * to `dir` when configured, otherwise to the project root. Each path may be a
+   * file, directory, or glob pattern. The rules domain injects each resolved
    * fragment as a titled section into its canonical file.
    */
   files: Record<string, string[]>;
@@ -261,7 +264,7 @@ export interface Linker {
 export interface RepoFetcher {
   fetch(
     source: ParsedSourceRef,
-    opts?: { ref?: string; fresh?: boolean },
+    opts?: { ref?: string; fresh?: boolean; discoverySubdir?: string },
   ): Promise<{ path: string; ref?: string; commit?: string }>;
   cleanup(): Promise<void>;
 }
@@ -277,6 +280,8 @@ export type ParsedSourceRef =
       provider: "github" | "gitlab" | "bitbucket";
       owner: string;
       repo: string;
+      subPath?: string;
+      ref?: string;
       canonical: string;
     }
   | { kind: "local"; absolutePath: string; canonical: string };
