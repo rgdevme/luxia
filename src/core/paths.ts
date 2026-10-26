@@ -3,30 +3,30 @@ import fs from "node:fs/promises";
 import type { AgnosConfig } from "./types/public.js";
 
 export const CONFIG_FILE = "agnos.json";
-export const STATE_FILE = "state.json";
 export const AGNOS_DIR = ".agnos";
 export const DEFAULT_RULES_FILE = "AGENTS.md";
-export const DEFAULT_SKILLS_DIR = path.join(AGNOS_DIR, "skills");
+export const DEFAULT_LOCAL_SKILLS_DIR = path.join(AGNOS_DIR, "skills");
+export const DEFAULT_REFERENCES_DIR = path.join(AGNOS_DIR, "references");
 
 export interface ProjectPaths {
   projectRoot: string;
   configPath: string;
   agnosRoot: string;
-  tempDir: string;
-  skillsDir: string;
-  statePath: string;
+  localSkillsDir: string;
+  referencesDir: string;
 }
 
 export function buildPaths(projectRoot: string, config?: AgnosConfig): ProjectPaths {
   const agnosRoot = path.join(projectRoot, AGNOS_DIR);
-  const skillsRel = config?.skills?.route ?? DEFAULT_SKILLS_DIR;
+  const localSkillsRel = config?.skills?.dir ?? DEFAULT_LOCAL_SKILLS_DIR;
   return {
     projectRoot,
     configPath: path.join(projectRoot, CONFIG_FILE),
     agnosRoot,
-    tempDir: path.join(agnosRoot, "tmp"),
-    skillsDir: path.isAbsolute(skillsRel) ? skillsRel : path.join(projectRoot, skillsRel),
-    statePath: path.join(agnosRoot, STATE_FILE),
+    localSkillsDir: path.isAbsolute(localSkillsRel)
+      ? localSkillsRel
+      : path.join(projectRoot, localSkillsRel),
+    referencesDir: path.resolve(projectRoot, config?.references?.dir ?? DEFAULT_REFERENCES_DIR),
   };
 }
 

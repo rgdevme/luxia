@@ -88,7 +88,7 @@ describe("exclusiveCheckbox", () => {
 
   it("ignores the space key on a disabled row and omits it from the result", async () => {
     const { getScreen, events, answer } = await render(exclusiveCheckbox, {
-      message: "Select agents:",
+      message: "Select harness:",
       choices: [
         { name: "Claude Code", value: "claude-code", checked: true, disabled: true },
         { name: "OpenAI Codex", value: "codex" },

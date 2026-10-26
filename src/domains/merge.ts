@@ -1,4 +1,4 @@
-/** Conflict-resolution policy shared by the array-valued domains (mcp, hooks). */
+/** Conflict-resolution policy shared by the array-valued domains (mcp). */
 export type MergePolicy = "missing" | "force" | "skip";
 
 export interface ArrayMergeResult<T> {

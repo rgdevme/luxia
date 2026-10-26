@@ -11,9 +11,9 @@ import type {
 import { createLogger } from "../../src/core/index.js";
 import docsDomain from "../../src/domains/docs/index.js";
 import rulesDomain from "../../src/domains/rules/index.js";
-import claudeCode from "../../src/agents/adapters/claude-code/index.js";
-import codex from "../../src/agents/adapters/codex/index.js";
-import { renderAgent } from "../../src/domains/agents/index.js";
+import claudeCode from "../../src/harnesses/adapters/claude-code/index.js";
+import codex from "../../src/harnesses/adapters/codex/index.js";
+import { renderHarness } from "../../src/domains/harness/index.js";
 
 let tmp: string;
 
@@ -23,7 +23,6 @@ function base(root: string) {
     projectRoot: root,
     storeDir: path.join(root, "store"),
     configPath: path.join(root, "agnos.json"),
-    statePath: path.join(root, ".agnos", "state.json"),
     logger: createLogger({ quiet: true }),
     fetcher: {} as never,
     linker: {} as never,
@@ -34,7 +33,11 @@ const runCtx = (root: string): RunContext => ({
   ...base(root),
   flags: { dry: false, once: true, quiet: true, help: false, init: false, yes: true },
 });
-const matCtx = (root: string): MaterializeContext => ({ ...base(root), agentId: "x", indent: "" });
+const matCtx = (root: string): MaterializeContext => ({
+  ...base(root),
+  harnessId: "x",
+  indent: "",
+});
 const OPTS: DomainRunOptions = { dry: false, once: true, quiet: true, interactive: false };
 const writeConfig = (cfg: AgnosConfig) =>
   fs.writeFile(path.join(tmp, "agnos.json"), JSON.stringify(cfg));
@@ -52,14 +55,14 @@ afterEach(async () => {
 });
 
 describe("empty slices generate no files", () => {
-  it("docs.run does nothing when docs.root is undefined", async () => {
-    await writeConfig({ schemaVersion: 1, agents: [] });
+  it("docs.run does nothing when docs.dir is undefined", async () => {
+    await writeConfig({ schemaVersion: 1, harness: [] });
     await docsDomain.run!(OPTS, runCtx(tmp));
     expect(await exists(".docs/index.md")).toBe(false);
   });
 
-  it("rules.run does nothing when rules.files is empty", async () => {
-    await writeConfig({ schemaVersion: 1, rules: { files: {} } });
+  it("rules.run does nothing when rules.fragments is empty", async () => {
+    await writeConfig({ schemaVersion: 1, rules: { fragments: {} } });
     await rulesDomain.run!(OPTS, runCtx(tmp));
     expect(await exists("AGENTS.md")).toBe(false);
   });
@@ -77,26 +80,21 @@ describe("empty slices generate no files", () => {
     expect(await exists(".codex/config.toml")).toBe(false);
   });
 
-  it("claude hooks render leaves no hooks when the list is empty", async () => {
-    await claudeCode.render!["hooks"]!([], matCtx(tmp));
-    expect(await exists(".claude/settings.json")).toBe(false);
-  });
-
-  it("rules slice renders no per-agent file when there are no canonical files", async () => {
-    // empty rules.files → resolveSlices yields [] → mirrorRules no-ops (no CLAUDE.md)
+  it("rules slice renders no per-harness file when there are no canonical files", async () => {
+    // Empty rules.fragments produces no rules slice or CLAUDE.md.
     await claudeCode.render!["rules"]!([], matCtx(tmp));
     expect(await exists("CLAUDE.md")).toBe(false);
   });
 
-  it("skills render removes the link when there are no skills (empty marker)", async () => {
+  it("skills render retains an empty agent skills directory", async () => {
     await fs.mkdir(path.join(tmp, ".claude", "skills"), { recursive: true });
     await claudeCode.render!["skills"]!("", matCtx(tmp));
-    expect(await exists(".claude/skills")).toBe(false);
+    expect(await exists(".claude/skills")).toBe(true);
   });
 
-  it("renderAgent creates no skills link when skills.sources is empty", async () => {
+  it("renderHarness creates no skills link when skills.sources is empty", async () => {
     // a fully-empty config: every slice no-ops, including skills (no link)
-    await renderAgent(claudeCode, { schemaVersion: 1, agents: ["claude-code"] }, matCtx(tmp));
+    await renderHarness(claudeCode, { schemaVersion: 1, harness: ["claude-code"] }, matCtx(tmp));
     expect(await exists(".claude/skills")).toBe(false);
     expect(await exists(".mcp.json")).toBe(false);
   });

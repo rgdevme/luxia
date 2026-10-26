@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { CommandContext, CommandSpec, ParsedSource, Provider } from "../../core/index.js";
 import { configExists, isProvider, parseSource, readConfig } from "../../core/index.js";
 import { walkEntries } from "../../core/glob.js";
@@ -108,37 +109,67 @@ export const bootstrapRulesCommand: CommandSpec = {
     const address = ctx.args[0] ?? DEFAULT_RULES_SOURCE;
     const provider = typeof ctx.flags.provider === "string" ? ctx.flags.provider : undefined;
     const source = resolveSource(address, provider, ctx.projectRoot);
-    const fetched = await ctx.logger.info({
-      message: `Loading rules from ${address}...`,
-      waitFor: ctx.fetcher.fetch(source, { discoverySubdir: RULES_DISCOVERY_SUBDIR }),
-    });
-    const catalogDirectory = resolveCatalogDirectory(source, fetched.path);
-    const rules = await findRulesInDirectory(catalogDirectory);
-    if (rules.length === 0) {
-      throw new Error(`No Markdown rule files found in ${address}`);
-    }
-
-    const selectedPaths = ctx.flags.yes
-      ? rules.map((rule) => rule.relativePath)
-      : await multiSelect(
-          ctx,
-          "Select rules to bootstrap:",
-          rules.map((rule) => ({ name: rule.relativePath, value: rule.relativePath })),
-          "pass -y to bootstrap all rules, or run in a terminal to pick interactively",
-        );
-    if (selectedPaths.length === 0) {
-      ctx.logger.info("nothing selected");
+    if (ctx.dryRun && source.kind === "git") {
+      ctx.logger.info(`would: acquire rules from ${address}`);
       return;
     }
+    const consumer = {
+      projectId: path.resolve(ctx.configPath),
+      domain: "rules",
+      name: `bootstrap-${randomUUID()}`,
+    };
+    let trackingId: string | undefined;
+    let catalogDirectory: string;
+    if (source.kind === "git" && ctx.repositoryTracker) {
+      const tracked = await ctx.repositoryTracker.add(
+        {
+          source: source.remoteUrl ?? `${source.provider}:${source.owner}/${source.repo}`,
+          ...(source.ref ? { branch: source.ref } : {}),
+          glob: source.subPath ?? RULES_DISCOVERY_SUBDIR,
+        },
+        consumer,
+      );
+      trackingId = tracked.trackingId;
+      catalogDirectory = tracked.checkoutPath;
+      if (source.subPath) catalogDirectory = path.join(catalogDirectory, source.subPath);
+      else catalogDirectory = path.join(catalogDirectory, RULES_DISCOVERY_SUBDIR);
+    } else {
+      const fetched = await ctx.logger.info({
+        message: `Loading rules from ${address}...`,
+        waitFor: ctx.fetcher.fetch(source, { discoverySubdir: RULES_DISCOVERY_SUBDIR }),
+      });
+      catalogDirectory = resolveCatalogDirectory(source, fetched.path);
+    }
+    try {
+      const rules = await findRulesInDirectory(catalogDirectory);
+      if (rules.length === 0) {
+        throw new Error(`No Markdown rule files found in ${address}`);
+      }
 
-    const selected = new Set(selectedPaths);
-    const destinationRoot = path.isAbsolute(rulesDir)
-      ? path.resolve(rulesDir)
-      : path.resolve(ctx.projectRoot, rulesDir);
-    await copyRules(
-      rules.filter((rule) => selected.has(rule.relativePath)),
-      destinationRoot,
-      ctx,
-    );
+      const selectedPaths = ctx.flags.yes
+        ? rules.map((rule) => rule.relativePath)
+        : await multiSelect(
+            ctx,
+            "Select rules to bootstrap:",
+            rules.map((rule) => ({ name: rule.relativePath, value: rule.relativePath })),
+            "pass -y to bootstrap all rules, or run in a terminal to pick interactively",
+          );
+      if (selectedPaths.length === 0) {
+        ctx.logger.info("nothing selected");
+        return;
+      }
+
+      const selected = new Set(selectedPaths);
+      const destinationRoot = path.isAbsolute(rulesDir)
+        ? path.resolve(rulesDir)
+        : path.resolve(ctx.projectRoot, rulesDir);
+      await copyRules(
+        rules.filter((rule) => selected.has(rule.relativePath)),
+        destinationRoot,
+        ctx,
+      );
+    } finally {
+      if (trackingId) await ctx.repositoryTracker.remove(trackingId, consumer);
+    }
   },
 };

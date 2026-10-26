@@ -5,9 +5,8 @@ import os from "node:os";
 import type { CommandContext, Domain, Logger } from "../../src/core/index.js";
 import { createLogger, createRepoFetcher, readConfigOrDefault } from "../../src/core/index.js";
 import mcpDomain from "../../src/domains/mcp/index.js";
-import hooksDomain from "../../src/domains/hooks/index.js";
 import skillsDomain from "../../src/domains/skills/index.js";
-import { agentsDomain } from "../../src/domains/agents/index.js";
+import { harnessDomain } from "../../src/domains/harness/index.js";
 
 let tmp: string;
 
@@ -18,12 +17,22 @@ const ctxFor = (args: string[], extra: Record<string, unknown> = {}): CommandCon
   projectRoot: tmp,
   storeDir: path.join(tmp, "store"),
   configPath: path.join(tmp, "agnos.json"),
-  statePath: path.join(tmp, ".agnos", "state.json"),
   logger: capturedLogger ?? createLogger({ quiet: true }),
   // Real fetcher: for `file:` (local) sources it just returns the absolute path,
   // so skills `add` discovery works without any network access.
   fetcher: createRepoFetcher({ stagingDir: path.join(tmp, ".agnos", "tmp", "repos") }),
   linker: {} as never,
+  repositoryTracker: {
+    add: async () => {
+      throw new Error("unexpected tracker acquisition");
+    },
+    update: async () => {
+      throw new Error("unexpected tracker update");
+    },
+    shouldUpdate: async () => false,
+    remove: async () => {},
+    listRegistrations: async () => [],
+  },
   dryRun: false,
   args,
   flags: { dry: false, once: true, quiet: true, help: false, init: false, yes: true, ...extra },
@@ -173,49 +182,13 @@ describe("mcp subcommands", () => {
   });
 
   it("migrate imports servers from an active agent's native config", async () => {
-    await writeCfg({ agents: ["claude-code"] });
+    await writeCfg({ harness: ["claude-code"] });
     await fs.writeFile(
       path.join(tmp, ".mcp.json"),
       JSON.stringify({ mcpServers: { gh: { command: "npx", args: ["s"] } } }),
     );
     await run(mcpDomain, "migrate", [], { missing: true });
     expect((await readCfg()).mcp?.servers?.map((m) => m.name)).toEqual(["gh"]);
-  });
-});
-
-describe("hooks subcommands", () => {
-  it("add appends a hook; an unknown event throws; remove drops it", async () => {
-    await run(hooksDomain, "add", ["PreToolUse", "echo hi", "git"]);
-    expect((await readCfg()).hooks).toHaveLength(1);
-    await expect(run(hooksDomain, "add", ["Nope", "x"])).rejects.toThrow(/unknown hook event/);
-    await run(hooksDomain, "remove", ["PreToolUse", "echo hi", "git"]);
-    expect((await readCfg()).hooks).toEqual([]);
-  });
-
-  it("remove with no args in non-interactive mode is guarded (no prompt)", async () => {
-    await run(hooksDomain, "add", ["Stop", "echo bye"]);
-    await expect(run(hooksDomain, "remove", [])).rejects.toThrow(/terminal|specify/i);
-  });
-
-  it("warns which installed agents don't support the event when adding", async () => {
-    await writeCfg({ agents: ["claude-code", "codex", "gemini-cli"] });
-    const warnings: string[] = [];
-    capturedLogger = { ...createLogger({ quiet: true }), warn: (m) => warnings.push(String(m)) };
-    // Notification is unsupported by codex; SubagentStop is unsupported by gemini-cli.
-    await run(hooksDomain, "add", ["Notification", "notify.sh"]);
-    expect(warnings.some((w) => w.includes("Notification") && w.includes("OpenAI Codex"))).toBe(
-      true,
-    );
-    await run(hooksDomain, "add", ["SubagentStop", "sub.sh"]);
-    expect(warnings.some((w) => w.includes("SubagentStop") && w.includes("Gemini CLI"))).toBe(true);
-  });
-
-  it("does not warn when every installed agent supports the event", async () => {
-    await writeCfg({ agents: ["claude-code", "codex", "gemini-cli"] });
-    const warnings: string[] = [];
-    capturedLogger = { ...createLogger({ quiet: true }), warn: (m) => warnings.push(String(m)) };
-    await run(hooksDomain, "add", ["PreToolUse", "guard.sh"]); // supported by all three
-    expect(warnings).toEqual([]);
   });
 });
 
@@ -233,7 +206,7 @@ describe("skills subcommands", () => {
     await makeSkillSource("src-skills", ["pdf", "lint"]);
     await run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "pdf" });
     expect((await readCfg()).skills?.sources).toEqual({
-      pdf: "file:./src-skills/skills/pdf",
+      pdf: { source: "file:./src-skills/skills/pdf", glob: "." },
     });
   });
 
@@ -241,8 +214,8 @@ describe("skills subcommands", () => {
     await makeSkillSource("src-skills", ["pdf", "lint"]);
     await run(skillsDomain, "add", ["./src-skills"], { provider: "file" });
     expect((await readCfg()).skills?.sources).toEqual({
-      pdf: "file:./src-skills/skills/pdf",
-      lint: "file:./src-skills/skills/lint",
+      pdf: { source: "file:./src-skills/skills/pdf", glob: "." },
+      lint: { source: "file:./src-skills/skills/lint", glob: "." },
     });
   });
 
@@ -251,8 +224,8 @@ describe("skills subcommands", () => {
     await makeSkillSource("two", ["lint"]);
     await run(skillsDomain, "add", ["./one", "./two"], { provider: "file" });
     expect((await readCfg()).skills?.sources).toEqual({
-      pdf: "file:./one/skills/pdf",
-      lint: "file:./two/skills/lint",
+      pdf: { source: "file:./one/skills/pdf", glob: "." },
+      lint: { source: "file:./two/skills/lint", glob: "." },
     });
   });
 
@@ -262,7 +235,7 @@ describe("skills subcommands", () => {
     // Both sources expose a "pdf"; -y picks the last declared (./two) for that name.
     await run(skillsDomain, "add", ["./one", "./two"], { provider: "file" });
     expect((await readCfg()).skills?.sources).toEqual({
-      pdf: "file:./two/skills/pdf",
+      pdf: { source: "file:./two/skills/pdf", glob: "." },
     });
   });
 
@@ -271,7 +244,7 @@ describe("skills subcommands", () => {
     await makeSkillSource("two", ["pdf"]);
     await run(skillsDomain, "add", ["./one", "./two"], { provider: "file", skills: "pdf" });
     expect((await readCfg()).skills?.sources).toEqual({
-      pdf: "file:./two/skills/pdf",
+      pdf: { source: "file:./two/skills/pdf", glob: "." },
     });
   });
 
@@ -291,9 +264,14 @@ describe("skills subcommands", () => {
 
   it("add of an already-declared skill overwrites it under --skills", async () => {
     await makeSkillSource("src-skills", ["pdf"]);
-    await writeCfg({ skills: { sources: { pdf: "file:./stale/skills/pdf" } } });
+    await writeCfg({
+      skills: { sources: { pdf: { source: "file:./stale/skills/pdf", glob: "." } } },
+    });
     await run(skillsDomain, "add", ["./src-skills"], { provider: "file", skills: "pdf" });
-    expect((await readCfg()).skills?.sources["pdf"]).toBe("file:./src-skills/skills/pdf");
+    expect((await readCfg()).skills?.sources["pdf"]).toEqual({
+      source: "file:./src-skills/skills/pdf",
+      glob: ".",
+    });
   });
 
   it("add reports a clear error when the source has no skills", async () => {
@@ -303,57 +281,91 @@ describe("skills subcommands", () => {
     );
   });
 
+  it("check reports incompatible metadata without fetching or modifying the skill", async () => {
+    const skillDirectory = path.join(tmp, ".agnos", "skills", "pdf");
+    await fs.mkdir(skillDirectory, { recursive: true });
+    await fs.writeFile(path.join(skillDirectory, "SKILL.md"), "---\nname: pdf\n---\n# PDF\n");
+    await writeCfg({ harness: ["codex"], skills: { dir: ".agnos/skills" } });
+    const logger = createLogger({ quiet: true });
+    const warn = vi.spyOn(logger, "warn");
+    capturedLogger = logger;
+
+    await run(skillsDomain, "check", [], { skills: "pdf", harness: "codex" });
+
+    expect(warn).toHaveBeenCalled();
+    await expect(fs.access(path.join(tmp, "agnos.lock.json"))).rejects.toThrow();
+  });
+
   it("remove deletes multiple named skills; no-name + non-interactive errors", async () => {
     await writeCfg({
-      skills: { sources: { a: "github:o/r/skills/a", b: "github:o/r/skills/b" } },
+      skills: {
+        sources: {
+          a: { source: "github:o/r", glob: "skills/a" },
+          b: { source: "github:o/r", glob: "skills/b" },
+        },
+      },
     });
     await run(skillsDomain, "remove", ["a", "b"]);
     expect((await readCfg()).skills?.sources ?? {}).toEqual({});
-    await writeCfg({ skills: { sources: { c: "github:o/r/skills/c" } } });
+    await writeCfg({ skills: { sources: { c: { source: "github:o/r", glob: "skills/c" } } } });
     // no names + non-interactive (yes flag) → errors instead of hanging on a prompt
     await expect(run(skillsDomain, "remove", [])).rejects.toThrow(/specify skill/i);
   });
 });
 
-describe("agents subcommands", () => {
+describe("harness subcommands", () => {
+  it("warns about skill metadata but still enables the harness", async () => {
+    const skillDirectory = path.join(tmp, ".agnos", "skills", "pdf");
+    await fs.mkdir(skillDirectory, { recursive: true });
+    await fs.writeFile(path.join(skillDirectory, "SKILL.md"), "# PDF\n");
+    const logger = createLogger({ quiet: true });
+    const warn = vi.spyOn(logger, "warn");
+    capturedLogger = logger;
+
+    await run(harnessDomain, "add", ["codex"]);
+
+    expect((await readCfg()).harness).toEqual(["codex"]);
+    expect(warn).toHaveBeenCalled();
+  });
+
   it("add enables a known agent; unknown throws; remove disables it", async () => {
-    await run(agentsDomain, "add", ["claude-code"]);
-    expect((await readCfg()).agents).toEqual(["claude-code"]);
-    await expect(run(agentsDomain, "add", ["zed"])).rejects.toThrow(/unknown agent/);
-    await run(agentsDomain, "remove", ["claude-code"]);
-    expect((await readCfg()).agents).toEqual([]);
+    await run(harnessDomain, "add", ["claude-code"]);
+    expect((await readCfg()).harness).toEqual(["claude-code"]);
+    await expect(run(harnessDomain, "add", ["zed"])).rejects.toThrow(/unknown harness/);
+    await run(harnessDomain, "remove", ["claude-code"]);
+    expect((await readCfg()).harness).toEqual([]);
   });
 
   it("add accepts several ids at once and is idempotent on re-add", async () => {
-    await run(agentsDomain, "add", ["claude-code", "codex"]);
-    expect((await readCfg()).agents).toEqual(["claude-code", "codex"]);
-    // Re-adding an already-enabled agent leaves the list untouched.
-    await run(agentsDomain, "add", ["claude-code"]);
-    expect((await readCfg()).agents).toEqual(["claude-code", "codex"]);
+    await run(harnessDomain, "add", ["claude-code", "codex"]);
+    expect((await readCfg()).harness).toEqual(["claude-code", "codex"]);
+    // Re-adding an already-enabled harness leaves the list untouched.
+    await run(harnessDomain, "add", ["claude-code"]);
+    expect((await readCfg()).harness).toEqual(["claude-code", "codex"]);
   });
 
   it("add reports every unknown id in one error", async () => {
-    await expect(run(agentsDomain, "add", ["zed", "nano"])).rejects.toThrow(/zed, nano/);
+    await expect(run(harnessDomain, "add", ["zed", "nano"])).rejects.toThrow(/zed, nano/);
   });
 
   it("add with no ids and no TTY refuses with a hint instead of hanging", async () => {
     // `-y` is ignored by these commands; only the missing TTY guards the prompt.
-    await expect(run(agentsDomain, "add", [])).rejects.toThrow(/needs a TTY/);
+    await expect(run(harnessDomain, "add", [])).rejects.toThrow(/needs a TTY/);
   });
 
   it("remove drops several ids and cleans non-enabled requests", async () => {
-    await writeCfg({ agents: ["claude-code", "codex"] });
-    await run(agentsDomain, "remove", ["claude-code", "codex"]);
-    expect((await readCfg()).agents).toEqual([]);
+    await writeCfg({ harness: ["claude-code", "codex"] });
+    await run(harnessDomain, "remove", ["claude-code", "codex"]);
+    expect((await readCfg()).harness).toEqual([]);
   });
 
   it("remove rejects ids that are not enabled", async () => {
-    await writeCfg({ agents: ["claude-code"] });
-    await expect(run(agentsDomain, "remove", ["codex"])).rejects.toThrow(/not enabled/);
+    await writeCfg({ harness: ["claude-code"] });
+    await expect(run(harnessDomain, "remove", ["codex"])).rejects.toThrow(/not enabled/);
   });
 
   it("remove with no ids and no TTY refuses with a hint", async () => {
-    await writeCfg({ agents: ["claude-code"] });
-    await expect(run(agentsDomain, "remove", [])).rejects.toThrow(/needs a TTY/);
+    await writeCfg({ harness: ["claude-code"] });
+    await expect(run(harnessDomain, "remove", [])).rejects.toThrow(/needs a TTY/);
   });
 });

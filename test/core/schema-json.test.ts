@@ -1,12 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  agnosConfigSchema,
-  hookEventSchema,
-  mcpDeclarationSchema,
-  SCHEMA_VERSION,
-} from "../../src/core/schema.js";
+import { agnosConfigSchema, mcpDeclarationSchema, SCHEMA_VERSION } from "../../src/core/schema.js";
 import { SCHEMA_URL } from "../../src/core/config.js";
 
 /**
@@ -37,9 +32,18 @@ describe("schema.json stays aligned with the zod schema", () => {
     expect(jsonKeys).toEqual(zodKeys);
   });
 
-  it("hook event enum matches hookEventSchema.options", () => {
-    const json = schema.properties["hooks"]?.items as { properties: { event: { enum: string[] } } };
-    expect(sorted(json.properties.event.enum)).toEqual(sorted(hookEventSchema.options));
+  it("uses dir fields and fragments in each domain schema", () => {
+    const properties = schema.properties as Record<
+      string,
+      { properties?: Record<string, unknown> }
+    >;
+    expect(Object.keys(properties["rules"]?.properties ?? {}).sort()).toEqual(["dir", "fragments"]);
+    expect(Object.keys(properties["skills"]?.properties ?? {}).sort()).toEqual(["dir", "sources"]);
+    expect(Object.keys(properties["references"]?.properties ?? {}).sort()).toEqual([
+      "dir",
+      "sources",
+    ]);
+    expect(Object.keys(properties["docs"]?.properties ?? {}).sort()).toEqual(["dir", "ignore"]);
   });
 
   it("mcp transport enum matches mcpDeclarationSchema", () => {

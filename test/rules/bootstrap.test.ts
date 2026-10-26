@@ -52,7 +52,6 @@ function commandContext(
     projectRoot,
     storeDir: path.join(projectRoot, "store"),
     configPath: path.join(projectRoot, "agnos.json"),
-    statePath: path.join(projectRoot, ".agnos", "state.json"),
     logger: recordingLogger(),
     fetcher:
       options.fetcher ??
@@ -113,7 +112,7 @@ describe("rules bootstrap", () => {
   });
 
   it("warns and returns before fetching when rules.dir is absent", async () => {
-    await writeConfig({ files: {} });
+    await writeConfig({ fragments: {} });
     const fetch = vi.fn();
     const ctx = commandContext([], { fetcher: { fetch, cleanup: vi.fn() } as never });
 
@@ -124,7 +123,7 @@ describe("rules bootstrap", () => {
   });
 
   it("recursively copies Markdown files, excludes other files, and overwrites", async () => {
-    await writeConfig({ dir: ".docs/.rules", files: {} });
+    await writeConfig({ dir: ".docs/.rules", fragments: {} });
     await seedRule("coding.md", "new coding");
     await seedRule("nested/testing.md", "new testing");
     await seedRule("nested/notes.txt", "ignored");
@@ -144,7 +143,7 @@ describe("rules bootstrap", () => {
   });
 
   it("uses the default catalog source and .rules discovery subtree", async () => {
-    await writeConfig({ dir: ".docs/.rules", files: {} });
+    await writeConfig({ dir: ".docs/.rules", fragments: {} });
     const checkout = path.join(projectRoot, "checkout");
     await fs.mkdir(path.join(checkout, ".rules"), { recursive: true });
     await fs.writeFile(path.join(checkout, ".rules", "coding.md"), "coding");
@@ -163,7 +162,7 @@ describe("rules bootstrap", () => {
   });
 
   it("uses .rules for repository sources and honors explicit Git paths", async () => {
-    await writeConfig({ dir: ".docs/.rules", files: {} });
+    await writeConfig({ dir: ".docs/.rules", fragments: {} });
     const checkout = path.join(projectRoot, "checkout");
     await fs.mkdir(path.join(checkout, "custom", "rules"), { recursive: true });
     await fs.writeFile(path.join(checkout, "custom", "rules", "custom.md"), "custom");
@@ -182,7 +181,7 @@ describe("rules bootstrap", () => {
   });
 
   it("copies only interactive selections and treats an empty selection as a no-op", async () => {
-    await writeConfig({ dir: ".docs/.rules", files: {} });
+    await writeConfig({ dir: ".docs/.rules", fragments: {} });
     await seedRule("a.md", "a");
     await seedRule("nested/b.md", "b");
     Object.defineProperty(process.stdin, "isTTY", { configurable: true, value: true });
@@ -201,7 +200,7 @@ describe("rules bootstrap", () => {
   });
 
   it("reports dry-run copies without writing and rejects empty catalogs", async () => {
-    await writeConfig({ dir: ".docs/.rules", files: {} });
+    await writeConfig({ dir: ".docs/.rules", fragments: {} });
     await seedRule("coding.md", "coding");
 
     await bootstrapRulesCommand.run(commandContext(["./catalog"], { dryRun: true }));

@@ -1,19 +1,15 @@
 {
   "$schema": "./schema.json",
   "schemaVersion": 1,
-  "agents": ["claude-code", "codex"],
+  "harness": ["claude-code", "codex"],
   "rules": {
-    "dir": ".docs/.rules",
-    "files": {
-      "./AGENTS.md": [".", "../index.md"]
+    "fragments": {
+      "./AGENTS.md": [".", "../docs/index.md"]
     }
   },
   "skills": {},
   "mcp": {
     "servers": []
   },
-  "docs": {
-    "root": ".docs",
-    "ignore": [".rules"]
-  }
+  "docs": {}
 }

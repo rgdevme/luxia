@@ -21,7 +21,6 @@ function context(): ResolveContext {
     projectRoot,
     storeDir: path.join(projectRoot, "store"),
     configPath: path.join(projectRoot, "agnos.json"),
-    statePath: path.join(projectRoot, ".agnos", "state.json"),
     logger,
     fetcher: {} as never,
     linker: {} as never,
@@ -44,11 +43,13 @@ describe("rules initialization", () => {
 
     const config = await readConfig(path.join(projectRoot, "agnos.json"));
     expect(config.rules).toEqual({
-      dir: ".docs/.rules",
-      files: { "./AGENTS.md": ["."] },
+      dir: ".agnos/rules",
+      fragments: { "./AGENTS.md": [".", "../docs/index.md"] },
     });
-    await expect(fs.access(path.join(projectRoot, "AGENTS.md"))).resolves.toBeUndefined();
-    await expect(fs.access(path.join(projectRoot, ".docs", ".rules"))).rejects.toThrow();
+    await expect(fs.access(path.join(projectRoot, "AGENTS.md"))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(projectRoot, ".agnos", "rules", "_index.md")),
+    ).resolves.toBeUndefined();
   });
 
   it("preserves an existing directory and avoids duplicate glob declarations", async () => {
@@ -56,7 +57,7 @@ describe("rules initialization", () => {
       path.join(projectRoot, "agnos.json"),
       JSON.stringify({
         schemaVersion: 1,
-        rules: { dir: "custom/rules", files: { "RULES.md": ["."] } },
+        rules: { dir: "custom/rules", fragments: { "RULES.md": ["."] } },
       }),
     );
 
@@ -65,18 +66,18 @@ describe("rules initialization", () => {
     const config = await readConfig(path.join(projectRoot, "agnos.json"));
     expect(config.rules).toEqual({
       dir: "custom/rules",
-      files: { "RULES.md": ["."] },
+      fragments: { "RULES.md": [".", "../../.agnos/docs/index.md"] },
     });
   });
 
-  it("rebases old declarations when rules.dir is initialized", async () => {
+  it("keeps existing declarations and adds the generated defaults", async () => {
     await fs.writeFile(
       path.join(projectRoot, "agnos.json"),
       JSON.stringify({
         schemaVersion: 1,
-        docs: { root: ".docs" },
+        docs: { dir: ".docs" },
         rules: {
-          files: { "./AGENTS.md": [".docs/.rules", ".docs/index.md"] },
+          fragments: { "./AGENTS.md": [".docs/.rules", ".docs/index.md"] },
         },
       }),
     );
@@ -85,23 +86,23 @@ describe("rules initialization", () => {
 
     const config = await readConfig(path.join(projectRoot, "agnos.json"));
     expect(config.rules).toEqual({
-      dir: ".docs/.rules",
-      files: { "./AGENTS.md": [".", "../index.md"] },
+      dir: ".agnos/rules",
+      fragments: { "./AGENTS.md": [".docs/.rules", ".docs/index.md", ".", "../../.docs/index.md"] },
     });
   });
 
   it("adds the configured docs index relative to rules.dir", async () => {
     await fs.writeFile(
       path.join(projectRoot, "agnos.json"),
-      JSON.stringify({ schemaVersion: 1, docs: { root: ".docs" } }),
+      JSON.stringify({ schemaVersion: 1, docs: { dir: ".docs" } }),
     );
 
     await runDomainInitSteps(rulesDomain, context(), { yes: true, dryRun: false });
 
     const config = await readConfig(path.join(projectRoot, "agnos.json"));
     expect(config.rules).toEqual({
-      dir: ".docs/.rules",
-      files: { "./AGENTS.md": [".", "../index.md"] },
+      dir: ".agnos/rules",
+      fragments: { "./AGENTS.md": [".", "../../.docs/index.md"] },
     });
   });
 });

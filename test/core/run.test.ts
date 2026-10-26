@@ -9,8 +9,8 @@ const OPTIONS = { dry: false, once: true, quiet: true, interactive: false };
 
 function buildRegistry(domain: Domain): PluginRegistry {
   return {
-    agents: new Map(),
-    agentsByPackage: new Map(),
+    harness: new Map(),
+    harnessesByPackage: new Map(),
     domains: new Map([[domain.id, { domain, packageName: "test" }]]),
     collisions: [],
   };
@@ -23,7 +23,6 @@ function buildContext(cleanup: () => Promise<void>): RunContext {
     projectRoot: root,
     storeDir: path.join(root, "store"),
     configPath: path.join(root, "agnos.json"),
-    statePath: path.join(root, ".agnos", "state.json"),
     logger: createLogger({ quiet: true }),
     fetcher: { fetch: vi.fn(), cleanup } as never,
     linker: {} as never,
@@ -47,7 +46,7 @@ describe("domain repository staging cleanup", () => {
 
     await expect(
       runOne(buildRegistry(domain), domain.id, OPTIONS, buildContext(cleanup)),
-    ).rejects.toBe(failure);
+    ).resolves.toEqual({ ok: false });
     expect(cleanup).toHaveBeenCalledOnce();
   });
 });

@@ -1,203 +1,79 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
-import path from "node:path";
 import os from "node:os";
-import type { AgnosConfig, ResolveContext } from "../../src/core/index.js";
-import { createLogger } from "../../src/core/index.js";
-import rulesDomain, { injectRules } from "../../src/domains/rules/index.js";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildResolveContext, createLogger } from "../../src/core/index.js";
+import { generateRules, rulesSourcePaths } from "../../src/domains/rules/index.js";
 
-let tmp: string;
+describe("generateRules", () => {
+  let root: string;
+  let ctx: Awaited<ReturnType<typeof buildResolveContext>>;
 
-function ctxFor(root: string): ResolveContext {
-  return {
-    agnosRoot: root,
-    projectRoot: root,
-    storeDir: path.join(root, "store"),
-    configPath: path.join(root, "agnos.json"),
-    statePath: path.join(root, ".agnos", "state.json"),
-    logger: createLogger({ quiet: true }),
-    fetcher: {} as never,
-    linker: {} as never,
-    dryRun: false,
-  };
-}
-
-async function frag(rel: string, title: string | null, body: string): Promise<void> {
-  const fm = title === null ? "" : `---\ntitle: ${title}\n---\n`;
-  await fs.mkdir(path.dirname(path.join(tmp, rel)), { recursive: true });
-  await fs.writeFile(path.join(tmp, rel), `${fm}${body}\n`);
-}
-
-const read = (rel: string) => fs.readFile(path.join(tmp, rel), "utf8");
-
-beforeEach(async () => {
-  tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-rules-"));
-});
-afterEach(async () => {
-  await fs.rm(tmp, { recursive: true, force: true });
-});
-
-describe("injectRules", () => {
-  it("resolves declarations from the project root when rules.dir is absent", async () => {
-    await frag(".docs/.rules/coding.md", "Coding", "coding body");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: { files: { "./AGENTS.md": [".docs/.rules"] } },
-    };
-
-    await injectRules(config, ctxFor(tmp));
-
-    expect(await read("AGENTS.md")).toContain("coding body");
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-rules-"));
+    ctx = await buildResolveContext({ projectRoot: root, logger: createLogger({ quiet: true }) });
   });
 
-  it("resolves declarations from rules.dir when configured", async () => {
-    await frag(".docs/.rules/coding.md", "Coding", "coding body");
-    await frag(".docs/index.md", "Documentation", "docs body");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: {
-        dir: ".docs/.rules",
-        files: { "./AGENTS.md": [".", "../index.md"] },
-      },
-    };
-
-    await injectRules(config, ctxFor(tmp));
-
-    const output = await read("AGENTS.md");
-    expect(output).toContain("coding body");
-    expect(output).toContain("docs body");
+  afterEach(async () => {
+    await ctx.fetcher.cleanup();
+    await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("resolves relative glob and watch paths from rules.dir", async () => {
-    await frag(".docs/.rules/nested/testing.md", "Testing", "testing body");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: {
-        dir: ".docs/.rules",
-        files: { "./AGENTS.md": ["nested/*.md"] },
-      },
-    };
+  async function write(relative: string, content: string): Promise<void> {
+    const target = path.join(root, relative);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, content, "utf8");
+  }
 
-    await injectRules(config, ctxFor(tmp));
+  async function read(relative: string): Promise<string> {
+    return await fs.readFile(path.join(root, relative), "utf8");
+  }
 
-    expect(await read("AGENTS.md")).toContain("testing body");
-    expect(rulesDomain.watchPaths?.(config, ctxFor(tmp))).toEqual([
-      path.join(tmp, ".docs", ".rules", "nested"),
-    ]);
-  });
-
-  it("injects titled fragments and is idempotent", async () => {
-    await frag("frag/sec.md", "Security", "no secrets");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: { files: { "./AGENTS.md": ["./frag/sec.md"] } },
-    };
-    await injectRules(config, ctxFor(tmp));
-    const first = await read("AGENTS.md");
-    expect(first).toContain("## Security");
-    expect(first).not.toContain("<!--"); // heading-delimited, no sentinels
-    expect(first).toContain("no secrets");
-    // idempotent: a second run leaves the file byte-identical
-    await injectRules(config, ctxFor(tmp));
-    expect(await read("AGENTS.md")).toBe(first);
-  });
-
-  it("preserves hand-written sections and tracks managed slugs in state", async () => {
-    await frag("frag/sec.md", "Security", "no secrets");
-    const ctx = ctxFor(tmp);
-    await fs.writeFile(path.join(tmp, "AGENTS.md"), "# AGENTS\n\nintro\n\n## Manual\n\nkeep me\n");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: { files: { "./AGENTS.md": ["./frag/sec.md"] } },
-    };
-    await injectRules(config, ctx);
-    const out = await read("AGENTS.md");
-    expect(out).toContain("## Manual");
-    expect(out).toContain("keep me");
-    expect(out).toContain("## Security");
-    // managed slugs are persisted so a later run can prune removed fragments
-    const state = JSON.parse(await read(".agnos/state.json")) as {
-      rulesSections?: Record<string, string[]>;
-    };
-    expect(state.rulesSections?.["./AGENTS.md"]).toEqual(["security"]);
-  });
-
-  it("fans out one fragment into multiple canonical files", async () => {
-    await frag("frag/shared.md", "Shared", "shared body");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: {
-        files: { "./AGENTS.md": ["./frag/shared.md"], "./api/AGENTS.md": ["./frag/shared.md"] },
-      },
-    };
-    await injectRules(config, ctxFor(tmp));
-    expect(await read("AGENTS.md")).toContain("shared body");
-    expect(await read("api/AGENTS.md")).toContain("shared body");
-  });
-
-  it("skips fragments missing a title but injects the rest", async () => {
-    await frag("frag/ok.md", "Ok", "ok body");
-    await frag("frag/no-title.md", null, "orphan body");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: { files: { "./AGENTS.md": ["./frag/ok.md", "./frag/no-title.md"] } },
-    };
-    await injectRules(config, ctxFor(tmp));
-    const out = await read("AGENTS.md");
-    expect(out).toContain("ok body");
-    expect(out).not.toContain("orphan body");
-  });
-
-  it("skips a duplicate title within the same canonical file", async () => {
-    await frag("frag/a.md", "Dup", "first");
-    await frag("frag/b.md", "Dup", "second");
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: { files: { "./AGENTS.md": ["./frag/a.md", "./frag/b.md"] } },
-    };
-    await injectRules(config, ctxFor(tmp));
-    const out = await read("AGENTS.md");
-    expect(out).toContain("first");
-    expect(out).not.toContain("second");
-  });
-
-  it("expands directories and globs by declaration order then alphabetical path", async () => {
-    await frag("frag/dir/b.md", "B", "b body");
-    await frag("frag/dir/a.md", "A", "a body");
-    await frag("frag/glob/d.md", "D", "d body");
-    await frag("frag/glob/c.md", "C", "c body");
-    await frag("frag/one.md", "One", "one body");
-
-    const config: AgnosConfig = {
-      schemaVersion: 1,
-      rules: { files: { "./AGENTS.md": ["./frag/one.md", "./frag/glob/*.md", "./frag/dir"] } },
-    };
-
-    await injectRules(config, ctxFor(tmp));
-    const out = await read("AGENTS.md");
-
-    expect(out.indexOf("## One")).toBeLessThan(out.indexOf("## C"));
-    expect(out.indexOf("## C")).toBeLessThan(out.indexOf("## D"));
-    expect(out.indexOf("## D")).toBeLessThan(out.indexOf("## A"));
-    expect(out.indexOf("## A")).toBeLessThan(out.indexOf("## B"));
-  });
-
-  it("prunes a section when its fragment is removed from the config", async () => {
-    await frag("frag/a.md", "Alpha", "a body");
-    await frag("frag/b.md", "Beta", "b body");
-    const ctx = ctxFor(tmp);
-    await injectRules(
-      { schemaVersion: 1, rules: { files: { "./AGENTS.md": ["./frag/a.md", "./frag/b.md"] } } },
+  it("prepends the optional rules-root index and strips frontmatter", async () => {
+    await write(".agnos/rules/_index.md", "---\ntitle: Intro\n---\n# Project\n\nOverview");
+    await write(".agnos/rules/a.md", "---\ntitle: A\n---\n## A\n\nBody");
+    await generateRules(
+      { schemaVersion: 1, rules: { dir: ".agnos/rules", fragments: { "AGENTS.md": ["."] } } },
       ctx,
     );
-    expect(await read("AGENTS.md")).toContain("b body");
-    // drop Beta from config → its section is pruned on the next run
-    await injectRules(
-      { schemaVersion: 1, rules: { files: { "./AGENTS.md": ["./frag/a.md"] } } },
+    expect(await read("AGENTS.md")).toBe("# Project\n\nOverview\n\n## A\n\nBody\n");
+  });
+
+  it("respects explicit index placement and ignores headings in fenced code", async () => {
+    await write(".agnos/rules/_index.md", "# Index");
+    await write(".agnos/rules/fragment.md", "```md\n# example\n```\n\n## Fragment");
+    const config = {
+      schemaVersion: 1 as const,
+      rules: { dir: ".agnos/rules", fragments: { "AGENTS.md": ["fragment.md", "_index.md"] } },
+    };
+    await generateRules(config, ctx);
+    expect(await read("AGENTS.md")).toBe("```md\n# example\n```\n\n## Fragment\n\n# Index\n");
+  });
+
+  it("preserves generated bytes when a source heading is invalid", async () => {
+    await write("AGENTS.md", "previous artifact\n");
+    await write(".agnos/rules/bad.md", "A title\n=======\n");
+    await expect(
+      generateRules(
+        {
+          schemaVersion: 1,
+          rules: { dir: ".agnos/rules", fragments: { "AGENTS.md": ["bad.md"] } },
+        },
+        ctx,
+      ),
+    ).rejects.toThrow("failed to generate");
+    expect(await read("AGENTS.md")).toBe("previous artifact\n");
+  });
+
+  it("watches the implicit index and declared sources", () => {
+    const paths = rulesSourcePaths(
+      {
+        schemaVersion: 1,
+        rules: { dir: ".agnos/rules", fragments: { "AGENTS.md": ["nested/*.md"] } },
+      },
       ctx,
     );
-    const out = await read("AGENTS.md");
-    expect(out).toContain("a body");
-    expect(out).not.toContain("b body");
+    expect(paths).toContain(path.join(root, ".agnos/rules", "_index.md"));
+    expect(paths).toContain(path.join(root, ".agnos/rules", "nested"));
   });
 });

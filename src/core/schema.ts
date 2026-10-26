@@ -1,19 +1,19 @@
 import { z } from "zod";
 
-export const agentRefSchema = z.string().min(1);
+export const harnessRefSchema = z.string().min(1);
 
 /** Current `agnos.json` schema version. Configs without it are rejected (see config.ts). */
 export const SCHEMA_VERSION = 1;
 
 /**
- * Rules domain. Map of canonical rules file → injectable fragment files. The
- * rules domain injects each fragment as a titled section into its canonical
- * file. Replaces the former `filename`/`root`/`dirs` canonical-tree model.
+ * Rules domain. Map of generated artifact paths to ordered Markdown sources.
  */
-export const rulesDeclarationSchema = z.object({
-  dir: z.string().min(1).optional(),
-  files: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
-});
+export const rulesDeclarationSchema = z
+  .object({
+    dir: z.string().min(1).optional(),
+    fragments: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
+  })
+  .strict();
 
 /** Local-name pattern for `agnos.json#skills` keys. */
 export const skillNameSchema = z
@@ -21,20 +21,32 @@ export const skillNameSchema = z
   .min(1)
   .regex(/^[a-z0-9][a-z0-9-]*$/i, "skill name must be alphanumeric/dash");
 
-/**
- * A composite skill reference, e.g. "github:vercel-labs/agent-skills/skills/pdf".
- */
-export const skillRefSchema = z
-  .string()
-  .min(1)
-  .refine((v) => !v.includes("\n") && !v.includes("\r"), "skill ref must be a single line");
-
-export const skillSourcesSchema = z.record(skillNameSchema, skillRefSchema);
-
-export const skillsConfigSchema = z.object({
-  route: z.string().min(1).optional(),
-  sources: skillSourcesSchema.optional(),
+export const repositoryRequestSchema = z.object({
+  source: z
+    .string()
+    .min(1)
+    .refine((value) => !/[\r\n]/.test(value), "source must be a single line"),
+  branch: z.string().min(1).optional(),
+  commit: z.string().min(1).optional(),
+  glob: z.string().min(1).default("."),
 });
+
+export const repositorySourcesSchema = z.record(skillNameSchema, repositoryRequestSchema);
+export const skillSourcesSchema = repositorySourcesSchema;
+
+export const referencesConfigSchema = z
+  .object({
+    dir: z.string().min(1).default(".agnos/references"),
+    sources: repositorySourcesSchema.default({}),
+  })
+  .strict();
+
+export const skillsConfigSchema = z
+  .object({
+    dir: z.string().min(1).optional(),
+    sources: skillSourcesSchema.optional(),
+  })
+  .strict();
 
 export const mcpDeclarationSchema = z.object({
   name: z.string().min(1),
@@ -53,77 +65,15 @@ export const mcpConfigSchema = z.object({
 });
 
 /**
- * Canonical, normalized vocabulary of hook events — the union of every event
- * any supported agent exposes. Each adapter declares a `hookEvents` map from
- * these canonical names to its own native names; events an agent lacks are not
- * rendered to it (and `hooks add` warns which agents skip them). Nothing is
- * dropped from the central registry, so scraping preserves every event.
- */
-export const hookEventSchema = z.enum([
-  "PreToolUse",
-  "PostToolUse",
-  "UserPromptSubmit",
-  "Notification",
-  "Stop",
-  "SubagentStop",
-  "PreCompact",
-  "SessionStart",
-  "SessionEnd",
-  // Additional Claude Code events (the widest native set).
-  "Setup",
-  "UserPromptExpansion",
-  "PermissionRequest",
-  "PermissionDenied",
-  "PostToolUseFailure",
-  "PostToolBatch",
-  "MessageDisplay",
-  "SubagentStart",
-  "TaskCreated",
-  "TaskCompleted",
-  "StopFailure",
-  "TeammateIdle",
-  "InstructionsLoaded",
-  "ConfigChange",
-  "CwdChanged",
-  "FileChanged",
-  "WorktreeCreate",
-  "WorktreeRemove",
-  "PostCompact",
-  "Elicitation",
-  "ElicitationResult",
-  // Gemini CLI model-loop events (no Claude/Codex counterpart).
-  "BeforeModel",
-  "AfterModel",
-  "BeforeToolSelection",
-]);
-
-/**
- * A single hook entry — a flat, strict 5-field shape. Agents render it into
- * their native format (regrouping by event/matcher as needed). `message` is
- * user-facing status text; agents without an equivalent ignore it. Identity for
- * dedup/removal is `(event, matcher, command)`.
- */
-export const hookEntrySchema = z
-  .object({
-    event: hookEventSchema,
-    matcher: z.string().optional(),
-    type: z.literal("command"),
-    command: z.string().min(1),
-    message: z.string().optional(),
-  })
-  .strict();
-
-/** Hooks registry: a flat array of entries. */
-export const hooksConfigSchema = z.array(hookEntrySchema);
-
-/**
- * Docs domain. Watches `root`, compiles an index. The doc-frontmatter shape is
+ * Docs domain. Watches `dir`, compiles an index. The doc-frontmatter shape is
  * fixed (see `docFrontmatterSchema`) and not user-overridable.
  */
-export const docsConfigSchema = z.object({
-  root: z.string().min(1).default(".docs"),
-  ignore: z.array(z.string().min(1)).default([]),
-});
+export const docsConfigSchema = z
+  .object({
+    dir: z.string().min(1).default(".agnos/docs"),
+    ignore: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
 
 /**
  * Fixed frontmatter shape every doc must carry, aligned with Google's Open
@@ -156,11 +106,11 @@ export const agnosConfigSchema = z
   .object({
     $schema: z.string().optional(),
     schemaVersion: z.literal(SCHEMA_VERSION),
-    agents: z.array(agentRefSchema).optional(),
+    harness: z.array(harnessRefSchema).optional(),
     rules: rulesDeclarationSchema.optional(),
     skills: skillsConfigSchema.optional(),
+    references: referencesConfigSchema.optional(),
     mcp: mcpConfigSchema.optional(),
-    hooks: hooksConfigSchema.optional(),
     docs: docsConfigSchema.optional(),
   })
   .passthrough();

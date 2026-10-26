@@ -18,7 +18,7 @@ import {
   textPrompt,
   writeChange,
 } from "../cli-helpers.js";
-import { scrapeActive } from "../agents/index.js";
+import { scrapeActiveHarnesses } from "../harness/index.js";
 import {
   dedupeName,
   getServerLatest,
@@ -456,10 +456,10 @@ const commands: Record<string, CommandSpec> = {
   },
   migrate: {
     name: "migrate",
-    description: "Import MCP servers from the active agents' native config",
+    description: "Import MCP servers from the active harnesses' native config",
     flags: MIGRATE_FLAGS,
     async run(ctx) {
-      const discovered = (await scrapeActive("mcp", ctx)) as McpDeclaration[];
+      const discovered = (await scrapeActiveHarnesses("mcp", ctx)) as McpDeclaration[];
       const config = await readConfigOrDefault(ctx.configPath);
       const res = mergeMcp(getMcpServers(config), discovered, policyFromFlags(ctx));
       if (res.aborted) {
@@ -477,13 +477,13 @@ const commands: Record<string, CommandSpec> = {
 };
 
 /**
- * The mcp domain: a config writer. It owns `agnos.json#mcp`; the agents domain
- * renders each declaration into per-agent native files. Subcommands mutate the
- * config; the agents domain materializes on the next run.
+ * The mcp domain: a config writer. It owns `agnos.json#mcp`; the harness domain
+ * renders each declaration into per-harness native files. Subcommands mutate the
+ * config; the harness domain materializes on the next run.
  */
 export const mcpDomain: Domain = {
   id: "mcp",
-  description: "Manage MCP servers in agnos.json (rendered per-agent by the agents domain)",
+  description: "Manage MCP servers in agnos.json (rendered per-harness by the harness domain)",
   kind: "writer",
   priority: 40,
   color: "blue",

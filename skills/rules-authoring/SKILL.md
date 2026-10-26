@@ -6,20 +6,22 @@ description: Conventions for writing rules for agents with agnos. Requires okf-a
 # Rules authoring
 
 Follow these conventions whenever you create or edit rules files under the
-project's rules fragments root declared in [`agnos.json#rules.fragments`](/agnos.json#rules.fragments).
+project's rules directory declared in [`agnos.json#rules.dir`](/agnos.json#rules.dir).
 
 ## Mandatory
 
 - Read and follow the `okf-authoring` skill before applying this skill. Do not by-pass it.
 - Treat this skill as rules-specific policy layered on top of `okf-authoring`.
-- Files produced with this skill must have its `type` set to `Rule`
+- Files produced with this skill must have its `type` set to `Rule`.
 
 ## File structure
 
-- Each file must contain exactly one second-level heading: `## <Block title>`.
-- Do not use first-level headings.
-- Use `###`, `####`, and deeper headings only for nested sections.
-- Do not add a second `##` heading in the same file.
+- Agnos generates each configured rules artifact from the selected source files.
+- The optional `rules.dir/_index.md` is included first unless it is explicitly listed elsewhere.
+- Only `rules.dir/_index.md` may contain an H1 heading, and it may contain at most one.
+- Every other selected file must not contain an H1. Use any lower heading level, including H2.
+- YAML frontmatter is removed before source bodies are joined. Frontmatter titles do not become headings.
+- Edit source files under `rules.dir`; generated output files are overwritten on the next run.
 
 ## Content style
 
@@ -39,16 +41,10 @@ project's rules fragments root declared in [`agnos.json#rules.fragments`](/agnos
 
 ```markdown
 ---
-type: Rule
-title: Short title
-description: Short description
-resource: ""
-tags: []
-timestamp: 2026-06-30T00:00:00Z
+<okf-frontmatter-metadata>
 ---
 
-## <Block title>
-
+<Breif instruction on when to use these rules>
 - <Top-level rule>
 - ...
 
@@ -63,7 +59,7 @@ timestamp: 2026-06-30T00:00:00Z
 Before finishing, verify:
 
 - Shared validation from `okf-authoring` passes.
-- The file has exactly one `##` heading.
-- All nested headings are `###` or deeper.
+- Only the rules-root `_index.md` may have an H1, and only once.
+- Other files contain no H1, including nested files named `_index.md`.
 - The block title is clear and user-facing.
 - The content is concise.

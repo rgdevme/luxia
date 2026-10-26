@@ -5,7 +5,7 @@ import type { AgnosConfig, ResolveContext } from "../../core/index.js";
 import { docFrontmatterSchema } from "../../core/index.js";
 import { matchesRelativePatterns, walkEntries } from "../../core/glob.js";
 
-export const DEFAULT_DOCS_ROOT = ".docs";
+export const DEFAULT_DOCS_ROOT = ".agnos/docs";
 export const INDEX_FILE = "index.md";
 export const LOG_FILE = "log.md";
 
@@ -20,7 +20,7 @@ interface DocEntry {
 }
 
 async function listDocs(root: string, ignore: readonly string[]): Promise<string[]> {
-  const entries = await walkEntries(root);
+  const entries = await walkEntries(root, ignore);
   return entries
     .filter((entry) => entry.kind === "file")
     .filter((entry) => entry.absolutePath.endsWith(".md"))
@@ -61,19 +61,27 @@ export interface CompileResult {
 }
 
 /**
- * Compile a deterministic, byte-stable index from the docs under `docs.root`.
+ * Compile a deterministic, byte-stable index from the docs under `docs.dir`.
  * Docs whose frontmatter is incomplete warn and continue; the reserved
- * `index.md`/`log.md` files are excluded from the scan, and the index carries a
- * `title` so `rules` can inject it.
+ * `index.md`/`log.md` files are excluded from the scan.
  */
 export async function compileDocsIndex(
   config: AgnosConfig,
   ctx: ResolveContext,
 ): Promise<CompileResult> {
-  const root = path.resolve(ctx.projectRoot, config.docs?.root ?? DEFAULT_DOCS_ROOT);
+  const root = path.resolve(ctx.projectRoot, config.docs?.dir ?? DEFAULT_DOCS_ROOT);
   const indexAbs = path.join(root, INDEX_FILE);
+  const referenceRoute = path.resolve(
+    ctx.projectRoot,
+    config.references?.dir ?? ".agnos/references",
+  );
+  const referenceIgnore = path.relative(root, referenceRoute).split(path.sep).join("/");
+  const ignore =
+    referenceIgnore.startsWith("../") || referenceIgnore === ".."
+      ? (config.docs?.ignore ?? [])
+      : [...(config.docs?.ignore ?? []), referenceIgnore];
 
-  const files = (await listDocs(root, config.docs?.ignore ?? [])).filter(
+  const files = (await listDocs(root, ignore)).filter(
     (abs) => !RESERVED_FILES.has(path.basename(abs)),
   );
   const docs: DocEntry[] = [];

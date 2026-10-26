@@ -66,7 +66,7 @@ export function createRepoFetcher(opts: CreateRepoFetcherOptions): RepoFetcher {
       await Promise.allSettled([...inFlight.values()]);
       inFlight.clear();
       try {
-        await fs.rm(sessionDir, {
+        await fs.rm(opts.stagingDir, {
           recursive: true,
           force: true,
           maxRetries: 3,

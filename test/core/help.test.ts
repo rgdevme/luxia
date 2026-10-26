@@ -39,14 +39,14 @@ describe("cli help", () => {
   });
 
   it("commandHelp shows usage, arguments, and flags", () => {
-    const out = commandHelp("agents", {
+    const out = commandHelp("harness", {
       name: "remove",
       description: "remove an agent",
-      args: [{ name: "agent", required: true, description: "agent id to remove" }],
+      args: [{ name: "agent", required: true, description: "harness id to remove" }],
       flags: [],
       run: async () => {},
     });
-    expect(out).toContain("agnos agents remove <agent>");
-    expect(out).toContain("agent id to remove");
+    expect(out).toContain("agnos harness remove <agent>");
+    expect(out).toContain("harness id to remove");
   });
 });

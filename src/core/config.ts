@@ -7,9 +7,10 @@ export const SCHEMA_URL = "https://unpkg.com/@luxia/agnos/schema.json";
 export const DEFAULT_CONFIG: AgnosConfig = {
   $schema: SCHEMA_URL,
   schemaVersion: SCHEMA_VERSION,
-  agents: [],
-  rules: { files: {} },
+  harness: [],
+  rules: { fragments: {} },
   skills: {},
+  references: { dir: ".agnos/references", sources: {} },
   mcp: { servers: [] },
 };
 
@@ -33,8 +34,28 @@ export async function readConfig(configPath: string): Promise<AgnosConfig> {
         `The agnos.json format changed in v0.1 — re-run \`agnos --init\` to regenerate it.`,
     );
   }
+  const legacyKeys = parsed as Record<string, unknown>;
+  if ("agents" in legacyKeys) {
+    throw new Error('agnos.json uses the renamed "agents" key; rename it to "harness"');
+  }
+  if ("hooks" in legacyKeys) {
+    throw new Error('hooks are no longer managed by Agnos; remove "hooks" from agnos.json');
+  }
   const result = agnosConfigSchema.safeParse(parsed);
   if (!result.success) {
+    const skillSources =
+      parsed && typeof parsed === "object"
+        ? (parsed as { skills?: { sources?: unknown } }).skills?.sources
+        : undefined;
+    if (
+      skillSources &&
+      typeof skillSources === "object" &&
+      Object.values(skillSources).some((source) => typeof source === "string")
+    ) {
+      throw new Error(
+        `agnos.json still uses legacy composite skill sources. Run \`agnos --init\` to migrate them to normalized requests.`,
+      );
+    }
     throw new Error(`agnos.json schema validation failed:\n${result.error.message}`);
   }
   return result.data as AgnosConfig;
@@ -64,7 +85,16 @@ export async function configExists(configPath: string): Promise<boolean> {
   }
 }
 
-const KEY_ORDER = ["$schema", "schemaVersion", "agents", "rules", "skills", "mcp", "hooks", "docs"];
+const KEY_ORDER = [
+  "$schema",
+  "schemaVersion",
+  "harness",
+  "rules",
+  "skills",
+  "references",
+  "mcp",
+  "docs",
+];
 
 function orderTopLevelKeys(config: AgnosConfig): AgnosConfig {
   const out: Record<string, unknown> = {};

@@ -1,7 +1,14 @@
 export type {
-  AgentAdapter,
-  AgentRef,
+  HarnessAdapter,
+  HarnessRef,
   AgnosConfig,
+  RepositoryRequest,
+  RepositoryConsumer,
+  RepositoryTrackEntry,
+  RepositoryTrackInfo,
+  RepositoryRegistration,
+  RepositoryTracker,
+  ReferencesConfig,
   ArgSpec,
   CommandContext,
   CommandSpec,
@@ -10,10 +17,6 @@ export type {
   DomainRunOptions,
   FlagSpec,
   FlagType,
-  HookEntry,
-  HookEvent,
-  HookEventMap,
-  HooksDeclaration,
   InitStep,
   InitStepBase,
   InitStepDefault,
@@ -35,6 +38,8 @@ export type {
   ResolveContext,
   ResolvedMcp,
   ResolvedSkill,
+  SkillMetadataDiagnostic,
+  SkillMetadataValidationInput,
   RulesDeclaration,
   RunContext,
   SkillLockEntry,
@@ -51,7 +56,8 @@ export {
   AGNOS_DIR,
   CONFIG_FILE,
   DEFAULT_RULES_FILE,
-  STATE_FILE,
+  DEFAULT_LOCAL_SKILLS_DIR,
+  DEFAULT_REFERENCES_DIR,
 } from "./paths.js";
 export {
   readConfig,
@@ -63,9 +69,17 @@ export {
 } from "./config.js";
 export { buildResolveContext, workspaceRelativePath } from "./context.js";
 export { resolveGlobalStoreDir } from "./store-path.js";
+export { createRepositoryTracker } from "./repository-tracker.js";
+export { migrateLegacySkillSources } from "./skill-migration.js";
+export type { SkillMigrationResult } from "./skill-migration.js";
 export type { GlobalStorePathOptions } from "./store-path.js";
-export { loadPlugins, orderedDomains, refToId, resolveAgentByRef } from "./plugin-loader.js";
-export type { PluginRegistry, RegisteredAgent, RegisteredDomain } from "./plugin-loader.js";
+export {
+  loadPlugins,
+  orderedDomains,
+  harnessRefToId,
+  resolveHarnessByRef,
+} from "./plugin-loader.js";
+export type { PluginRegistry, RegisteredHarness, RegisteredDomain } from "./plugin-loader.js";
 export { runAll, runOne, runFrom } from "./run.js";
 export { runDomainInitSteps, runAllDomainInitSteps } from "./commands/init-steps.js";
 export type { RunStepsOptions } from "./commands/init-steps.js";
@@ -76,6 +90,8 @@ export { createRepoFetcher } from "./resolver.js";
 export {
   parseSource,
   parseCompositeSkillRef,
+  parseSkillRequest,
+  skillRequestKey,
   isProvider,
   SUPPORTED_PROVIDERS,
   FALLBACK_REF,
@@ -91,11 +107,11 @@ export { resolveGitCommit, resolveLocalCommit, resolveDefaultBranch } from "./co
 export type { CommitResolution } from "./commit-resolver.js";
 export { findSkillsInRepo, readSkillMeta } from "./skill-discovery.js";
 export type { DiscoveredSkill } from "./skill-discovery.js";
+export { parseSkillMetadata, validateSkillForHarnesses } from "./skill-metadata.js";
+export type { ParsedSkillMetadata } from "./skill-metadata.js";
 export { hashSkillDir } from "./skill-hash.js";
 export { materializeSkill } from "./skill-materialize.js";
 export type { MaterializeSkillResult } from "./skill-materialize.js";
-export { prepareSkills } from "./skill-prepare.js";
-export type { PrepareResult } from "./skill-prepare.js";
 export {
   LOCK_FILE,
   emptyLock,
@@ -107,23 +123,10 @@ export {
   writeLock,
 } from "./lock.js";
 export {
-  isAgentInstalled,
-  isDomainInitialized,
-  markAgentInstalled,
-  markDomainInitialized,
-  readState,
-  unmarkAgentInstalled,
-  writeState,
-} from "./state.js";
-export type { AgnosState } from "./state.js";
-export {
-  agentRefSchema,
+  harnessRefSchema,
   agnosConfigSchema,
   docFrontmatterSchema,
   docsConfigSchema,
-  hookEntrySchema,
-  hookEventSchema,
-  hooksConfigSchema,
   lockFileSchema,
   mcpConfigSchema,
   mcpDeclarationSchema,
@@ -131,7 +134,9 @@ export {
   SCHEMA_VERSION,
   skillLockEntrySchema,
   skillNameSchema,
-  skillRefSchema,
   skillSourcesSchema,
   skillsConfigSchema,
+  repositoryRequestSchema,
+  repositorySourcesSchema,
+  referencesConfigSchema,
 } from "./schema.js";

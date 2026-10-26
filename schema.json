@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://unpkg.com/@luxia/agnos/schema.json",
   "title": "agnos.json",
-  "description": "Single source of truth for an agnos project: which agents are active, how rules are composed, what skills/MCP servers/hooks are configured, and how docs are managed.",
+  "description": "Single source of truth for an Agnos project: which harnesses are active, how repository rules and docs are composed, and which skills and MCP servers are available.",
   "type": "object",
   "additionalProperties": true,
   "required": ["schemaVersion"],
@@ -15,27 +15,33 @@
       "const": 1,
       "description": "agnos.json schema version. Must be 1; older/absent values are rejected — re-run `agnos --init`."
     },
-    "agents": {
+    "harness": {
       "type": "array",
-      "description": "Active agent ids (e.g. \"claude-code\", \"codex\").",
-      "items": { "type": "string", "minLength": 1 },
+      "description": "Active harness ids (e.g. claude-code, codex, gemini-cli).",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "rules": {
       "type": "object",
-      "description": "Rules domain. Maps each canonical rules file to the injectable fragment files whose titled sections are injected into it.",
+      "description": "Rules domain. Maps each generated rules artifact to ordered Markdown source files, directories, or glob patterns.",
       "properties": {
         "dir": {
           "type": "string",
           "minLength": 1,
-          "description": "Base directory for injectable paths and destination for bootstrapped rule fragments."
+          "description": "Base directory for authored rule sources and destination for bootstrapped rule files (default \".agnos/rules\")."
         },
-        "files": {
+        "fragments": {
           "type": "object",
-          "description": "Map of canonical rules file path → array of injectable fragment paths. Paths are relative to rules.dir when configured, otherwise to the project root. Each path may be a file, directory, or glob pattern.",
+          "description": "Map of generated rules artifact path → ordered source paths. Paths are relative to rules.dir. Each source may be a file, directory, or glob pattern.",
           "additionalProperties": {
             "type": "array",
-            "items": { "type": "string", "minLength": 1 }
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       },
@@ -43,25 +49,95 @@
     },
     "skills": {
       "type": "object",
-      "description": "Skills domain configuration: where canonical content lives and which skills to install.",
+      "description": "Skills domain configuration for manually authored local skills and externally sourced skills.",
       "properties": {
-        "route": {
+        "dir": {
           "type": "string",
           "minLength": 1,
-          "description": "Canonical skills directory, project-relative. Defaults to \".agnos/skills\". Agents link their own skills dir to this path."
+          "default": ".agnos/skills",
+          "description": "Project-relative directory of manually authored skills. These are linked into each agent skills directory and override external skills with the same name."
         },
         "sources": {
           "type": "object",
-          "description": "Map of local skill name → composite source ref. Grammar: \"github:<owner>/<repo>/<in-repo-path>\" (or gitlab:/bitbucket:), or \"file:<path-to-skill-dir>\".",
-          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]*$" },
-          "additionalProperties": { "type": "string", "minLength": 1, "pattern": "^[^\\r\\n]+$" }
+          "description": "Map of local skill name to a normalized repository or local source request.",
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "glob": {
+                "type": "string",
+                "minLength": 1,
+                "default": "."
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "references": {
+      "type": "object",
+      "description": "Shared repository references installed from the Agnos global repository store.",
+      "properties": {
+        "dir": {
+          "type": "string",
+          "minLength": 1,
+          "default": ".agnos/references",
+          "description": "Project-relative directory for linked reference selections."
+        },
+        "sources": {
+          "type": "object",
+          "description": "Map of project-local link name to a repository request.",
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "glob": {
+                "type": "string",
+                "minLength": 1,
+                "default": "."
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
     },
     "mcp": {
       "type": "object",
-      "description": "MCP configuration. Declares server definitions and the env file used to resolve declared server env keys when materializing agent files.",
+      "description": "MCP configuration. Declares server definitions and the env file used to resolve declared server env keys when materializing harness files.",
       "properties": {
         "envFile": {
           "type": "string",
@@ -70,7 +146,7 @@
         },
         "servers": {
           "type": "array",
-          "description": "MCP server declarations, rendered into per-agent MCP config (.mcp.json for Claude Code, .codex/config.toml for Codex).",
+          "description": "MCP server declarations, rendered into per-harness MCP config (.mcp.json for Claude Code, .codex/config.toml for Codex).",
           "items": {
             "type": "object",
             "properties": {
@@ -96,18 +172,25 @@
               },
               "args": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "description": "Arguments passed to `command`."
               },
               "env": {
                 "type": "array",
                 "description": "Env variable names to resolve from mcp.envFile when materializing agent MCP files.",
-                "items": { "type": "string", "minLength": 1 }
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
               },
               "headers": {
                 "type": "object",
                 "description": "HTTP headers for remote (sse/http) transports, e.g. auth tokens.",
-                "additionalProperties": { "type": "string" }
+                "additionalProperties": {
+                  "type": "string"
+                }
               },
               "transport": {
                 "type": "string",
@@ -122,82 +205,22 @@
       },
       "additionalProperties": false
     },
-    "hooks": {
-      "type": "array",
-      "description": "Hooks registry: a flat array of command hooks. Agents render each entry into their native format (regrouping by event/matcher), mapping `message` to native status text and skipping unsupported events.",
-      "items": {
-        "type": "object",
-        "properties": {
-          "event": {
-            "type": "string",
-            "enum": [
-              "PreToolUse",
-              "PostToolUse",
-              "UserPromptSubmit",
-              "Notification",
-              "Stop",
-              "SubagentStop",
-              "PreCompact",
-              "SessionStart",
-              "SessionEnd",
-              "Setup",
-              "UserPromptExpansion",
-              "PermissionRequest",
-              "PermissionDenied",
-              "PostToolUseFailure",
-              "PostToolBatch",
-              "MessageDisplay",
-              "SubagentStart",
-              "TaskCreated",
-              "TaskCompleted",
-              "StopFailure",
-              "TeammateIdle",
-              "InstructionsLoaded",
-              "ConfigChange",
-              "CwdChanged",
-              "FileChanged",
-              "WorktreeCreate",
-              "WorktreeRemove",
-              "PostCompact",
-              "Elicitation",
-              "ElicitationResult",
-              "BeforeModel",
-              "AfterModel",
-              "BeforeToolSelection"
-            ],
-            "description": "Normalized hook event name."
-          },
-          "matcher": {
-            "type": "string",
-            "description": "Optional filter for when the hook fires (meaning depends on the event)."
-          },
-          "type": {
-            "const": "command",
-            "description": "Handler type. Only \"command\" is supported in v0.1."
-          },
-          "command": { "type": "string", "minLength": 1, "description": "Shell command to run." },
-          "message": {
-            "type": "string",
-            "description": "User-facing status text shown while the hook runs."
-          }
-        },
-        "required": ["event", "type", "command"],
-        "additionalProperties": false
-      }
-    },
     "docs": {
       "type": "object",
-      "description": "Docs domain configuration. Watches `root`, compiles an index from the docs' frontmatter metadata. The frontmatter shape (type/title/description/resource/tags/timestamp) is fixed and not configurable.",
+      "description": "Docs domain configuration. Watches `dir`, compiles an index from the docs' frontmatter metadata. The frontmatter shape (type/title/description/resource/tags/timestamp) is fixed and not configurable.",
       "properties": {
-        "root": {
+        "dir": {
           "type": "string",
           "minLength": 1,
-          "description": "Directory where doc files live (default \".docs\")."
+          "description": "Directory where doc files live (default \".agnos/docs\")."
         },
         "ignore": {
           "type": "array",
-          "description": "Glob patterns, relative to docs.root, excluded from docs indexing.",
-          "items": { "type": "string", "minLength": 1 }
+          "description": "Glob patterns, relative to docs.dir, excluded from docs indexing.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "additionalProperties": false

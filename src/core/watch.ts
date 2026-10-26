@@ -15,16 +15,16 @@ const AWAIT_WRITE_FINISH = { stabilityThreshold: 150, pollInterval: 50 } as cons
  * Watch supervisor — a per-domain watcher tree (§13.4). After the initial paint
  * it watches each domain's declared content paths plus `agnos.json`, and on a
  * change re-runs the affected domain and everything downstream of it, so
- * regenerated artifacts cascade (`docs → rules → agents`):
+ * regenerated artifacts cascade (`docs → rules → harness`):
  *
- *   - docs   watches `docs.root` (its own index.md is ignored)
- *   - rules  watches the fragment files listed in `rules.files`
- *   - agents watches `agnos.json` (the config it renders from)
- *   - skills/mcp/hooks contribute no watcher — they are CLI-driven writers
+ *   - docs   watches `docs.dir` (its own index.md is ignored)
+ *   - rules  watches the source files selected by `rules.fragments` and implicit `_index.md`
+ *   - harness watches `agnos.json` (the config it renders from)
+ *   - skills/mcp contribute no watcher — they are CLI-driven writers
  *
  * A change to `agnos.json` rebuilds the config-derived watch lists (a new
- * fragment / moved `docs.root` retargets without a restart) and re-runs from the
- * rules domain onward so the new config is injected and re-rendered. `domainId`
+ * fragment / moved `docs.dir` retargets without a restart) and re-runs from the
+ * rules domain onward so the new config is rendered. `domainId`
  * scopes the whole thing to one domain (and re-runs only that domain).
  */
 export async function startWatch(
@@ -131,16 +131,16 @@ export async function startWatch(
 
   // ---- config watcher ----
   // Always watch agnos.json (it determines the content watch lists and what the
-  // agents domain renders) — except when scoped to docs, which by design is
+  // harness domain renders) — except when scoped to docs, which by design is
   // independent of agnos.json.
   let configWatcher: FSWatcher | undefined;
   const watchConfig = !scoped || domainId !== "docs";
   if (watchConfig) {
-    // Full mode: re-run from rules onward (rebuild + rules-inject + agents-render),
+    // Full mode: re-run from rules onward (rebuild + rules-generate + harness-render),
     // never docs. Scoped: re-run just the scoped domain.
     const cfgFrom =
       registry.domains.get("rules")?.domain.priority ??
-      registry.domains.get("agents")?.domain.priority ??
+      registry.domains.get("harness")?.domain.priority ??
       Number.POSITIVE_INFINITY;
     configWatcher = chokidar.watch(ctx.configPath, {
       ignoreInitial: true,

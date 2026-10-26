@@ -15,7 +15,6 @@ function ctxFor(root: string): ResolveContext {
     projectRoot: root,
     storeDir: path.join(root, "store"),
     configPath: path.join(root, "agnos.json"),
-    statePath: path.join(root, ".agnos", "state.json"),
     logger: createLogger({ quiet: true }),
     fetcher: {} as never,
     linker: {} as never,
@@ -39,7 +38,7 @@ const full = (title: string, description: string) => ({
 });
 
 const readIndex = () => fs.readFile(path.join(tmp, ".docs", "index.md"), "utf8");
-const config: AgnosConfig = { schemaVersion: 1, docs: { root: ".docs" } };
+const config: AgnosConfig = { schemaVersion: 1, docs: { dir: ".docs" } };
 
 beforeEach(async () => {
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-docs-"));
@@ -73,6 +72,20 @@ describe("compileDocsIndex", () => {
     const res = await compileDocsIndex(config, ctx);
     expect(res.written).toBe(false);
     expect(await readIndex()).toBe(first);
+  });
+
+  it("does not descend into the configured reference route", async () => {
+    await doc("normal.md", full("Normal", "included"));
+    await doc("references/deep/README.md", full("Reference", "excluded"));
+    const referenceConfig: AgnosConfig = {
+      ...config,
+      references: { dir: ".docs/references", sources: {} },
+    };
+
+    await compileDocsIndex(referenceConfig, ctxFor(tmp));
+    const index = await readIndex();
+    expect(index).toContain("[Normal](normal.md)");
+    expect(index).not.toContain("[Reference]");
   });
 
   it("treats a doc with empty resource and tags as complete", async () => {
@@ -139,14 +152,14 @@ describe("compileDocsIndex", () => {
     expect(idx).toContain("[Guide](guide.md)");
   });
 
-  it("ignores configured files and directories relative to docs.root", async () => {
+  it("ignores configured files and directories relative to docs.dir", async () => {
     await doc("guide.md", full("Guide", "kept"));
     await doc("drafts/plan.md", full("Plan", "ignored directory"));
     await doc("nested/ignore.tmp.md", full("Temp", "ignored glob"));
     await doc("nested/keep.md", full("Keep", "kept nested"));
 
     const res = await compileDocsIndex(
-      { schemaVersion: 1, docs: { root: ".docs", ignore: ["drafts", "**/*.tmp.md"] } },
+      { schemaVersion: 1, docs: { dir: ".docs", ignore: ["drafts", "**/*.tmp.md"] } },
       ctxFor(tmp),
     );
 

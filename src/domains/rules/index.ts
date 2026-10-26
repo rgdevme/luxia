@@ -1,236 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import matter from "gray-matter";
-import type { AgnosConfig, Domain, ResolveContext } from "../../core/index.js";
-import { readConfigOrDefault, readState, writeConfig, writeState } from "../../core/index.js";
-import {
-  hasGlobPattern,
-  matchesRelativePatterns,
-  normalizeRelativePath,
-  relativePosix,
-  toPosixPath,
-  walkEntries,
-} from "../../core/glob.js";
-import { injectSections, slugify, type Section } from "./inject.js";
+import type { AgnosConfig, Domain } from "../../core/index.js";
+import { readConfigOrDefault, writeConfig } from "../../core/index.js";
 import { bootstrapRulesCommand } from "./bootstrap.js";
+import { generateRules, rulesSourcePaths } from "./generate.js";
 import { readDefaultRulesTemplate } from "./template.js";
 
-export { readDefaultRulesTemplate };
-export * from "./inject.js";
+export { readDefaultRulesTemplate, generateRules, rulesSourcePaths };
 
+const DEFAULT_RULES_DIR = ".agnos/rules";
 const DEFAULT_CANONICAL = "./AGENTS.md";
-const DEFAULT_RULES_DIR = ".docs/.rules";
-
-function resolveRulesBase(config: AgnosConfig, projectRoot: string): string {
-  const directory = config.rules?.dir;
-  if (!directory) return projectRoot;
-  return path.isAbsolute(directory)
-    ? path.resolve(directory)
-    : path.resolve(projectRoot, directory);
-}
-
-function rebaseProjectDeclaration(
-  declared: string,
-  projectRoot: string,
-  rulesBase: string,
-): string {
-  if (path.isAbsolute(declared)) return declared;
-  const rebased = path.relative(rulesBase, path.resolve(projectRoot, declared));
-  return rebased ? toPosixPath(rebased) : ".";
-}
-
-function resolveGlobSearchRoot(declared: string, base: string): string {
-  const normalized = normalizeRelativePath(declared);
-  const segments: string[] = [];
-  for (const segment of normalized.split("/")) {
-    if (hasGlobPattern(segment)) break;
-    segments.push(segment);
-  }
-  return path.resolve(base, ...segments);
-}
-
-interface FragmentPath {
-  absolutePath: string;
-  relativePath: string;
-}
-
-async function statOrNull(abs: string): Promise<Awaited<ReturnType<typeof fs.stat>> | null> {
-  try {
-    return await fs.stat(abs);
-  } catch {
-    return null;
-  }
-}
-
-function compareFragmentPath(a: FragmentPath, b: FragmentPath): number {
-  return a.relativePath.localeCompare(b.relativePath);
-}
-
-function uniqueSortedFragments(fragments: FragmentPath[]): FragmentPath[] {
-  return [...new Map(fragments.map((fragment) => [fragment.absolutePath, fragment])).values()].sort(
-    compareFragmentPath,
-  );
-}
-
-async function listMarkdownFragments(root: string, ctx: ResolveContext): Promise<FragmentPath[]> {
-  const entries = await walkEntries(root);
-  return entries
-    .filter((entry) => entry.kind === "file")
-    .filter((entry) => entry.absolutePath.endsWith(".md"))
-    .map((entry) => ({
-      absolutePath: entry.absolutePath,
-      relativePath: relativePosix(ctx.projectRoot, entry.absolutePath),
-    }))
-    .sort(compareFragmentPath);
-}
-
-async function resolveInjectableDeclaration(
-  declared: string,
-  base: string,
-  ctx: ResolveContext,
-): Promise<FragmentPath[]> {
-  const absolutePath = path.resolve(base, declared);
-  const direct = await statOrNull(absolutePath);
-  if (direct?.isFile()) {
-    return [{ absolutePath, relativePath: relativePosix(ctx.projectRoot, absolutePath) }];
-  }
-  if (direct?.isDirectory()) {
-    return await listMarkdownFragments(absolutePath, ctx);
-  }
-
-  if (!hasGlobPattern(declared)) {
-    ctx.logger.warn({ message: "injectable not found, skipping", status: declared });
-    return [];
-  }
-
-  const matches: FragmentPath[] = [];
-  const searchRoot = resolveGlobSearchRoot(declared, base);
-  const entries = await walkEntries(searchRoot);
-  for (const entry of entries) {
-    const relativeToBase = relativePosix(base, entry.absolutePath);
-    if (!matchesRelativePatterns(relativeToBase, [declared])) {
-      continue;
-    }
-
-    if (entry.kind === "file") {
-      matches.push({ absolutePath: entry.absolutePath, relativePath: entry.relativePath });
-    } else {
-      matches.push(...(await listMarkdownFragments(entry.absolutePath, ctx)));
-    }
-  }
-
-  const resolved = uniqueSortedFragments(matches);
-  if (resolved.length === 0) {
-    ctx.logger.warn({ message: "injectable pattern matched no files, skipping", status: declared });
-  }
-  return resolved;
-}
-
-function resolveWatchPath(declared: string, base: string): string {
-  const normalized = normalizeRelativePath(declared);
-  if (!hasGlobPattern(normalized)) {
-    return path.resolve(base, declared);
-  }
-  return resolveGlobSearchRoot(declared, base);
-}
-
-/**
- * Read an injectable fragment and turn it into a titled section. Returns null
- * (with the missing-property recorded) when the fragment lacks a `title`.
- */
-async function loadSection(
-  fragment: FragmentPath,
-  ctx: ResolveContext,
-  missing: string[],
-): Promise<Section | null> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(fragment.absolutePath, "utf8");
-  } catch {
-    ctx.logger.warn({ message: "injectable not found, skipping", status: fragment.relativePath });
-    return null;
-  }
-  const parsed = matter(raw);
-  const title = typeof parsed.data["title"] === "string" ? parsed.data["title"].trim() : "";
-  if (!title) {
-    missing.push(fragment.relativePath);
-    return null;
-  }
-  return { slug: slugify(title), title, body: parsed.content };
-}
-
-/**
- * Inject each canonical file's fragments as titled sections. Missing/duplicate
- * titles warn and skip (§13.3). Writes only when content changed (idempotent).
- */
-export async function injectRules(config: AgnosConfig, ctx: ResolveContext): Promise<void> {
-  const files = config.rules?.files ?? {};
-  const rulesBase = resolveRulesBase(config, ctx.projectRoot);
-  const missingTitle: string[] = [];
-  const state = await readState(ctx.statePath);
-  const prevSections = state.rulesSections ?? {};
-  // Rebuilt fresh each run: only currently-declared canonical files survive, so
-  // a file dropped from rules.files is forgotten (its slugs no longer prune).
-  const nextSections: Record<string, string[]> = {};
-
-  for (const [canonical, injectables] of Object.entries(files)) {
-    const sections: Section[] = [];
-    const seen = new Map<string, string>(); // slug → first fragment path
-    for (const declared of injectables) {
-      const fragments = await resolveInjectableDeclaration(declared, rulesBase, ctx);
-      for (const fragment of fragments) {
-        const section = await loadSection(fragment, ctx, missingTitle);
-        if (!section) continue;
-        const prior = seen.get(section.slug);
-        if (prior) {
-          ctx.logger.warn({
-            message: `duplicate title "${section.title}" for ${canonical} (${prior} and ${fragment.relativePath})`,
-            status: `skipping ${fragment.relativePath}`,
-          });
-          continue;
-        }
-        seen.set(section.slug, fragment.relativePath);
-        sections.push(section);
-      }
-    }
-
-    const canonAbs = path.resolve(ctx.projectRoot, canonical);
-    let existing = "";
-    try {
-      existing = await fs.readFile(canonAbs, "utf8");
-    } catch {
-      /* new canonical file */
-    }
-    const prevSlugs = prevSections[canonical] ?? [];
-    const next = injectSections(existing, sections, prevSlugs);
-    nextSections[canonical] = sections.map((s) => s.slug);
-    if (next === existing) continue;
-    if (ctx.dryRun) {
-      ctx.logger.info(`would: inject ${sections.length} section(s) into ${canonical}`);
-      continue;
-    }
-    await fs.mkdir(path.dirname(canonAbs), { recursive: true });
-    await fs.writeFile(canonAbs, next, "utf8");
-    ctx.logger.success({ message: `injected ${sections.length} section(s)`, status: canonical });
-  }
-
-  // Persist the managed-slug map so a later run can prune the sections of
-  // fragments removed from rules.files in the meantime.
-  if (!ctx.dryRun) await writeState(ctx.statePath, { ...state, rulesSections: nextSections });
-
-  if (missingTitle.length > 0) {
-    // A fragment needs a `title` to become an injectable section; the rules
-    // authoring conventions live in the doc-authoring skill.
-    ctx.logger.warn({
-      message: "The following fragments are missing a title and were skipped:",
-      extra: missingTitle.map((f) => `- ${f}`),
-    });
-  }
-}
 
 export const rulesDomain: Domain = {
   id: "rules",
-  description: "Inject titled sections from fragment files into canonical rules files",
+  description: "Generate complete rules artifacts from ordered Markdown sources",
   kind: "writer",
   priority: 30,
   color: "green",
@@ -239,93 +22,80 @@ export const rulesDomain: Domain = {
     {
       id: "directory",
       type: "text",
-      message: "Rules directory path:",
-      default: async (ctx) => {
-        const config = await readConfigOrDefault(ctx.configPath);
-        return config.rules?.dir ?? DEFAULT_RULES_DIR;
-      },
+      message: "Rules source directory path:",
+      default: async (ctx) =>
+        (await readConfigOrDefault(ctx.configPath)).rules?.dir ?? DEFAULT_RULES_DIR,
       async callback(value, ctx) {
         const directory = value.trim() || DEFAULT_RULES_DIR;
         const config = await readConfigOrDefault(ctx.configPath);
-        const rulesBase = path.resolve(ctx.projectRoot, directory);
-        const files = Object.fromEntries(
-          Object.entries(config.rules?.files ?? {}).map(([canonical, injectables]) => [
-            canonical,
-            config.rules?.dir
-              ? injectables
-              : injectables.map((declared) =>
-                  rebaseProjectDeclaration(declared, ctx.projectRoot, rulesBase),
-                ),
-          ]),
-        );
         const next: AgnosConfig = {
           ...config,
-          rules: { ...config.rules, dir: directory, files },
+          rules: { ...config.rules, dir: directory, fragments: config.rules?.fragments ?? {} },
         };
+        if (ctx.dryRun) {
+          ctx.logger.info(`would: set rules.dir = ${directory}`);
+          return;
+        }
         await writeConfig(ctx.configPath, next);
+        const rulesDir = path.resolve(ctx.projectRoot, directory);
+        await fs.mkdir(rulesDir, { recursive: true });
+        const indexPath = path.join(rulesDir, "_index.md");
+        if (!(await fs.lstat(indexPath).catch(() => null))) {
+          await fs.writeFile(indexPath, await readDefaultRulesTemplate(), "utf8");
+        }
       },
     },
     {
       id: "canonical",
       type: "text",
-      message: "Canonical rules file path:",
+      message: "Generated rules artifact path:",
       default: async (ctx) => {
         const config = await readConfigOrDefault(ctx.configPath);
-        return Object.keys(config.rules?.files ?? {})[0] ?? DEFAULT_CANONICAL;
+        return Object.keys(config.rules?.fragments ?? {})[0] ?? DEFAULT_CANONICAL;
       },
       async callback(value, ctx) {
         const canonical = value.trim() || DEFAULT_CANONICAL;
-        const config = (await readConfigOrDefault(ctx.configPath)) as AgnosConfig;
-        const files = { ...(config.rules?.files ?? {}) };
-        const rulesBase = resolveRulesBase(config, ctx.projectRoot);
-        const defaults = ["."];
-        if (config.docs?.root) {
-          defaults.push(
-            rebaseProjectDeclaration(
-              path.join(config.docs.root, "index.md"),
-              ctx.projectRoot,
-              rulesBase,
-            ),
-          );
-        }
-        files[canonical] = [...new Set([...(files[canonical] ?? []), ...defaults])];
+        const config = await readConfigOrDefault(ctx.configPath);
+        const fragments = { ...(config.rules?.fragments ?? {}) };
+        const rulesDir = config.rules?.dir ?? DEFAULT_RULES_DIR;
+        const rulesBase = path.resolve(ctx.projectRoot, rulesDir);
+        const docsRoot = path.resolve(ctx.projectRoot, config.docs?.dir ?? ".agnos/docs");
+        const docsIndex = path
+          .relative(rulesBase, path.join(docsRoot, "index.md"))
+          .split(path.sep)
+          .join("/");
+        fragments[canonical] = [...new Set([...(fragments[canonical] ?? []), ".", docsIndex])];
         const next: AgnosConfig = {
           ...config,
-          rules: { ...config.rules, dir: config.rules?.dir ?? DEFAULT_RULES_DIR, files },
+          rules: { ...config.rules, dir: rulesDir, fragments },
         };
         if (ctx.dryRun) {
-          ctx.logger.info(`would: add ${defaults.join(", ")} to rules.files["${canonical}"]`);
+          ctx.logger.info(`would: generate ${canonical} from rules.dir sources`);
           return;
         }
         await writeConfig(ctx.configPath, next);
-        const canonAbs = path.resolve(ctx.projectRoot, canonical);
-        try {
-          await fs.access(canonAbs);
-        } catch {
-          await fs.mkdir(path.dirname(canonAbs), { recursive: true });
-          await fs.writeFile(canonAbs, await readDefaultRulesTemplate(), "utf8");
-          ctx.logger.success(`created ${canonical}`);
-        }
       },
     },
   ],
-  async run(opts, ctx) {
+  async run(_opts, ctx) {
     const config = await readConfigOrDefault(ctx.configPath);
-    // No canonical files declared (empty/undefined `rules.files`) → skip.
-    if (Object.keys(config.rules?.files ?? {}).length === 0) return undefined;
-    await ctx.logger.info({ message: "Injecting rules", waitFor: injectRules(config, ctx) });
+    if (Object.keys(config.rules?.fragments ?? {}).length === 0) return undefined;
+    await ctx.logger.info({
+      message: "Generating rules artifacts",
+      waitFor: generateRules(config, ctx),
+    });
     return undefined;
   },
-  // Watch every injectable fragment declared across all canonical files. Editing
-  // a fragment re-injects its titled section into its canonical file(s).
   watchPaths(config, ctx) {
-    const files = config.rules?.files ?? {};
-    const rulesBase = resolveRulesBase(config, ctx.projectRoot);
-    const seen = new Set<string>();
-    for (const injectables of Object.values(files)) {
-      for (const rel of injectables) seen.add(resolveWatchPath(rel, rulesBase));
-    }
-    return [...seen];
+    return rulesSourcePaths(config, ctx);
+  },
+  watchIgnore(config, ctx) {
+    return [
+      ...Object.keys(config.rules?.fragments ?? {}).map((output) =>
+        path.resolve(ctx.projectRoot, output),
+      ),
+      path.resolve(ctx.projectRoot, config.docs?.dir ?? ".agnos/docs", "index.md"),
+    ];
   },
 };
 

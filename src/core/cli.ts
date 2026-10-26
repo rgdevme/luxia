@@ -1,8 +1,10 @@
 import minimist from "minimist";
+import path from "node:path";
 import {
   buildResolveContext,
   createLogger,
   loadPlugins,
+  migrateLegacySkillSources,
   runAll,
   runAllDomainInitSteps,
   runOne,
@@ -74,23 +76,38 @@ async function main(): Promise<void> {
   };
 
   try {
-    const base = await buildResolveContext({ projectRoot: cwd, dryRun: flags.dry, logger });
+    const configPath = path.join(cwd, "agnos.json");
+    const migration =
+      flags.init && (!domainId || domainId === "skills")
+        ? await migrateLegacySkillSources(configPath, cwd, flags.dry, (message) =>
+            logger.info(message),
+          )
+        : undefined;
+    const base = await buildResolveContext({
+      projectRoot: cwd,
+      dryRun: flags.dry,
+      logger,
+      ...(migration?.config ? { config: migration.config } : {}),
+    });
     const registry = await loadPlugins({ projectRoot: cwd, logger });
     const ctx: RunContext = { ...base, flags };
 
     if (flags.init) {
-      await runAllDomainInitSteps(
+      const ok = await runAllDomainInitSteps(
         registry,
         ctx,
         { yes: flags.yes, dryRun: flags.dry },
         domainId ? [domainId] : undefined,
       );
+      if (!ok) process.exitCode = 1;
       return;
     }
 
     if (!domainId) {
-      if (flags.once) await runAll(registry, opts, ctx);
-      else await startWatch(registry, opts, ctx);
+      if (flags.once) {
+        const result = await runAll(registry, opts, ctx);
+        if (!result.ok) process.exitCode = 1;
+      } else await startWatch(registry, opts, ctx);
       return;
     }
 
@@ -121,8 +138,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (flags.once) await runOne(registry, domainId, opts, ctx);
-    else await startWatch(registry, opts, ctx, domainId);
+    if (flags.once) {
+      const result = await runOne(registry, domainId, opts, ctx);
+      if (!result.ok) process.exitCode = 1;
+    } else await startWatch(registry, opts, ctx, domainId);
   } catch (err) {
     logger.error((err as Error).message);
     if (argv["debug"]) console.error((err as Error).stack);
