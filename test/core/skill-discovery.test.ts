@@ -71,6 +71,14 @@ describe("findSkillsInRepo", () => {
     expect(await findSkillsInRepo(root)).toEqual([]);
   });
 
+  it("uses a repository-relative glob to discover skills outside skills/", async () => {
+    await placeSkill("examples/alpha");
+    await placeSkill("examples/nested/beta");
+
+    const out = await findSkillsInRepo(root, "examples/**/SKILL.md");
+    expect(out.map((skill) => skill.path)).toEqual(["examples/alpha", "examples/nested/beta"]);
+  });
+
   it("extracts title from the first markdown heading", async () => {
     await placeSkill("skills/with-title", "# A Catchy Title\n\nBody");
     await placeSkill("skills/no-title", "Just paragraph text.");

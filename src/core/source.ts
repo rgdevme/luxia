@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { RepositoryRequest } from "./types/public.js";
 
 export type Provider = "github" | "gitlab" | "bitbucket";
 
@@ -20,6 +21,7 @@ const PROVIDER_HOSTS: Record<string, Provider> = {
 export interface GitSource {
   kind: "git";
   provider: Provider;
+  remoteUrl?: string;
   owner: string;
   repo: string;
   /**
@@ -70,6 +72,7 @@ const OWNER_REPO_RE = /^([a-z0-9][a-z0-9._-]*)\/([a-z0-9][a-z0-9._-]*)(?:\/(.+))
 
 // SSH grammar — repo only (no in-repo path).
 const SSH_RE = /^git@([^:]+):([^/]+)\/(.+?)(?:\.git)?$/;
+const SSH_URL_RE = /^ssh:\/\/(?:([^@/]+)@)?([^/]+)\/([^/]+)\/(.+?)(?:\.git)?$/i;
 
 // HTTPS grammar — owner/repo and an optional trailing path.
 // Capture groups: 1=host, 2=owner, 3=repo, 4=remainder (may be empty).
@@ -109,29 +112,50 @@ export function parseSource(input: string, opts: ParseOptions): ParsedSource {
   const ssh = SSH_RE.exec(raw);
   if (ssh) {
     const host = ssh[1]!.toLowerCase();
-    const provider = PROVIDER_HOSTS[host];
-    if (!provider) {
-      throw new Error(
-        `Unsupported git host "${host}". Supported: ${Object.keys(PROVIDER_HOSTS).join(", ")}.`,
-      );
-    }
-    return makeGit(provider, ssh[2]!, stripDotGit(ssh[3]!), undefined, ref);
+    const provider = PROVIDER_HOSTS[host] ?? "github";
+    const repo = stripDotGit(ssh[3]!);
+    return makeGit(provider, ssh[2]!, repo, undefined, ref, `git@${host}:${ssh[2]}/${repo}.git`);
+  }
+
+  const sshUrl = SSH_URL_RE.exec(raw);
+  if (sshUrl) {
+    const host = sshUrl[2]!.toLowerCase();
+    const repo = stripDotGit(sshUrl[4]!);
+    const user = sshUrl[1] ? `${sshUrl[1]}@` : "";
+    return makeGit(
+      PROVIDER_HOSTS[host] ?? "github",
+      sshUrl[3]!,
+      repo,
+      undefined,
+      ref,
+      `ssh://${user}${host}/${sshUrl[3]}/${repo}.git`,
+    );
   }
 
   // HTTPS form: https://host/owner/repo[/...]
   const https = HTTPS_RE.exec(raw);
   if (https) {
     const host = https[1]!.toLowerCase();
-    const provider = PROVIDER_HOSTS[host];
-    if (!provider) {
-      throw new Error(
-        `Unsupported git host "${host}". Supported: ${Object.keys(PROVIDER_HOSTS).join(", ")}.`,
-      );
-    }
+    const provider = PROVIDER_HOSTS[host] ?? "github";
     // A `/tree/<ref>/` or `/blob/<ref>/` web-UI suffix also encodes a ref; an
     // explicit `#<ref>` takes precedence over it.
-    const { subPath, ref: treeRef } = normalizeHttpsRemainder(https[4]);
-    return makeGit(provider, https[2]!, stripDotGit(https[3]!), subPath, ref ?? treeRef);
+    const remainder = https[4];
+    const nestedGitPath = remainder?.endsWith(".git") ? remainder.slice(0, -4) : undefined;
+    const { subPath, ref: treeRef } = nestedGitPath
+      ? { subPath: undefined, ref: undefined }
+      : normalizeHttpsRemainder(remainder);
+    const repo = stripDotGit(nestedGitPath ? `${https[3]}/${nestedGitPath}` : https[3]!);
+    const remotePath = nestedGitPath
+      ? `${https[2]}/${https[3]}/${nestedGitPath}.git`
+      : `${https[2]}/${repo}.git`;
+    return makeGit(
+      provider,
+      https[2]!,
+      repo,
+      subPath,
+      ref ?? treeRef,
+      `https://${host}/${remotePath}`,
+    );
   }
 
   // Bare shorthand: owner/repo[/path]
@@ -184,12 +208,46 @@ export function parseCompositeSkillRef(value: string, opts: ParseOptions): Compo
   return { source: parsed, subPath: "", composite: parsed.canonical };
 }
 
+export function parseSkillRequest(
+  request: RepositoryRequest,
+  opts: ParseOptions,
+): CompositeSkillRef {
+  const parsed = parseSource(request.source, opts);
+  if (parsed.kind === "local") {
+    if (request.glob && request.glob !== ".") {
+      throw new Error(
+        'local skill requests must select their directory through source and use glob "."',
+      );
+    }
+    return { source: parsed, subPath: "", composite: skillRequestKey(request) };
+  }
+  const subPath = request.glob ?? ".";
+  if (subPath === ".") {
+    throw new Error("a skill source must select one concrete repository directory");
+  }
+  return {
+    source: { ...parsed, subPath },
+    subPath,
+    composite: skillRequestKey(request),
+  };
+}
+
+export function skillRequestKey(request: RepositoryRequest): string {
+  return JSON.stringify({
+    source: request.source,
+    ...(request.branch ? { branch: request.branch } : {}),
+    ...(request.commit ? { commit: request.commit } : {}),
+    glob: request.glob ?? ".",
+  });
+}
+
 function makeGit(
   provider: Provider,
   owner: string,
   repo: string,
   subPath?: string,
   ref?: string,
+  remoteUrl?: string,
 ): GitSource {
   const cleanSub = normalizeSubPath(subPath);
   const base = cleanSub
@@ -201,6 +259,7 @@ function makeGit(
   return {
     kind: "git",
     provider,
+    ...(remoteUrl ? { remoteUrl } : {}),
     owner,
     repo,
     ...(cleanSub ? { subPath: cleanSub } : {}),

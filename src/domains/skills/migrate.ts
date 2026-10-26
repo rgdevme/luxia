@@ -1,9 +1,12 @@
+import { skillRequestKey } from "../../core/index.js";
+import type { RepositoryRequest } from "../../core/index.js";
+
 /** Conflict-resolution policy for `migrate` across writer domains. */
 export type MergePolicy = "missing" | "force" | "skip";
 
 export interface MergeResult {
   /** The reconciled source map (unchanged from `existing` when aborted). */
-  sources: Record<string, string>;
+  sources: Record<string, RepositoryRequest>;
   added: string[];
   overwritten: string[];
   /** Names present in both with a differing source. */
@@ -21,12 +24,13 @@ export interface MergeResult {
  * sources are a silent no-op.
  */
 export function mergeSkillSources(
-  existing: Record<string, string>,
-  discovered: Record<string, string>,
+  existing: Record<string, RepositoryRequest>,
+  discovered: Record<string, RepositoryRequest>,
   policy: MergePolicy,
 ): MergeResult {
   const conflicts = Object.keys(discovered).filter(
-    (name) => name in existing && existing[name] !== discovered[name],
+    (name) =>
+      name in existing && skillRequestKey(existing[name]!) !== skillRequestKey(discovered[name]!),
   );
 
   if (policy === "skip" && conflicts.length > 0) {
@@ -41,7 +45,7 @@ export function mergeSkillSources(
     if (!(name in existing)) {
       sources[name] = src;
       added.push(name);
-    } else if (existing[name] !== src && policy === "force") {
+    } else if (skillRequestKey(existing[name]!) !== skillRequestKey(src) && policy === "force") {
       sources[name] = src;
       overwritten.push(name);
     }

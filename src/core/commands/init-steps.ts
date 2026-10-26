@@ -19,9 +19,10 @@ export async function runDomainInitSteps(
   domain: Domain,
   ctx: ResolveContext,
   opts: RunStepsOptions,
-): Promise<void> {
+): Promise<boolean> {
   const steps = domain.initSteps;
-  if (!steps || steps.length === 0) return;
+  if (!steps || steps.length === 0) return true;
+  let ok = true;
 
   // Scope the logger (and the ctx handed to steps/callbacks) to this domain so
   // every init line carries its `[domain]` prefix; the id in messages is then
@@ -41,9 +42,11 @@ export async function runDomainInitSteps(
       }
       await invokeCallback(step, value, dctx);
     } catch (err) {
+      ok = false;
       dctx.logger.error({ message: `${step.id} failed`, status: (err as Error).message });
     }
   }
+  return ok;
 }
 
 /**
@@ -55,7 +58,7 @@ export async function runAllDomainInitSteps(
   ctx: ResolveContext,
   opts: RunStepsOptions,
   onlyIds?: readonly string[],
-): Promise<void> {
+): Promise<boolean> {
   let filterSet: Set<string> | undefined;
   if (onlyIds && onlyIds.length > 0) {
     filterSet = new Set(onlyIds);
@@ -65,10 +68,12 @@ export async function runAllDomainInitSteps(
     }
   }
 
+  let ok = true;
   for (const dom of orderedDomains(registry)) {
     if (filterSet && !filterSet.has(dom.domain.id)) continue;
-    await runDomainInitSteps(dom.domain, ctx, opts);
+    if (!(await runDomainInitSteps(dom.domain, ctx, opts))) ok = false;
   }
+  return ok;
 }
 
 async function resolveStepValue(

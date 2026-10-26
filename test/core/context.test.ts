@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("buildResolveContext", () => {
-  it("uses an injected global store and project-local temporary work", async () => {
+  it("uses an injected global store and keeps temporary work outside the project", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "agnos-context-"));
     roots.push(root);
     const storeDir = path.join(root, "global-store");
@@ -19,7 +19,7 @@ describe("buildResolveContext", () => {
     const ctx = await buildResolveContext({ projectRoot: root, storeDir });
 
     expect(ctx.storeDir).toBe(storeDir);
-    await expect(fs.access(path.join(root, ".agnos", "tmp"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(root, ".agnos"))).rejects.toThrow();
     await ctx.fetcher.cleanup();
   });
 });

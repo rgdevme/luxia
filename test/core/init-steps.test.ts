@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import type { Logger, ResolveContext } from "../../src/core/index.js";
 import { readConfigOrDefault, runDomainInitSteps } from "../../src/core/index.js";
-import { agentsDomain } from "../../src/domains/agents/index.js";
+import { harnessDomain } from "../../src/domains/harness/index.js";
 
 let tmp: string;
 let logs: string[];
@@ -22,7 +22,6 @@ const ctxFor = (): ResolveContext => ({
   projectRoot: tmp,
   storeDir: path.join(tmp, "store"),
   configPath: path.join(tmp, "agnos.json"),
-  statePath: path.join(tmp, ".agnos", "state.json"),
   logger: recordingLogger(),
   fetcher: {} as never,
   linker: {} as never,
@@ -44,22 +43,22 @@ afterEach(async () => {
 
 describe("agents init multiselect step", () => {
   it("writes the curated default agent set non-interactively (-y)", async () => {
-    await runDomainInitSteps(agentsDomain, ctxFor(), { yes: true, dryRun: false });
-    expect((await readCfg()).agents).toEqual(["claude-code", "codex", "gemini-cli"]);
+    await runDomainInitSteps(harnessDomain, ctxFor(), { yes: true, dryRun: false });
+    expect((await readCfg()).harness).toEqual(["claude-code", "codex", "gemini-cli"]);
   });
 
   it("preserves an existing selection rather than reapplying the default", async () => {
-    await writeCfg({ agents: ["codex"] });
-    await runDomainInitSteps(agentsDomain, ctxFor(), { yes: true, dryRun: false });
-    expect((await readCfg()).agents).toEqual(["codex"]);
+    await writeCfg({ harness: ["codex"] });
+    await runDomainInitSteps(harnessDomain, ctxFor(), { yes: true, dryRun: false });
+    expect((await readCfg()).harness).toEqual(["codex"]);
   });
 
   it("under --dry logs the array value and writes nothing", async () => {
     const ctx = ctxFor();
-    await runDomainInitSteps(agentsDomain, ctx, { yes: false, dryRun: true });
+    await runDomainInitSteps(harnessDomain, ctx, { yes: false, dryRun: true });
     expect(logs.some((l) => l.includes('select = ["claude-code","codex","gemini-cli"]'))).toBe(
       true,
     );
-    expect((await readCfg()).agents).toBeUndefined();
+    expect((await readCfg()).harness).toBeUndefined();
   });
 });

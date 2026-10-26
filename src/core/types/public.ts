@@ -1,16 +1,16 @@
 import type { z } from "zod";
 
 /**
- * An entry in `agnos.json.agents`. Either an agent id (e.g. "claude-code") or
+ * An entry in `agnos.json.harness`. Either a harness id (e.g. "claude-code") or
  * a full npm package name (e.g. "@me/agnos-agent-zed") — used when two
  * installed plugins claim the same id and need disambiguation.
  */
-export type AgentRef = string;
+export type HarnessRef = string;
 
 export interface DocsConfig {
-  /** Docs directory, relative to project root. Defaults to ".docs". */
-  root?: string;
-  /** Glob patterns, relative to docs.root, excluded from docs indexing. */
+  /** Docs directory, relative to project root. Defaults to ".agnos/docs". */
+  dir?: string;
+  /** Glob patterns, relative to docs.dir, excluded from docs indexing. */
   ignore?: string[];
 }
 
@@ -18,29 +18,67 @@ export interface AgnosConfig {
   $schema?: string;
   /** Required on disk (see config.ts); optional here so in-memory literals stay terse. */
   schemaVersion?: number;
-  agents?: AgentRef[];
+  harness?: HarnessRef[];
   rules?: RulesDeclaration;
   skills?: SkillsConfig;
+  references?: ReferencesConfig;
   mcp?: McpConfig;
-  hooks?: HooksDeclaration;
   docs?: DocsConfig;
   [domain: string]: unknown;
 }
 
 export interface SkillsConfig {
-  /** Canonical skills directory, relative to project root. Defaults to ".agnos/skills". */
-  route?: string;
-  /**
-   * Map of local skill name → composite source ref.
-   *
-   * Value grammar:
-   *   - git: `<provider>:<owner>/<repo>/<in-repo-path>[#<ref>]`
-   *     e.g. `github:vercel-labs/agent-skills/skills/pdf`
-   *     The `#<ref>` (branch/tag/commit) suffix is optional; when omitted the
-   *     skill follows the repository's default branch (resolved at fetch time).
-   *   - local: `file:<path-to-skill-dir>` (the directory contains SKILL.md directly)
-   */
-  sources?: Record<string, string>;
+  /** Directory of manually authored skills, relative to project root. Defaults to ".agnos/skills". */
+  dir?: string;
+  /** Map of local skill name to its normalized source request. */
+  sources?: Record<string, RepositoryRequest>;
+}
+
+export interface RepositoryRequest {
+  source: string;
+  branch?: string;
+  commit?: string;
+  glob?: string;
+}
+
+export interface RepositoryConsumer {
+  projectId: string;
+  domain: string;
+  name: string;
+}
+
+export interface RepositoryTrackEntry {
+  path: string;
+  absolutePath: string;
+  kind: "directory" | "file";
+}
+
+export interface RepositoryTrackInfo {
+  trackingId: string;
+  repositoryId: string;
+  request: RepositoryRequest;
+  branch: string;
+  commit: string;
+  checkoutPath: string;
+  entries: RepositoryTrackEntry[];
+}
+
+export interface RepositoryRegistration {
+  trackingId: string;
+  request: RepositoryRequest;
+}
+
+export interface RepositoryTracker {
+  add(request: RepositoryRequest, consumer: RepositoryConsumer): Promise<RepositoryTrackInfo>;
+  update(trackingId: string): Promise<RepositoryTrackInfo>;
+  shouldUpdate(trackingId: string): Promise<boolean>;
+  remove(trackingId: string, consumer: RepositoryConsumer): Promise<void>;
+  listRegistrations(consumer: RepositoryConsumer): Promise<RepositoryRegistration[]>;
+}
+
+export interface ReferencesConfig {
+  dir?: string;
+  sources?: Record<string, RepositoryRequest>;
 }
 
 export interface SkillLockEntry {
@@ -61,15 +99,10 @@ export interface LockFile {
 }
 
 export interface RulesDeclaration {
-  /** Base directory for injectable paths and destination for bootstrapped fragments. */
+  /** Base directory for rule source files. Defaults to ".agnos/rules". */
   dir?: string;
-  /**
-   * Map of canonical rules file → injectable fragment paths. Paths are relative
-   * to `dir` when configured, otherwise to the project root. Each path may be a
-   * file, directory, or glob pattern. The rules domain injects each resolved
-   * fragment as a titled section into its canonical file.
-   */
-  files: Record<string, string[]>;
+  /** Map of generated rules artifact path to ordered source files, directories, or globs. */
+  fragments: Record<string, string[]>;
 }
 
 export interface McpDeclaration {
@@ -92,74 +125,6 @@ export interface McpConfig {
   servers?: McpDeclaration[];
 }
 
-// ---------- Hooks domain ----------
-
-/**
- * Canonical, normalized vocabulary of hook events — the union of every event
- * any supported agent exposes. Each adapter maps these to its native names via
- * {@link HookEventMap}; events an agent lacks are simply not rendered to it.
- */
-export type HookEvent =
-  | "PreToolUse"
-  | "PostToolUse"
-  | "UserPromptSubmit"
-  | "Notification"
-  | "Stop"
-  | "SubagentStop"
-  | "PreCompact"
-  | "SessionStart"
-  | "SessionEnd"
-  // Additional Claude Code events (the widest native set).
-  | "Setup"
-  | "UserPromptExpansion"
-  | "PermissionRequest"
-  | "PermissionDenied"
-  | "PostToolUseFailure"
-  | "PostToolBatch"
-  | "MessageDisplay"
-  | "SubagentStart"
-  | "TaskCreated"
-  | "TaskCompleted"
-  | "StopFailure"
-  | "TeammateIdle"
-  | "InstructionsLoaded"
-  | "ConfigChange"
-  | "CwdChanged"
-  | "FileChanged"
-  | "WorktreeCreate"
-  | "WorktreeRemove"
-  | "PostCompact"
-  | "Elicitation"
-  | "ElicitationResult"
-  // Gemini CLI model-loop events (no Claude/Codex counterpart).
-  | "BeforeModel"
-  | "AfterModel"
-  | "BeforeToolSelection";
-
-/**
- * An agent's hook-event mapping: canonical {@link HookEvent} → the agent's own
- * native event name. A present key means the agent supports that event (and the
- * value is what to write in its native config); an absent key means it doesn't.
- */
-export type HookEventMap = Partial<Record<HookEvent, string>>;
-
-/**
- * A single hook entry — a flat, strict 5-field shape. Agents render it into
- * their native format (regrouping by event/matcher as needed). `message` is
- * user-facing status text; agents without an equivalent ignore it. Identity for
- * dedup/removal is `(event, matcher, command)`.
- */
-export interface HookEntry {
-  event: HookEvent;
-  matcher?: string;
-  type: "command";
-  command: string;
-  message?: string;
-}
-
-/** The canonical hooks registry stored under `agnos.json#hooks`: a flat array. */
-export type HooksDeclaration = HookEntry[];
-
 export interface ResolvedRule {
   /** Absolute path to the canonical source file (`<root>/<dir>/<filename>`). */
   absolutePath: string;
@@ -177,6 +142,21 @@ export interface ResolvedRule {
 export interface ResolvedSkill {
   name: string;
   absolutePath: string;
+}
+
+export interface SkillMetadataValidationInput {
+  name: string;
+  directory: string;
+  frontmatter: Record<string, unknown>;
+}
+
+export interface SkillMetadataDiagnostic {
+  code: string;
+  harnessId: string;
+  skillName: string;
+  file: string;
+  field?: string;
+  message: string;
 }
 
 export interface ResolvedMcp extends Omit<McpDeclaration, "env"> {
@@ -278,6 +258,7 @@ export type ParsedSourceRef =
   | {
       kind: "git";
       provider: "github" | "gitlab" | "bitbucket";
+      remoteUrl?: string;
       owner: string;
       repo: string;
       subPath?: string;
@@ -287,22 +268,23 @@ export type ParsedSourceRef =
   | { kind: "local"; absolutePath: string; canonical: string };
 
 export interface ResolveContext {
+  config?: AgnosConfig;
   agnosRoot: string;
   projectRoot: string;
   storeDir: string;
   configPath: string;
-  statePath: string;
   logger: Logger;
   fetcher: RepoFetcher;
+  repositoryTracker: RepositoryTracker;
   linker: Linker;
   /** When true, mutation paths log "would: …" lines and skip side effects. */
   dryRun?: boolean;
-  /** Prepended to every line a wrapped logger emits inside agent hooks. */
+  /** Prepended to every line a wrapped logger emits inside harness lifecycle handlers. */
   indent?: string;
 }
 
 export interface MaterializeContext extends ResolveContext {
-  agentId: string;
+  harnessId: string;
   indent: string;
 }
 
@@ -319,7 +301,7 @@ export interface CliCommand {
 export const RESERVED_CLI_IDS = [
   "init",
   "rules",
-  "agents",
+  "harness",
   "agent",
   "skill",
   "mcp",
@@ -405,7 +387,7 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
    */
   priority: number;
 
-  /** First-time project encounter; runs once per project (gated by state.json). */
+  /** Project setup hook, safe to run repeatedly. */
   onInitialize?(ctx: ResolveContext): Promise<void>;
 
   /** Resolve a declaration into a concrete item. */
@@ -419,62 +401,46 @@ export interface DomainPlugin<TDecl = unknown, TItem = unknown> {
   move?(from: string, to: string, ctx: ResolveContext): Promise<void>;
   list?(ctx: ResolveContext): Promise<TItem[]>;
 
-  /**
-   * Reverse-import merge. Given whatever this domain's agent
-   * `handles.<domain>.onImport` returned, merge it into `config` (mutating in
-   * place), validating against what's already declared so existing entries are
-   * not blindly overwritten. Returns true if `config` was modified. The
-   * orchestrator's one-time import pass calls this once per agent per project
-   * (state-gated) for any domain that defines it.
-   */
-  importMerge?(
-    imported: unknown,
-    config: AgnosConfig,
-    opts: { agentId: string; interactive: boolean },
-    ctx: ResolveContext,
-  ): Promise<boolean>;
-
   /** Optional CLI subcommands exposed under `agnos <domain-id> <subcommand>`. */
   cli?: Record<string, CliCommand>;
 
   /**
-   * Per-agent activation hook. Called after `onInitialize` (which runs once
-   * per project) and before the agent's own `handles.<domain>.onInitialize`.
-   * Lets a domain materialize per-agent artifacts (e.g. a directory-level
-   * symlink) from declarative agent fields like `paths.skillsDir` without
+   * Per-harness activation hook. Called before the harness's own `handles.<domain>.onInitialize`.
+   * Lets a domain materialize per-harness artifacts from declarative harness
+   * fields like `paths.skillsDir` without
    * requiring the agent to write any handler. Receives the full active-agent
-   * list so the domain can dedupe across agents sharing the same target.
+   * list so the domain can dedupe across harnesses sharing the same target.
    */
-  onAgentActivate?(
-    agent: AgentPlugin,
-    activeAgents: readonly AgentPlugin[],
+  onHarnessActivate?(
+    harness: HarnessPlugin,
+    activeHarnesses: readonly HarnessPlugin[],
     ctx: MaterializeContext,
   ): Promise<void>;
 
   /**
-   * Per-agent deactivation hook. Called before the agent's own
+   * Per-harness deactivation hook. Called before the harness's own
    * `handles.<domain>.onCleanup`. `remainingAgents` is the active set with
    * the agent being deactivated removed, so the domain can decide whether to
    * keep shared artifacts in place.
    */
-  onAgentDeactivate?(
-    agent: AgentPlugin,
-    remainingAgents: readonly AgentPlugin[],
+  onHarnessDeactivate?(
+    harness: HarnessPlugin,
+    remainingHarnesses: readonly HarnessPlugin[],
     ctx: MaterializeContext,
   ): Promise<void>;
 }
 
-// ---------- Agent plugin: per-domain event handlers ----------
+// ---------- Harness plugin: per-domain event handlers ----------
 
 export interface RulesEventHandlers {
   /**
-   * Bring this agent up to date with the rules domain. Receives the full set of
+   * Bring this harness up to date with the rules domain. Receives the full set of
    * resolved canonical rule files (one per root + each `dirs` entry). Empty when
-   * no rules are configured. The agent materializes its own filename next to (or
+   * no rules are configured. The harness materializes its own filename next to (or
    * in a parallel tree for) each canonical file and prunes its stale mirrors.
    */
   onInitialize?(state: ResolvedRule[], ctx: MaterializeContext): Promise<void>;
-  /** Strip this agent's rules-domain artifacts. Runs on deactivation. */
+  /** Strip this harness's rules-domain artifacts. Runs on deactivation. */
   onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
@@ -484,13 +450,6 @@ export interface McpEventHandlers {
   onUpdated?(item: ResolvedMcp, ctx: MaterializeContext): Promise<void>;
   onRemoved?(name: string, ctx: MaterializeContext): Promise<void>;
   onCleanup?(ctx: MaterializeContext): Promise<void>;
-  /**
-   * One-time reverse-import. Read the agent's own project-scoped MCP config
-   * file(s), parse them, and return declarations to centralize into agnos.json.
-   * Fires once per agent per project (gated by state.json) on first activation.
-   * Return [] if the source file is absent or unparseable — do not throw.
-   */
-  onImport?(ctx: MaterializeContext): Promise<McpDeclaration[]>;
 }
 
 export interface SkillsEventHandlers {
@@ -501,22 +460,8 @@ export interface SkillsEventHandlers {
   onCleanup?(ctx: MaterializeContext): Promise<void>;
 }
 
-export interface HooksEventHandlers {
-  /** Materialize the canonical hooks registry into this agent's native file. */
-  onInitialize?(state: HooksDeclaration | undefined, ctx: MaterializeContext): Promise<void>;
-  /**
-   * One-time reverse-import. Read this agent's native hook config, parse it, and
-   * return a hooks registry to centralize into agnos.json. Fires once per agent
-   * per project (state-gated) on first activation. Return {} if the source is
-   * absent or unparseable — do not throw.
-   */
-  onImport?(ctx: MaterializeContext): Promise<HooksDeclaration>;
-  /** Strip this agent's hooks-domain artifacts. Runs on deactivation. */
-  onCleanup?(ctx: MaterializeContext): Promise<void>;
-}
-
 /**
- * Agents register per-domain handlers here. Built-in domains have typed keys
+ * Harnesses register per-domain handlers here. Built-in domains have typed keys
  * (`rules`, `mcp`, `skills`). Third-party domain plugins can add their own
  * typed keys via TS declaration merging:
  *
@@ -541,16 +486,15 @@ export interface DomainEventHandlers {
   rules?: RulesEventHandlers;
   mcp?: McpEventHandlers;
   skills?: SkillsEventHandlers;
-  hooks?: HooksEventHandlers;
 }
 
 /**
- * Declarative per-agent paths consumed by domain plugins. Built-in keys are
+ * Declarative per-harness paths consumed by domain plugins. Built-in keys are
  * known to the standard domains; third-party domains can add their own via
  * declaration merging (same pattern as DomainEventHandlers).
  */
-export interface AgentPaths {
-  /** Project-relative directory the skills domain should link to `.agnos/skills/`. */
+export interface HarnessPaths {
+  /** Project-relative directory where the agent's individual skill links live. */
   skillsDir?: string;
   /**
    * This agent's own rule-file basename (e.g. "CLAUDE.md", "AGENTS.md"). The
@@ -567,15 +511,15 @@ export interface AgentPaths {
   rulesRoot?: string;
 }
 
-export interface AgentPlugin {
+export interface HarnessPlugin {
   id: string;
   displayName: string;
 
   /**
-   * Declarative paths a domain inspects to bootstrap per-agent artifacts
-   * without requiring the agent to write a handler. See AgentPaths.
+   * Declarative paths a domain inspects to bootstrap harness artifacts without
+   * requiring a harness-specific handler. See HarnessPaths.
    */
-  paths?: AgentPaths;
+  paths?: HarnessPaths;
 
   /** Top-level lifecycle for non-domain-specific work. */
   onInstalled?(ctx: ResolveContext): Promise<void>;
@@ -586,7 +530,7 @@ export interface AgentPlugin {
 }
 
 export interface PluginManifest {
-  type: "agent" | "domain";
+  type: "harness" | "domain";
   id: string;
 }
 
@@ -655,7 +599,7 @@ export interface DomainRunHandle {
 
 /**
  * A domain in the writer/reader model. Config-writer domains manage their slice
- * of `agnos.json`; the single config-reader domain (`agents`) renders per-agent
+ * of `agnos.json`; the single config-reader domain (`harness`) renders per-harness
  * files. `run` is the watch/once process; `commands` are the subcommands.
  */
 export interface Domain {
@@ -685,21 +629,19 @@ export interface Domain {
 }
 
 /**
- * A per-agent adapter owned by the `agents` domain. Renders resolved config
+ * A per-harness adapter owned by the `harness` domain. Renders resolved config
  * slices into the agent's native files, scrapes them back for migrate/import,
  * and declares the output paths it owns (for shared-artifact-aware cleanup).
  */
-export interface AgentAdapter {
+export interface HarnessAdapter {
   id: string;
   displayName: string;
-  paths?: AgentPaths;
-  /**
-   * Canonical→native hook-event mapping. Declared once here and consumed by the
-   * shared hooks machinery for render/scrape and by `hooks add` to warn which
-   * installed agents don't support a given event. Omit for agents with no hook
-   * system (they support no events).
-   */
-  hookEvents?: HookEventMap;
+  paths?: HarnessPaths;
+  validateSkillMetadata(
+    input: SkillMetadataValidationInput,
+  ): SkillMetadataDiagnostic[] | Promise<SkillMetadataDiagnostic[]>;
+  /** Remove Agnos-managed entries from native files that also contain user settings. */
+  cleanup?(ctx: MaterializeContext): Promise<void>;
   /** Render a resolved slice (keyed by domain id) into this agent's native files. */
   render?: Record<string, (state: unknown, ctx: MaterializeContext) => Promise<void>>;
   /** Scrape this agent's native files back into agnos.json declarations (keyed by domain id). */

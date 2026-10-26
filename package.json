@@ -6,7 +6,7 @@
   "license": "MIT",
   "packageManager": "pnpm@10.10.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "repository": {
     "type": "git",
@@ -72,6 +72,7 @@
     "chokidar": "^4.0.1",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
+    "mdast-util-from-markdown": "^2.1.0",
     "minimist": "^1.2.8",
     "picomatch": "^4.0.2",
     "yoctocolors-cjs": "^2.1.3",

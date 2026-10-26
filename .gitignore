@@ -15,13 +15,14 @@ scratch/
 .env*
 !.env.example
 
-# AGENTS
+# Generated references and per-agent skill links
 .agents/
-.agnos/
 .claude/
 .codex/
 CLAUDE.md
 AGENTS.md
+.agnos/references/
+.gemini/skills/*/
 
 # scratch test dir (manual-testing guide)
 temp-test/

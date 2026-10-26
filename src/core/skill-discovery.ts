@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
+import picomatch from "picomatch";
 
 const SKILL_MARKER = "SKILL.md";
 
@@ -57,9 +58,21 @@ const SKILLS_DIR = "skills";
  * (skills are atomic units). Returned paths are repo-root-relative (`skills/x`),
  * in a stable sorted order so the prompt and collision-suffixing are deterministic.
  */
-export async function findSkillsInRepo(repoRoot: string): Promise<DiscoveredSkill[]> {
+export async function findSkillsInRepo(
+  repoRoot: string,
+  glob?: string,
+): Promise<DiscoveredSkill[]> {
   const out: DiscoveredSkill[] = [];
-  await walk(repoRoot, path.join(repoRoot, SKILLS_DIR), 0, out);
+  await walk(repoRoot, glob ? repoRoot : path.join(repoRoot, SKILLS_DIR), 0, out);
+  if (glob) {
+    const matcher = picomatch(glob.replace(/\\/g, "/"), { dot: true, posixSlashes: true });
+    for (let index = out.length - 1; index >= 0; index -= 1) {
+      const skill = out[index];
+      if (!skill || (!matcher(skill.path) && !matcher(`${skill.path}/${SKILL_MARKER}`))) {
+        out.splice(index, 1);
+      }
+    }
+  }
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }

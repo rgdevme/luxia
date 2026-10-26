@@ -16,7 +16,6 @@ function ctxFor(root: string): RunContext {
     projectRoot: root,
     storeDir: path.join(root, "store"),
     configPath: path.join(root, "agnos.json"),
-    statePath: path.join(root, ".agnos", "state.json"),
     logger: createLogger({ quiet: true }),
     fetcher: {} as never,
     linker: {} as never,
@@ -56,33 +55,36 @@ afterEach(async () => {
 
 describe("startWatch (per-domain watcher tree)", () => {
   it("regenerates the docs index when a doc is created, edited, or removed", async () => {
-    await write("agnos.json", JSON.stringify({ schemaVersion: 1, docs: { root: ".docs" } }));
-    await write(".docs/one.md", "---\ntitle: One\ndescription: first\n---\nbody\n");
+    await write("agnos.json", JSON.stringify({ schemaVersion: 1, docs: { dir: ".agnos/docs" } }));
+    await write(".agnos/docs/one.md", "---\ntitle: One\ndescription: first\n---\nbody\n");
 
     const registry = await loadPlugins({ projectRoot: tmp, logger: createLogger({ quiet: true }) });
     const ac = new AbortController();
     const done = startWatch(registry, OPTS, ctxFor(tmp), "docs", ac.signal);
     try {
       // initial paint
-      await waitFor(async () => (await read(".docs/index.md")).includes("One"));
+      await waitFor(async () => (await read(".agnos/docs/index.md")).includes("One"));
 
       // create a second doc → index picks it up
-      await write(".docs/two.md", "---\ntitle: Two\ndescription: second\n---\nbody\n");
-      await waitFor(async () => (await read(".docs/index.md")).includes("Two"));
+      await write(".agnos/docs/two.md", "---\ntitle: Two\ndescription: second\n---\nbody\n");
+      await waitFor(async () => (await read(".agnos/docs/index.md")).includes("Two"));
 
       // remove it → index drops it
-      await fs.rm(path.join(tmp, ".docs/two.md"));
-      await waitFor(async () => !(await read(".docs/index.md")).includes("Two"));
+      await fs.rm(path.join(tmp, ".agnos/docs/two.md"));
+      await waitFor(async () => !(await read(".agnos/docs/index.md")).includes("Two"));
     } finally {
       ac.abort();
       await done;
     }
   });
 
-  it("re-injects a canonical file when a watched rule fragment changes", async () => {
+  it("regenerates the complete rules artifact when a source changes", async () => {
     await write(
       "agnos.json",
-      JSON.stringify({ schemaVersion: 1, rules: { files: { "./AGENTS.md": ["./frag/sec.md"] } } }),
+      JSON.stringify({
+        schemaVersion: 1,
+        rules: { dir: ".", fragments: { "./AGENTS.md": ["./frag/sec.md"] } },
+      }),
     );
     await write("frag/sec.md", "---\ntitle: Security\n---\nv1 body\n");
 
@@ -92,15 +94,13 @@ describe("startWatch (per-domain watcher tree)", () => {
     try {
       await waitFor(async () => (await read("AGENTS.md")).includes("v1 body"));
 
-      // edit the fragment → canonical section updates
+      // edit the source → complete artifact updates
       await write("frag/sec.md", "---\ntitle: Security\n---\nv2 body\n");
       await waitFor(async () => {
         const out = await read("AGENTS.md");
         return out.includes("v2 body") && !out.includes("v1 body");
       });
-      // heading-delimited, no sentinels
-      expect(await read("AGENTS.md")).toContain("## Security");
-      expect(await read("AGENTS.md")).not.toContain("<!--");
+      expect(await read("AGENTS.md")).toBe("v2 body\n");
     } finally {
       ac.abort();
       await done;

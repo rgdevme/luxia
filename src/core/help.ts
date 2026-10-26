@@ -5,10 +5,10 @@ export const USAGE = `agnos — agent-agnostic project configuration manager
 Usage:
   agnos [domain] [--dry] [--once] [--quiet] [--help] [--init [-y]]
 
-  agnos                      Watch all domains and keep agent files in sync
+  agnos                      Watch all domains and keep harness files in sync
   agnos --once               Run the full pipeline once and exit
-  agnos <domain>             Run one domain (docs|rules|skills|mcp|hooks|agents)
-  agnos <domain> <sub> …     Run a domain subcommand (e.g. agnos agents add)
+  agnos <domain>             Run one domain (docs|rules|skills|mcp|harness)
+  agnos <domain> <sub> …     Run a domain subcommand (e.g. agnos harness add)
   agnos <domain> --help      Show help for a domain (and its subcommands)
   agnos --init [-y]          Bootstrap all domains (or one if a domain is given)
 

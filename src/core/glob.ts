@@ -66,7 +66,10 @@ export function matchesAbsolutePatterns(
   });
 }
 
-export async function walkEntries(root: string): Promise<WalkEntry[]> {
+export async function walkEntries(
+  root: string,
+  ignoredDirectories: readonly string[] = [],
+): Promise<WalkEntry[]> {
   const out: WalkEntry[] = [];
 
   async function walk(dir: string): Promise<void> {
@@ -82,9 +85,11 @@ export async function walkEntries(root: string): Promise<WalkEntry[]> {
     for (const entry of entries) {
       const absolutePath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        const relativePath = relativePosix(root, absolutePath);
+        if (matchesRelativePatterns(relativePath, ignoredDirectories)) continue;
         out.push({
           absolutePath,
-          relativePath: relativePosix(root, absolutePath),
+          relativePath,
           kind: "directory",
         });
         await walk(absolutePath);

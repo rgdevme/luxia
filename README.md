@@ -5,7 +5,7 @@
 <p align="center">
   <strong>One config. Every coding agent.</strong>
   <br/>
-  <sub>Project-level configuration for AI coding agents, materialized into whatever each tool expects to find on disk.</sub>
+  <sub>Project-level configuration for AI coding harnesses, materialized into whatever each tool expects to find on disk.</sub>
 </p>
 
 <p align="center">
@@ -20,20 +20,20 @@
 
 ## What is agnos?
 
-**agnos is a project-level configuration manager for AI coding agents.** You declare your docs, rules, skills, MCP servers, and hooks once in a single `agnos.json` at the root of your repo. agnos materializes that declaration into whatever each agent expects to find on disk: `CLAUDE.md` + `.mcp.json` + `.claude/settings.json` for **Claude Code**, `AGENTS.md` + `.codex/config.toml` for **OpenAI Codex**, `GEMINI.md` + `.gemini/settings.json` for **Gemini CLI**, and so on.
+**agnos maintains repository configuration for coding harnesses.** You declare documentation, rules, skills, repository references, and MCP servers in one `agnos.json`. Agnos composes or links that repository content into the files each configured harness reads, and translates shared MCP declarations into each harness's native format.
 
-agnos ships as a **single package** (`@luxia/agnos`) with a fixed, built-in set of agents (Claude Code, Codex, Gemini CLI) and domains (docs, rules, skills, mcp, hooks, agents). Point it at your project, run it once, or leave it in watch mode: every agent's files stay in sync with your one source of truth.
+agnos ships as a **single package** (`@luxia/agnos`) with built-in harnesses for Claude Code, Codex, and Gemini CLI. Its domains manage repository-bound configuration. Each harness adapter handles the native files and compatibility details for that harness.
 
 ## What does it solve?
 
 Every coding agent invents its own on-disk configuration format. Keeping them consistent by hand is tedious and error-prone:
 
 - **Drift**: `CLAUDE.md` and `AGENTS.md` say different things because you updated one and forgot the other.
-- **Duplication**: the same MCP server, the same hook, the same rule copied into three tool-specific files with three different syntaxes.
+- **Duplication**: the same MCP server or rule copied into multiple harness-specific files with different formats.
 - **Onboarding cost**: adding a new agent to a repo means learning yet another file layout and hand-translating everything you already wrote.
 - **No single source of truth**: nothing in the repo tells you what the _intended_ configuration is; it's scattered across whatever files each tool happens to read.
 
-agnos collapses all of that into one declarative `agnos.json`. You edit intent; agnos renders the per-agent reality. Adding an agent becomes "render its files"; removing one becomes "delete its files."
+agnos keeps repository configuration in one place and renders it for selected harnesses. Harness-specific permissions and hooks remain owned by each harness.
 
 ## Table of contents
 
@@ -51,43 +51,41 @@ agnos collapses all of that into one declarative `agnos.json`. You edit intent; 
   - [`rules`](#rules)
   - [`skills`](#skills)
   - [`mcp`](#mcp)
-  - [`hooks`](#hooks)
-  - [`agents`](#agents)
+  - [`harness`](#harness)
 - [Active development](#active-development)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Features
 
-- 🎯 **One source of truth**: declare docs, rules, skills, MCP servers, and hooks once in `agnos.json`.
+- 🎯 **One source of truth**: declare docs, rules, skills, repository references, and MCP servers once in `agnos.json`.
 - 🔌 **Multi-agent output**: renders native files for Claude Code, OpenAI Codex, and Gemini CLI from the same config.
-- 👀 **Watch mode**: a per-domain watcher tree keeps agent files in sync as your sources change; edit a rule fragment and the canonical files re-render.
-- 🧩 **Composable rules**: inject titled sections (by frontmatter `title`) from fragment files into your canonical rules file, preserving your hand-written sections.
+- 👀 **Watch mode**: a per-domain watcher tree keeps harness files in sync as your sources change; edit a rule fragment and the canonical files re-render.
+- 🧩 **Generated rules**: build complete rules artifacts from ordered Markdown sources, with validation before replacing generated output.
 - 📚 **Docs index**: compile a metadata index from your docs directory and surface it to agents.
-- 📦 **Skills management**: fetch, pin, verify, and update agent skills from GitHub/GitLab/Bitbucket or local paths, linked per-agent.
-- 🛰️ **MCP registry integration**: search and add MCP servers from the registry, or configure them manually; agnos renders them per-agent.
-- 🪝 **Portable hooks**: declare command hooks once against a normalized event vocabulary; each agent gets them in its native format.
-- ♻️ **Migrate what you already have**: import existing MCP servers, hooks, and skills from your agents' current config into `agnos.json`.
+- 📦 **Skills management**: fetch, pin, verify, and update agent skills from GitHub/GitLab/Bitbucket or local paths, linked per-harness.
+- 🛰️ **MCP registry integration**: search and add MCP servers from the registry, or configure them manually; agnos renders them per-harness.
+- ♻️ **Import existing MCP servers** from supported harness configuration into `agnos.json`.
+- ⚠️ **Skill metadata checks**: warn when skill metadata may not work in a configured harness. Findings never block installation or harness enablement.
 - 🧪 **Dry runs**: `--dry` shows exactly what would change without writing anything.
 
 ## The model: config writers + one config reader
 
 agnos splits its work in two:
 
-- **Config-writer domains** manage their own slice of the project. `skills`/`mcp`/`hooks` write entries into `agnos.json`; `docs` compiles a documentation index; `rules` injects titled sections into your canonical rules file(s).
-- **One config-reader domain, `agents`**: reads `agnos.json` and the canonical outputs and renders **every** per-agent native file via per-agent adapters. Installing an agent is just "render its files"; removing it is "delete its files."
+- **Repository domains** manage skills, references, docs, rules, and MCP declarations.
+- **The `harness` domain** reads `agnos.json`, then each harness adapter renders supported repository content. Adapters own harness-specific compatibility checks.
 
 ```
         ┌──────────── config WRITERS ────────────┐      ┌── reader ──┐
- docs ──▶ .docs/index.md                                 │            │
- rules ─▶ ./AGENTS.md (titled sections injected) ───────▶│  agents    │──▶ CLAUDE.md, .mcp.json,
- skills ▶ agnos.json#skills + .agnos/skills/             │ (adapters) │    .claude/settings.json,
+ docs ──▶ .agnos/docs/index.md                           │            │
+ rules ─▶ ./AGENTS.md (whole-file generation) ─────────▶│  harness   │──▶ CLAUDE.md, .mcp.json,
+ skills ▶ agnos.json#skills + global repository store   │ (adapters) │    .claude/skills, .codex/*,
  mcp ───▶ agnos.json#mcp                                 │            │    .claude/skills, .codex/*
- hooks ─▶ agnos.json#hooks                               │            │
         └─────────────────────────────────────────┘      └────────────┘
 ```
 
-Domains run in priority order (`skills` → `docs` → `rules` → `mcp` → `hooks` → `agents`), so every writer has produced its canonical output before the reader renders.
+Domains run in priority order (`skills` → `references` → `docs` → `rules` → `mcp` → `harness`), so repository content is ready before harness files render.
 
 ## Installation
 
@@ -105,16 +103,16 @@ pnpm add -D @luxia/agnos
 
 ```sh
 cd my-project
-agnos --init        # bootstrap agnos.json + pick agents (add -y for defaults)
-agnos --once        # run the pipeline once: prepare skills → docs → rules → render agents
-agnos               # watch mode: keep agent files in sync as sources change
+agnos --init        # bootstrap agnos.json + pick harnesses (add -y for defaults)
+agnos --once        # run the pipeline once: resolve skills → docs → rules → render harnesses
+agnos               # watch mode: keep harness files in sync as sources change
 ```
 
-> **NOTE**: agnos always tries a symlink first when the `agents` domain links skills or mirrors rules. On Windows, creating a file symlink can require an elevated terminal or Developer Mode; when that's not available it falls back to a hardlink, then a plain copy. Directories use junctions on Windows instead, which don't need elevation. macOS/Linux create symlinks without any special privileges.
+> **NOTE**: Agnos links skill directories individually into each harness's native skills directory. On Windows these links use junctions. macOS and Linux use directory symlinks.
 
 Typical workflow:
 
-1. **`agnos --init`** creates `agnos.json` and walks you through picking agents, a docs root, a rules directory, a canonical rules file, and a skills directory. Add `-y` to accept every default non-interactively.
+1. **`agnos --init`** creates `agnos.json` and walks you through picking harnesses, a docs root, a rules source directory, a generated rules artifact, and a local skills directory. Add `-y` to accept every default non-interactively.
 2. **Edit `agnos.json`** (or use the domain subcommands like `agnos mcp add github` and `agnos skills add owner/repo`) to declare what you want.
 3. **`agnos`** in one terminal watches all domains and re-renders on change. Run **`agnos --once`** in CI or a pre-commit hook for a single deterministic pass, or **`agnos --dry`** to preview.
 
@@ -122,43 +120,38 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 
 ## Configuration (`agnos.json`)
 
-`agnos --init` walks you through building `agnos.json` interactively; running it seeds `agents`, `docs.root`, `rules.dir`, `rules.files`, and `skills.route`. `mcp` and `hooks` entries are added afterward via their subcommands (or by hand). Here's an example showing every domain populated at once:
+`agnos --init` walks you through building `agnos.json` interactively; it selects harnesses and configures docs, rules, and local skills. MCP servers, external skills, and references can then be added through their domain commands.
 
 ```json
 {
   "$schema": "https://unpkg.com/@luxia/agnos/schema.json",
   "schemaVersion": 1,
-  "agents": ["claude-code", "codex", "gemini-cli"],
-  "docs": { "root": ".docs" },
+  "harness": ["claude-code", "codex", "gemini-cli"],
+  "docs": { "dir": ".agnos/docs" },
   "rules": {
-    "dir": ".docs/.rules",
-    "files": {
-      "./AGENTS.md": [".", "../index.md"]
+    "dir": ".agnos/rules",
+    "fragments": {
+      "./AGENTS.md": [".", "../docs/index.md"]
     }
   },
   "skills": {
+    "dir": ".agnos/skills",
     "sources": {
-      "pdf": "github:vercel-labs/agent-skills/skills/pdf"
+      "pdf": { "source": "github:vercel-labs/agent-skills", "glob": "skills/pdf" }
     }
   },
-  "mcp": [
-    {
-      "name": "github",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
-    }
-  ],
-  "hooks": [
-    {
-      "event": "PreToolUse",
-      "matcher": "git",
-      "type": "command",
-      "command": "echo 'about to run git'",
-      "message": "checking git usage"
-    }
-  ]
+  "references": { "dir": ".agnos/references", "sources": {} },
+  "mcp": {
+    "servers": [
+      {
+        "name": "github",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": ["GITHUB_TOKEN"]
+      }
+    ]
+  }
 }
 ```
 
@@ -166,16 +159,17 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 
 **Field reference** (see [`schema.json`](schema.json) for the authoritative definition):
 
-| Field            | Type                        | Description                                                                                  |
-| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------- |
-| `schemaVersion`  | `1`                         | Required. Config schema version; must be `1`.                                                |
-| `agents`         | `string[]`                  | Active agent ids: `"claude-code"`, `"codex"`, `"gemini-cli"`.                                |
-| `docs.root`      | `string`                    | Directory the docs index is compiled from (default `.docs`).                                 |
-| `rules.files`    | `{ [canonical]: string[] }` | Maps each canonical rules file → fragment files whose titled sections are injected into it.  |
-| `skills.route`   | `string`                    | Canonical skills directory (default `.agnos/skills`); agents link their own skills dir here. |
-| `skills.sources` | `{ [name]: string }`        | Local skill name → composite source ref (`github:`/`gitlab:`/`bitbucket:`/`file:`).          |
-| `mcp`            | `object[]`                  | MCP server declarations (`name`, `transport`, `command`, `args`, `env`, `headers`, …).       |
-| `hooks`          | `object[]`                  | Flat array of command hooks (`event`, `matcher?`, `type`, `command`, `message?`).            |
+| Field             | Type                     | Description                                                                                 |
+| ----------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
+| `schemaVersion`   | `1`                      | Required. Config schema version; must be `1`.                                               |
+| `harness`         | `string[]`               | Active harness ids: `"claude-code"`, `"codex"`, `"gemini-cli"`.                             |
+| `docs.dir`        | `string`                 | Directory the docs index is compiled from (default `.agnos/docs`).                          |
+| `rules.dir`       | `string`                 | Authored rule sources directory (default `.agnos/rules`).                                   |
+| `rules.fragments` | `{ [output]: string[] }` | Maps each generated artifact to ordered source files, directories, or glob patterns.        |
+| `skills.dir`      | `string`                 | Manually authored skills (default `.agnos/skills`); local skills override external names.   |
+| `references.dir`  | `string`                 | Directory where reference repository links are installed (default `.agnos/references`).     |
+| `skills.sources`  | `{ [name]: request }`    | Local skill name → normalized request with `source`, optional `branch` or `commit`, `glob`. |
+| `mcp`             | `object[]`               | MCP server declarations (`name`, `transport`, `command`, `args`, `env`, `headers`, …).      |
 
 ## Commands
 
@@ -183,9 +177,9 @@ You can also run a single domain: `agnos rules --once`, `agnos docs`, etc.
 agnos [domain] [subcommand] [args] [flags]
 ```
 
-- **`agnos`**: watch all domains and keep agent files in sync.
+- **`agnos`**: watch all domains and keep harness files in sync.
 - **`agnos --once`**: run the full pipeline once and exit.
-- **`agnos <domain>`**: run a single domain (`docs`|`rules`|`skills`|`mcp`|`hooks`|`agents`).
+- **`agnos <domain>`**: run a single domain (`docs`|`rules`|`skills`|`references`|`mcp`|`harness`).
 - **`agnos <domain> <subcommand>`**: mutate config or run a domain action.
 - **`agnos <domain> --help`**: show help for a domain and its subcommands.
 
@@ -206,7 +200,7 @@ Available on every command:
 
 ### `docs`
 
-Compiles a documentation index from `docs.root`. Surface it to agents by listing the generated index in `rules.files`. No subcommands: configure it via `agnos.json` or `agnos docs --init`.
+Compiles a documentation index from `docs.dir`. Surface it to agents by listing the generated index in `rules.fragments`. No subcommands: configure it via `agnos.json` or `agnos docs --init`.
 
 | Command      | Args | Description                                                  |
 | ------------ | ---- | ------------------------------------------------------------ |
@@ -214,16 +208,16 @@ Compiles a documentation index from `docs.root`. Surface it to agents by listing
 
 ### `rules`
 
-Injects titled sections (by frontmatter `title`) from fragment files into your canonical rules file(s). Hand-written sections are preserved; removed fragments are pruned. Configure the canonical files and bootstrap destination via `agnos.json` or `agnos rules --init`.
+Generates complete Markdown artifacts from ordered source files, directories, and globs. The optional rules-root `_index.md` may contain one H1; other selected files must not contain H1 headings. Frontmatter is removed, and source bodies are joined. Generated output is overwritten on each successful run. Configure sources and outputs in `agnos.json` or `agnos rules --init`.
 
 | Command                 | Args / Flags                                                     | Description                                                                                                                             |
 | ----------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `agnos rules`           | none                                                             | Inject rules (watch mode unless `--once`/`--dry`).                                                                                      |
+| `agnos rules`           | none                                                             | Generate rules artifacts (watch mode unless `--once`/`--dry`).                                                                          |
 | `agnos rules bootstrap` | `[source]` &nbsp;·&nbsp; `-p, --provider <p>` &nbsp;·&nbsp; `-y` | Fetch a rules catalog, select Markdown files, and overwrite matching files under `rules.dir`. Omitting `source` uses the Agnos catalog. |
 
 ### `skills`
 
-Fetches, pins, verifies, and installs skills into the canonical skills dir (linked per-agent by `agents`). Install work is concurrent, with live percentage, total, reused, and fetched counters. Each unique locked skill tree is stored once in a user-level content store shared across repositories. Projects receive independent materializations, so removing the store does not break installed skills. Git checkouts are isolated under `.agnos/tmp/repos/` for the current run and always removed afterward. Set `AGNOS_STORE_DIR` to override the operating system data location used by the store.
+Tracks external skills in the shared global repository store and links selected skill directories directly into each configured agent. Manually authored skills under `skills.dir` (default `.agnos/skills`) override external skills with the same name. Shared live branch updates are visible across projects; explicit commit pins stay fixed. Set `AGNOS_STORE_DIR` to override the operating system data location used by the shared store.
 
 | Subcommand  | Args / Flags                                                                                  | Description                                                                                                                                                                                                                                                |
 | ----------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -232,47 +226,48 @@ Fetches, pins, verifies, and installs skills into the canonical skills dir (link
 | `fetch`     | none                                                                                          | Check that every skill source still resolves (reports moved).                                                                                                                                                                                              |
 | `version`   | none                                                                                          | Check whether skills are on their pinned commit (reports outdated).                                                                                                                                                                                        |
 | `integrity` | none                                                                                          | Verify skill content matches the lock (reports changed).                                                                                                                                                                                                   |
-| `install`   | none                                                                                          | Run the prep pipeline (fetch → version → integrity → install).                                                                                                                                                                                             |
-| `update`    | `[names...]`                                                                                  | Re-pin + reinstall skills, accepting upstream changes (default: all).                                                                                                                                                                                      |
+| `install`   | none                                                                                          | Acquire and verify every declared skill and refresh lock observations.                                                                                                                                                                                     |
+| `check`     | `--skills=<names>` `--harness=<id>`                                                           | Check installed skill metadata against configured harnesses; warnings are advisory.                                                                                                                                                                        |
+| `update`    | `[names...]`                                                                                  | Advance shared unpinned branch checkouts and refresh lock observations (default: all).                                                                                                                                                                     |
 | `migrate`   | `[file]` &nbsp;·&nbsp; `--missing` \| `--force` \| `--skip`                                   | Import skill sources from a lock file (`name → ref` JSON; default `skills-lock.json`).                                                                                                                                                                     |
+
+### `references`
+
+Tracks selected repository directories through the shared global repository store. `references.dir` defaults to `.agnos/references`; adding a declaration creates a directory link there. Reference repositories are not project remotes or submodules, and Agnos does not install their dependencies.
+
+| Command                   | Args / Flags                                                                    | Description                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `agnos references`        | none                                                                            | Check declared reference freshness (watch mode unless `--once`/`--dry`).             |
+| `agnos references --init` | none                                                                            | Install declared references and repair their links without advancing live checkouts. |
+| `agnos references add`    | `<ref> [--branch <branch>] [--commit <sha>] [--glob <pattern>] [--name <name>]` | Add a repository selection. An omitted branch follows the remote default branch.     |
+| `agnos references remove` | `<ref\|ref-name>`                                                               | Remove a declaration, its project link, and its consumer registration.               |
+| `agnos references pull`   | `[ref\|ref-name]`                                                               | Update one or all installed live references. Pinned references are skipped.          |
 
 ### `mcp`
 
-Manages MCP servers in `agnos.json` (rendered per-agent by the `agents` domain).
+Manages MCP servers in `agnos.json` (rendered per-harness by the `harness` domain).
 
 | Subcommand | Args / Flags                         | Description                                                                                                           |
 | ---------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | `add`      | `[term]`                             | Add MCP servers from the registry (search term), or configure one manually (omit the term for an interactive prompt). |
 | `update`   | `[names...]`                         | Update registry-managed MCP servers to their latest version (all if none given).                                      |
 | `remove`   | `[names...]`                         | Remove MCP servers (multiselect prompt when no name is given).                                                        |
-| `migrate`  | `--missing` \| `--force` \| `--skip` | Import MCP servers from the active agents' native config.                                                             |
+| `migrate`  | `--missing` \| `--force` \| `--skip` | Import MCP servers from the active harnesses' native config.                                                          |
 
-### `hooks`
+### `harness`
 
-Manages hooks in `agnos.json` (a flat array; the `agents` domain regroups + renders per-agent).
+The config reader renders supported repository content for every configured harness. `add` and `remove` update `agnos.json#harness`; removing a harness cleans up only files Agnos owns.
 
-| Subcommand | Args / Flags                         | Description                                                        |
-| ---------- | ------------------------------------ | ------------------------------------------------------------------ |
-| `add`      | `<event> <command> [matcher]`        | Add a command hook. `event` is one of the normalized events below. |
-| `remove`   | `[event] [command] [matcher]`        | Remove command hooks (multiselect prompt when no args are given).  |
-| `migrate`  | `--missing` \| `--force` \| `--skip` | Import hooks from the active agents' native config.                |
-
-Normalized hook events: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Notification`, `Stop`, `SubagentStop`, `PreCompact`, `SessionStart`, `SessionEnd`. Each agent renders only the events it supports and skips the rest.
-
-### `agents`
-
-The sole config reader: renders every active agent's native files. `add`/`remove` toggle `agnos.json#agents` (remove also cleans up the agent's rendered files).
-
-| Subcommand | Args          | Description                                                                                 |
-| ---------- | ------------- | ------------------------------------------------------------------------------------------- |
-| `add`      | `[agents...]` | Enable agents (their files render on the next `agnos` run). Omit ids to pick interactively. |
-| `remove`   | `[agents...]` | Remove agents' rendered files, then disable them.                                           |
+| Subcommand | Args             | Description                                                    |
+| ---------- | ---------------- | -------------------------------------------------------------- |
+| `add`      | `[harnesses...]` | Enable harnesses. Omit ids to pick interactively.              |
+| `remove`   | `[harnesses...]` | Remove Agnos-owned rendered files, then disable the harnesses. |
 
 > **`--missing` / `--force` / `--skip`** (the `migrate` conflict policy): `--missing` (default) adds only entries not already present; `--force` overwrites conflicting entries and adds missing ones; `--skip` aborts if any entry conflicts.
 
 ## Active development
 
-⚠️ **agnos is under active development.** The built-in roster is currently **Claude Code**, **OpenAI Codex**, and **Gemini CLI**, with more agents planned. Config schema, CLI flags, and rendered output may change between releases: pin a version in CI and read the release notes before upgrading. Feedback and bug reports are very welcome.
+⚠️ **agnos is under active development.** The built-in roster is currently **Claude Code**, **OpenAI Codex**, and **Gemini CLI**, with more harnesses planned. Config schema, CLI flags, and rendered output may change between releases: pin a version in CI and read the release notes before upgrading. Feedback and bug reports are very welcome.
 
 ## Contributing
 

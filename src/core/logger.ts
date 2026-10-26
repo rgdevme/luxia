@@ -13,7 +13,7 @@ export function dim(msg: string): string {
   return colors.dim(msg);
 }
 
-/** Width of the padded `[domain]` prefix field (longest builtin fits: `[agents]`). */
+/** Width of the padded `[domain]` prefix field (longest builtin fits: `[harness]`). */
 const DOMAIN_FIELD = 9;
 
 type LogLevel = "info" | "success" | "warn" | "error" | "debug";

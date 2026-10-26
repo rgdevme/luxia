@@ -1,24 +1,33 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import colors from "yoctocolors-cjs";
+import { HARNESS_ADAPTERS } from "../../harnesses/adapters/index.js";
 import type {
   AgnosConfig,
   CommandContext,
   CommandSpec,
   DiscoveredSkill,
   Domain,
+  HarnessAdapter,
   ParsedSource,
+  RepositoryRequest,
 } from "../../core/index.js";
 import {
-  buildPaths,
+  DEFAULT_LOCAL_SKILLS_DIR,
   findSkillsInRepo,
   parseCompositeSkillRef,
+  skillRequestKey,
   parseSource,
   readConfigOrDefault,
   readSkillMeta,
   skillNameSchema,
-  skillRefSchema,
   writeConfig,
+  readLock,
+  removeSkill,
+  writeLock,
+  ensureLink,
+  validateSkillForHarnesses,
 } from "../../core/index.js";
 import {
   MIGRATE_FLAGS,
@@ -28,12 +37,10 @@ import {
 } from "../cli-helpers.js";
 import { runSkillPipeline } from "./pipeline.js";
 import { mergeSkillSources } from "./migrate.js";
-import { createSkillSteps, pruneSkills, updateSkills } from "./steps.js";
+import { createSkillSteps, updateSkills } from "./steps.js";
 
 export * from "./pipeline.js";
 export * from "./migrate.js";
-
-const DEFAULT_SKILLS_DIR = "./.agnos/skills";
 
 /**
  * Build the repo-level (subPath-less) source for a `[provider] address` pair.
@@ -72,6 +79,8 @@ interface Repo {
   ref?: string;
   /** Index in the original `add a b c` order — the tiebreaker for same-named skills. */
   order: number;
+  trackingId?: string;
+  consumerName?: string;
 }
 
 /** One discovered skill bound to the repo it came from. */
@@ -85,6 +94,64 @@ interface Candidate {
 // Effectively uncapped — the description renders on its own line, so it no
 // longer needs to fit a single row. Kept as a knob to tune later if needed.
 const DESC_MAX = 10000;
+
+function configuredHarnesses(config: AgnosConfig): HarnessAdapter[] {
+  const configured = new Set(config.harness ?? []);
+  return HARNESS_ADAPTERS.filter((harness) => configured.has(harness.id));
+}
+
+async function reportSkillMetadata(
+  name: string,
+  directory: string,
+  harnesses: readonly HarnessAdapter[],
+  ctx: CommandContext,
+): Promise<void> {
+  const findings = await validateSkillForHarnesses(name, directory, harnesses);
+  for (const finding of findings) {
+    ctx.logger.warn({
+      message: `${finding.harnessId}: skill "${finding.skillName}" ${finding.message}`,
+      status: finding.file,
+    });
+  }
+}
+
+async function findMaterializedSkill(
+  name: string,
+  ctx: CommandContext,
+): Promise<string | undefined> {
+  const config = await readConfigOrDefault(ctx.configPath);
+  const localRoot = config.skills?.dir ?? DEFAULT_LOCAL_SKILLS_DIR;
+  const localDirectory = path.isAbsolute(localRoot)
+    ? path.join(localRoot, name)
+    : path.resolve(ctx.projectRoot, localRoot, name);
+  try {
+    await fs.access(path.join(localDirectory, "SKILL.md"));
+    return localDirectory;
+  } catch {
+    for (const harness of HARNESS_ADAPTERS) {
+      const skillsDir = harness.paths?.skillsDir;
+      if (!skillsDir) continue;
+      const directory = path.join(ctx.projectRoot, skillsDir, name);
+      try {
+        await fs.access(path.join(directory, "SKILL.md"));
+        return await fs.realpath(directory);
+      } catch {
+        continue;
+      }
+    }
+    return undefined;
+  }
+}
+
+function flagValues(value: unknown): string[] {
+  if (typeof value === "string")
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  return [];
+}
 
 /** Origin shown in the picker: `owner/repo` for a git source, else the address given. */
 function originLabel(repo: Repo): string {
@@ -132,15 +199,33 @@ function compositeFor(
   localRoot: string,
   skillPath: string,
   projectRoot: string,
-): string {
+): RepositoryRequest {
   if (source.kind === "git") {
-    // The in-repo path slots between repo and the `#<ref>` suffix; re-parse so
-    // the result is a normalized canonical ref rather than a hand-spliced one.
-    const refSuffix = source.ref ? `#${source.ref}` : "";
-    const spec = `${source.provider}:${source.owner}/${source.repo}/${skillPath}${refSuffix}`;
-    return parseSource(spec, { projectRoot }).canonical;
+    const request: RepositoryRequest = {
+      source: source.remoteUrl ?? `${source.provider}:${source.owner}/${source.repo}`,
+      glob: skillPath,
+    };
+    if (source.ref && /^[a-f0-9]{7,64}$/i.test(source.ref)) request.commit = source.ref;
+    else if (source.ref) request.branch = source.ref;
+    return request;
   }
-  return parseSource(`file:${path.join(localRoot, skillPath)}`, { projectRoot }).canonical;
+  return {
+    source: parseSource(`file:${path.join(localRoot, skillPath)}`, { projectRoot }).canonical,
+    glob: ".",
+  };
+}
+
+function requestFromComposite(value: string, projectRoot: string): RepositoryRequest {
+  const parsed = parseCompositeSkillRef(value, { projectRoot });
+  if (parsed.source.kind === "local") return { source: parsed.source.canonical, glob: "." };
+  const request: RepositoryRequest = {
+    source: `${parsed.source.provider}:${parsed.source.owner}/${parsed.source.repo}`,
+    glob: parsed.subPath,
+  };
+  const ref = parsed.source.ref;
+  if (ref && /^[a-f0-9]{7,64}$/i.test(ref)) request.commit = ref;
+  else if (ref) request.branch = ref;
+  return request;
 }
 
 /** Run a single read-only step over every declared skill and report failures. */
@@ -162,8 +247,8 @@ async function diagnose(
   await ctx.logger.info({
     message: `Checking ${count} skill${count === 1 ? "" : "s"}…`,
     waitFor: (async () => {
-      for (const [name, composite] of Object.entries(sources)) {
-        const f = await steps.fetch(name, composite);
+      for (const [name, request] of Object.entries(sources)) {
+        const f = await steps.fetch(name, request);
         if (!f.ok || !f.src) {
           if (which === "fetch") bad.push(name);
           continue;
@@ -206,6 +291,21 @@ const commands: Record<string, CommandSpec> = {
         description:
           "comma-separated skill names to add, e.g. --skills pdf,docx (skips the prompt)",
       },
+      {
+        name: "glob",
+        type: "string",
+        description: "Repository-relative glob for skill directories or SKILL.md markers",
+      },
+      {
+        name: "branch",
+        type: "string",
+        description: "Branch to follow for every Git source in this command",
+      },
+      {
+        name: "commit",
+        type: "string",
+        description: "Commit to pin for every Git source in this command",
+      },
     ],
     async run(ctx) {
       const addresses = [...ctx.args];
@@ -218,128 +318,239 @@ const commands: Record<string, CommandSpec> = {
               .map((s) => s.trim())
               .filter(Boolean)
           : undefined;
-
-      // Fetch every source (in parallel) and discover the skills inside each,
-      // keeping provenance (incl. declaration order) so we can build composite
-      // refs per origin and break same-name ties deterministically.
-      const label = addresses.length === 1 ? addresses[0] : `${addresses.length} sources`;
-      const fetchedRepos = await ctx.logger.info({
-        message: `Loading skills from ${label}…`,
-        waitFor: Promise.all(
-          addresses.map(async (address, order) => {
-            const source = repoSource(providerFor(provider, address), address, ctx.projectRoot);
-            const fetched = await ctx.fetcher.fetch(source);
-            const skills = await findSkillsInRepo(fetched.path);
-            const repo: Repo = {
-              address,
-              source,
-              localRoot: fetched.path,
-              ...(fetched.ref ? { ref: fetched.ref } : {}),
-              order,
-            };
-            return { repo, skills };
-          }),
-        ),
-      });
-
-      // Flatten to candidates, sorted by skill name then declaration order. A skill
-      // is stored under its own name (the directory basename) — never renamed, so
-      // we never touch files we don't own. Same-name skills from different sources
-      // coexist as candidates; the collision is resolved at selection, not here.
-      const candidates = sortCandidates(
-        fetchedRepos.flatMap(({ repo, skills }) =>
-          skills.map((skill) => ({ repo, skill, name: skill.defaultName })),
-        ),
-      );
-      if (candidates.length === 0) {
-        const where = fetchedRepos
-          .map(({ repo }) => `${originLabel(repo)}${repo.ref ? `#${repo.ref}` : ""}`)
-          .join(", ");
-        throw new Error(
-          `No skills found in ${where} (looked under the repo's root skills/ directory)`,
-        );
+      const discoveryGlob = typeof ctx.flags.glob === "string" ? ctx.flags.glob : undefined;
+      const selectedRef =
+        typeof ctx.flags.commit === "string"
+          ? ctx.flags.commit
+          : typeof ctx.flags.branch === "string"
+            ? ctx.flags.branch
+            : undefined;
+      if (ctx.dryRun) {
+        for (const address of addresses) {
+          ctx.logger.info(`would: discover skills from ${address}`);
+        }
+        return;
       }
 
-      const config = await readConfigOrDefault(ctx.configPath);
-      const existing = config.skills?.sources ?? {};
-
-      // Pick the skills to add. Collisions (same name from >1 source) resolve by:
-      //   --skills <names> → last declared per name
-      //   -y               → last declared per name (every distinct skill)
-      //   interactive      → picking one auto-deselects same-named rows
-      let chosen: Candidate[];
-      if (filter) {
-        const wanted = candidates.filter((c) => filter.includes(c.name));
-        const found = new Set(wanted.map((c) => c.name));
-        const missing = filter.filter((n) => !found.has(n));
-        if (missing.length > 0) {
-          const available = [...new Set(candidates.map((c) => c.name))].sort().join(", ");
-          throw new Error(`skill(s) not found: ${missing.join(", ")}. Available: ${available}`);
-        }
-        chosen = pickLatestPerName(wanted);
-      } else if (ctx.flags.yes) {
-        chosen = pickLatestPerName(candidates);
-      } else {
-        // Preselect a candidate only when it's the exact ref already installed
-        // (so at most one row per same-name group starts checked). A same-named
-        // skill from a different source stays unchecked — picking it overwrites.
-        const isInstalled = (c: Candidate): boolean =>
-          existing[c.name] ===
-          compositeFor(c.repo.source, c.repo.localRoot, c.skill.path, ctx.projectRoot);
-        const anyInstalled = candidates.some(isInstalled);
-        const message = anyInstalled
-          ? "Select skills to add (already-installed skills are preselected):"
-          : "Select skills to add:";
-        const choices = candidates.map((c, i) => {
-          const description = capDescription(c.skill.description);
-          return {
-            name: choiceLabel(c),
-            value: String(i),
-            group: c.name, // selecting one auto-deselects same-named candidates
-            checked: isInstalled(c),
-            ...(description ? { description } : {}),
-          };
+      const temporaryConsumers: { trackingId: string; name: string }[] = [];
+      const acquiredConsumers: { trackingId: string; name: string }[] = [];
+      const releasedConsumers: { trackingId: string; name: string }[] = [];
+      let declarationSaved = false;
+      try {
+        // Discover from shared tracker checkouts so discovery and installation use
+        // the same normalized repository selection and Git implementation.
+        const label = addresses.length === 1 ? addresses[0] : `${addresses.length} sources`;
+        const fetchedRepos = await ctx.logger.info({
+          message: `Loading skills from ${label}…`,
+          waitFor: Promise.all(
+            addresses.map(async (address, order) => {
+              let parsedSource = repoSource(
+                providerFor(provider, address),
+                address,
+                ctx.projectRoot,
+              );
+              if (parsedSource.kind === "git" && selectedRef) {
+                parsedSource = {
+                  ...parsedSource,
+                  ref: selectedRef,
+                  canonical: `${parsedSource.canonical.split("#", 1)[0]}#${selectedRef}`,
+                };
+              }
+              let localRoot: string;
+              let ref: string | undefined;
+              let trackingId: string | undefined;
+              let consumerName: string | undefined;
+              if (parsedSource.kind === "git") {
+                const request: RepositoryRequest = {
+                  source:
+                    parsedSource.remoteUrl ??
+                    `${parsedSource.provider}:${parsedSource.owner}/${parsedSource.repo}`,
+                  ...(parsedSource.ref && /^[a-f0-9]{7,64}$/i.test(parsedSource.ref)
+                    ? { commit: parsedSource.ref }
+                    : parsedSource.ref
+                      ? { branch: parsedSource.ref }
+                      : {}),
+                  glob: ".",
+                };
+                consumerName = `discovery-${randomUUID()}`;
+                const tracked = await ctx.repositoryTracker.add(request, {
+                  projectId: path.resolve(ctx.configPath),
+                  domain: "skills-discovery",
+                  name: consumerName,
+                });
+                temporaryConsumers.push({ trackingId: tracked.trackingId, name: consumerName });
+                localRoot = tracked.checkoutPath;
+                ref = tracked.branch;
+                trackingId = tracked.trackingId;
+              } else {
+                localRoot = parsedSource.absolutePath;
+              }
+              const skills = await findSkillsInRepo(localRoot, discoveryGlob);
+              const repo: Repo = {
+                address,
+                source: parsedSource,
+                localRoot,
+                ...(ref ? { ref } : {}),
+                order,
+                ...(trackingId ? { trackingId } : {}),
+                ...(consumerName ? { consumerName } : {}),
+              };
+              return { repo, skills };
+            }),
+          ),
         });
-        const picked = await multiSelectExclusive(
-          ctx,
-          message,
-          choices,
-          "pass --skills <names> or -y to install all, or run in a terminal to pick interactively",
+
+        // Flatten to candidates, sorted by skill name then declaration order. A skill
+        // is stored under its own name (the directory basename) — never renamed, so
+        // we never touch files we don't own. Same-name skills from different sources
+        // coexist as candidates; the collision is resolved at selection, not here.
+        const candidates = sortCandidates(
+          fetchedRepos.flatMap(({ repo, skills }) =>
+            skills.map((skill) => ({ repo, skill, name: skill.defaultName })),
+          ),
         );
-        if (picked.length === 0) {
-          ctx.logger.info("nothing selected");
-          return;
-        }
-        chosen = picked.map((i) => {
-          const candidate = candidates[Number(i)];
-          if (!candidate) throw new Error(`invalid skill selection: ${i}`);
-          return candidate;
-        });
-      }
-
-      // Expand each pick into a concrete per-skill composite ref. Storage shape
-      // is one entry per skill name — an already-declared name is overwritten.
-      const sources = { ...existing };
-      const added: string[] = [];
-      for (const { repo, skill, name } of chosen) {
-        const named = skillNameSchema.safeParse(name);
-        if (!named.success) {
+        if (candidates.length === 0) {
+          const where = fetchedRepos
+            .map(({ repo }) => `${originLabel(repo)}${repo.ref ? `#${repo.ref}` : ""}`)
+            .join(", ");
           throw new Error(
-            `"${name}" (from ${skill.path} in ${repo.address}) is not a valid skill name; ` +
-              `the skill directory name must be alphanumeric/dash`,
+            `No skills found in ${where} (looked under the repo's root skills/ directory)`,
           );
         }
-        const composite = compositeFor(repo.source, repo.localRoot, skill.path, ctx.projectRoot);
-        // Defensive: the stored value must parse back to a concrete skill ref.
-        parseCompositeSkillRef(composite, { projectRoot: ctx.projectRoot });
-        sources[named.data] = composite;
-        added.push(`${named.data} → ${composite}`);
-      }
 
-      await writeChange(ctx, `added ${added.length} skill(s): ${added.join(", ")}`, {
-        ...config,
-        skills: { ...config.skills, sources },
-      });
+        const config = await readConfigOrDefault(ctx.configPath);
+        const existing = config.skills?.sources ?? {};
+
+        // Pick the skills to add. Collisions (same name from >1 source) resolve by:
+        //   --skills <names> → last declared per name
+        //   -y               → last declared per name (every distinct skill)
+        //   interactive      → picking one auto-deselects same-named rows
+        let chosen: Candidate[];
+        if (filter) {
+          const wanted = candidates.filter((c) => filter.includes(c.name));
+          const found = new Set(wanted.map((c) => c.name));
+          const missing = filter.filter((n) => !found.has(n));
+          if (missing.length > 0) {
+            const available = [...new Set(candidates.map((c) => c.name))].sort().join(", ");
+            throw new Error(`skill(s) not found: ${missing.join(", ")}. Available: ${available}`);
+          }
+          chosen = pickLatestPerName(wanted);
+        } else if (ctx.flags.yes) {
+          chosen = pickLatestPerName(candidates);
+        } else {
+          // Preselect a candidate only when it's the exact ref already installed
+          // (so at most one row per same-name group starts checked). A same-named
+          // skill from a different source stays unchecked — picking it overwrites.
+          const isInstalled = (c: Candidate): boolean => {
+            const declared = existing[c.name];
+            return Boolean(
+              declared &&
+              skillRequestKey(declared) ===
+                skillRequestKey(
+                  compositeFor(c.repo.source, c.repo.localRoot, c.skill.path, ctx.projectRoot),
+                ),
+            );
+          };
+          const anyInstalled = candidates.some(isInstalled);
+          const message = anyInstalled
+            ? "Select skills to add (already-installed skills are preselected):"
+            : "Select skills to add:";
+          const choices = candidates.map((c, i) => {
+            const description = capDescription(c.skill.description);
+            return {
+              name: choiceLabel(c),
+              value: String(i),
+              group: c.name, // selecting one auto-deselects same-named candidates
+              checked: isInstalled(c),
+              ...(description ? { description } : {}),
+            };
+          });
+          const picked = await multiSelectExclusive(
+            ctx,
+            message,
+            choices,
+            "pass --skills <names> or -y to install all, or run in a terminal to pick interactively",
+          );
+          if (picked.length === 0) {
+            ctx.logger.info("nothing selected");
+            return;
+          }
+          chosen = picked.map((i) => {
+            const candidate = candidates[Number(i)];
+            if (!candidate) throw new Error(`invalid skill selection: ${i}`);
+            return candidate;
+          });
+        }
+
+        // Expand each pick into a concrete per-skill composite ref. Storage shape
+        // is one entry per skill name — an already-declared name is overwritten.
+        const sources: Record<string, RepositoryRequest> = { ...existing };
+        const added: string[] = [];
+        for (const { repo, skill, name } of chosen) {
+          const named = skillNameSchema.safeParse(name);
+          if (!named.success) {
+            throw new Error(
+              `"${name}" (from ${skill.path} in ${repo.address}) is not a valid skill name; ` +
+                `the skill directory name must be alphanumeric/dash`,
+            );
+          }
+          const request = compositeFor(repo.source, repo.localRoot, skill.path, ctx.projectRoot);
+          await reportSkillMetadata(
+            name,
+            path.join(repo.localRoot, skill.path),
+            configuredHarnesses(config),
+            ctx,
+          );
+          sources[named.data] = request;
+          added.push(`${named.data} → ${request.source} (${request.glob ?? "."})`);
+        }
+
+        for (const { repo, skill, name } of chosen) {
+          if (repo.source.kind !== "git") continue;
+          const request = compositeFor(repo.source, repo.localRoot, skill.path, ctx.projectRoot);
+          const consumer = {
+            projectId: path.resolve(ctx.configPath),
+            domain: "skills",
+            name,
+          };
+          const previous = await ctx.repositoryTracker.listRegistrations(consumer);
+          const info = await ctx.repositoryTracker.add(request, consumer);
+          if (!previous.some((registration) => registration.trackingId === info.trackingId))
+            acquiredConsumers.push({ trackingId: info.trackingId, name });
+          for (const registration of previous)
+            if (registration.trackingId !== info.trackingId)
+              releasedConsumers.push({ trackingId: registration.trackingId, name });
+        }
+        await writeChange(ctx, `added ${added.length} skill(s): ${added.join(", ")}`, {
+          ...config,
+          skills: { ...config.skills, sources },
+        });
+        declarationSaved = true;
+        for (const consumer of releasedConsumers) {
+          await ctx.repositoryTracker.remove(consumer.trackingId, {
+            projectId: path.resolve(ctx.configPath),
+            domain: "skills",
+            name: consumer.name,
+          });
+        }
+      } finally {
+        if (!declarationSaved) {
+          for (const consumer of acquiredConsumers) {
+            await ctx.repositoryTracker.remove(consumer.trackingId, {
+              projectId: path.resolve(ctx.configPath),
+              domain: "skills",
+              name: consumer.name,
+            });
+          }
+        }
+        for (const consumer of temporaryConsumers) {
+          await ctx.repositoryTracker.remove(consumer.trackingId, {
+            projectId: path.resolve(ctx.configPath),
+            domain: "skills-discovery",
+            name: consumer.name,
+          });
+        }
+      }
     },
   },
   remove: {
@@ -366,15 +577,18 @@ const commands: Record<string, CommandSpec> = {
       if (targets.length === 0) {
         // Same look as `add`: skill name, then a dimmed ref, with the installed
         // skill's description (best-effort) on its own line.
-        const skillsDir = buildPaths(ctx.projectRoot, config).skillsDir;
+        const localSkillsDir = path.resolve(
+          ctx.projectRoot,
+          config.skills?.dir ?? DEFAULT_LOCAL_SKILLS_DIR,
+        );
         const choices = await Promise.all(
           declared.map(async (n) => {
-            const { description } = await readSkillMeta(path.join(skillsDir, n, "SKILL.md"));
+            const { description } = await readSkillMeta(path.join(localSkillsDir, n, "SKILL.md"));
             const desc = capDescription(description);
             const source = all[n];
             if (!source) throw new Error(`skill "${n}" is not declared`);
             return {
-              name: `${n} ${colors.dim(source)}`,
+              name: `${n} ${colors.dim(`${source.source} (${source.glob ?? "."})`)}`,
               value: n,
               ...(desc ? { description: desc } : {}),
             };
@@ -396,10 +610,49 @@ const commands: Record<string, CommandSpec> = {
       if (missing.length > 0) throw new Error(`skill(s) not found: ${missing.join(", ")}`);
 
       const sources = Object.fromEntries(Object.entries(all).filter(([n]) => !targets.includes(n)));
-      await writeChange(ctx, `removed ${targets.length} skill(s): ${targets.join(", ")}`, {
+      const next: AgnosConfig = {
         ...config,
         skills: { ...config.skills, sources },
-      });
+      };
+      await writeChange(ctx, `removed ${targets.length} skill(s): ${targets.join(", ")}`, next);
+      if (!ctx.dryRun) {
+        const lock = await readLock(ctx.projectRoot);
+        let nextLock = lock;
+        for (const name of targets) {
+          const request = all[name];
+          if (request) nextLock = removeSkill(nextLock, skillRequestKey(request));
+        }
+        if (nextLock !== lock) await writeLock(ctx.projectRoot, nextLock);
+        for (const name of targets) {
+          const consumer = { projectId: path.resolve(ctx.configPath), domain: "skills", name };
+          for (const registration of await ctx.repositoryTracker.listRegistrations(consumer)) {
+            await ctx.repositoryTracker.remove(registration.trackingId, consumer);
+          }
+          const localRoot = config.skills?.dir ?? DEFAULT_LOCAL_SKILLS_DIR;
+          const localTarget = path.isAbsolute(localRoot)
+            ? path.join(localRoot, name)
+            : path.resolve(ctx.projectRoot, localRoot, name);
+          const localMarker = path.join(localTarget, "SKILL.md");
+          const hasLocal = await fs
+            .access(localMarker)
+            .then(() => true)
+            .catch(() => false);
+          for (const adapter of HARNESS_ADAPTERS) {
+            const skillsDir = adapter.paths?.skillsDir;
+            if (!skillsDir) continue;
+            const link = path.resolve(ctx.projectRoot, skillsDir, name);
+            const existing = await fs.lstat(link).catch(() => null);
+            if (hasLocal) {
+              await ensureLink(localTarget, link, ctx.linker);
+            } else if (existing?.isSymbolicLink()) {
+              const target = await fs.realpath(link).catch(() => "");
+              const global = path.resolve(ctx.storeDir);
+              if (target === global || target.startsWith(`${global}${path.sep}`))
+                await fs.unlink(link);
+            }
+          }
+        }
+      }
     },
   },
   fetch: {
@@ -429,12 +682,6 @@ const commands: Record<string, CommandSpec> = {
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
       const sources = config.skills?.sources ?? {};
-      const pruned = await pruneSkills(config, ctx);
-      if (pruned.removed.length > 0 || pruned.unpinned.length > 0) {
-        ctx.logger.success(
-          `pruned ${pruned.removed.length} skill(s), ${pruned.unpinned.length} lock entr${pruned.unpinned.length === 1 ? "y" : "ies"}`,
-        );
-      }
       if (Object.keys(sources).length === 0) {
         ctx.logger.info("no skills declared");
         return;
@@ -448,19 +695,52 @@ const commands: Record<string, CommandSpec> = {
       });
     },
   },
-  prune: {
-    name: "prune",
-    description: "Remove materialized skills and lock entries no longer declared",
+  check: {
+    name: "check",
+    description: "Check installed skill metadata against configured harnesses",
+    flags: [
+      { name: "skills", type: "string", description: "comma-separated skill names" },
+      {
+        name: "harness",
+        type: "string",
+        description: "harness id (defaults to configured harnesses)",
+      },
+    ],
     async run(ctx) {
       const config = await readConfigOrDefault(ctx.configPath);
-      const pruned = await pruneSkills(config, ctx);
-      if (pruned.removed.length === 0 && pruned.unpinned.length === 0) {
-        ctx.logger.info("no stale skills to prune");
+      const requestedSkills = flagValues(ctx.flags["skills"]);
+      const harnessRef = ctx.flags["harness"];
+      const harnessIds = typeof harnessRef === "string" ? [harnessRef] : (config.harness ?? []);
+      const harnesses = harnessIds.map((id) => {
+        const harness = HARNESS_ADAPTERS.find((candidate) => candidate.id === id);
+        if (!harness) throw new Error(`unknown harness "${id}"`);
+        return harness;
+      });
+      const localRoot = config.skills?.dir ?? DEFAULT_LOCAL_SKILLS_DIR;
+      const localDirectory = path.isAbsolute(localRoot)
+        ? localRoot
+        : path.resolve(ctx.projectRoot, localRoot);
+      const localNames = await fs.readdir(localDirectory, { withFileTypes: true }).catch(() => []);
+      const availableNames = new Set([
+        ...Object.keys(config.skills?.sources ?? {}),
+        ...localNames.filter((entry) => entry.isDirectory()).map((entry) => entry.name),
+      ]);
+      const names = requestedSkills.length > 0 ? requestedSkills : [...availableNames].sort();
+      const missing = names.filter((name) => !availableNames.has(name));
+      if (missing.length > 0) throw new Error(`skill(s) not found: ${missing.join(", ")}`);
+      if (harnesses.length === 0) {
+        ctx.logger.info("no harnesses configured; pass --harness to check a target");
         return;
       }
-      ctx.logger.success(
-        `pruned ${pruned.removed.length} skill(s), ${pruned.unpinned.length} lock entr${pruned.unpinned.length === 1 ? "y" : "ies"}`,
-      );
+      for (const name of names) {
+        const directory = await findMaterializedSkill(name, ctx);
+        if (!directory) {
+          ctx.logger.warn(`skill "${name}" is not installed; run agnos skills install`);
+          continue;
+        }
+        await reportSkillMetadata(name, directory, harnesses, ctx);
+      }
+      if (names.length === 0) ctx.logger.info("no skills available to check");
     },
   },
   update: {
@@ -473,7 +753,6 @@ const commands: Record<string, CommandSpec> = {
       const config = await readConfigOrDefault(ctx.configPath);
       const declared = Object.keys(config.skills?.sources ?? {});
       const n = ctx.args.length > 0 ? ctx.args.length : declared.length;
-      await pruneSkills(config, ctx);
       const updated = await ctx.logger.info({
         message: `Updating ${n} skill${n === 1 ? "" : "s"}…`,
         waitFor: updateSkills(ctx.args, config, ctx),
@@ -504,14 +783,18 @@ const commands: Record<string, CommandSpec> = {
         data && typeof data === "object" && "skills" in data
           ? (data as { skills: unknown }).skills
           : data;
-      const discovered: Record<string, string> = {};
+      const discovered: Record<string, RepositoryRequest> = {};
       for (const [name, ref] of Object.entries((map ?? {}) as Record<string, unknown>)) {
         if (typeof ref !== "string") continue;
-        if (!skillNameSchema.safeParse(name).success || !skillRefSchema.safeParse(ref).success) {
+        if (!skillNameSchema.safeParse(name).success) {
           ctx.logger.warn(`skipping invalid skill "${name}"`);
           continue;
         }
-        discovered[name] = ref;
+        try {
+          discovered[name] = requestFromComposite(ref, ctx.projectRoot);
+        } catch {
+          ctx.logger.warn(`skipping invalid skill "${name}"`);
+        }
       }
       const config = await readConfigOrDefault(ctx.configPath);
       const res = mergeSkillSources(config.skills?.sources ?? {}, discovered, policyFromFlags(ctx));
@@ -531,40 +814,41 @@ const commands: Record<string, CommandSpec> = {
 
 /**
  * The skills domain: a config writer that also prepares the canonical skill
- * bytes. `run` executes the offline prep pipeline (fetch → integrity → install)
- * over every declared skill, bucketing failures as moved/changed and installing
- * the clean ones into `.agnos/skills/` (linked per-agent by the agents domain).
- * Warm runs reuse the locked ref + cache and make no network calls; the network
- * freshness check lives in the `version`/`update` subcommands. The
+ * bytes. `run` acquires declared sources through the global tracker and updates
+ * lock observations. The harness domain links selected skill directories into
+ * each agent's native skills folder. The
  * `fetch`/`version`/`integrity`/`install`/`update`/`migrate` subcommands expose
  * the same engine; data layer in pipeline.ts / migrate.ts / steps.ts.
  */
 export const skillsDomain: Domain = {
   id: "skills",
-  description: "Fetch + verify skills into the canonical skills dir (linked per-agent by agents)",
+  description: "Track external skills and expose local skills to configured harnesses",
   kind: "writer",
   priority: 10,
   color: "magenta",
   commands,
   initSteps: [
     {
-      id: "route",
+      id: "directory",
       type: "text",
-      message: "Canonical skills directory (relative to project root):",
-      default: DEFAULT_SKILLS_DIR,
+      message: "Directory for manually authored skills (relative to project root):",
+      default: DEFAULT_LOCAL_SKILLS_DIR,
       async callback(value, ctx) {
-        const route = value.trim() || DEFAULT_SKILLS_DIR;
-        const config = (await readConfigOrDefault(ctx.configPath)) as AgnosConfig;
+        const skillsDirectory = value.trim() || DEFAULT_LOCAL_SKILLS_DIR;
+        const config = await readConfigOrDefault(ctx.configPath);
         const skills = { ...(config.skills ?? {}) };
-        if (route === DEFAULT_SKILLS_DIR) delete skills.route;
-        else skills.route = route;
+        if (skillsDirectory === DEFAULT_LOCAL_SKILLS_DIR) delete skills.dir;
+        else skills.dir = skillsDirectory;
         const next: AgnosConfig = { ...config, skills };
         if (ctx.dryRun) {
-          ctx.logger.info(`would: set skills.route = ${route}`);
+          ctx.logger.info(`would: set skills.dir = ${skillsDirectory}`);
           return;
         }
         await writeConfig(ctx.configPath, next);
-        await fs.mkdir(buildPaths(ctx.projectRoot, next).skillsDir, { recursive: true });
+        const localSkillsDir = path.isAbsolute(skillsDirectory)
+          ? skillsDirectory
+          : path.resolve(ctx.projectRoot, skillsDirectory);
+        await fs.mkdir(localSkillsDir, { recursive: true });
       },
     },
   ],
@@ -573,8 +857,9 @@ export const skillsDomain: Domain = {
     const sources = config.skills?.sources ?? {};
     // No skill sources declared → nothing to fetch/verify.
     const count = Object.keys(sources).length;
-    await pruneSkills(config, ctx);
-    if (count === 0) return undefined;
+    if (count === 0) {
+      return undefined;
+    }
     // Run the offline prep pipeline (fetch → integrity → install). Failures are
     // bucketed and reported as "Skills need to be updated: …" without throwing,
     // so the overall run continues (§13.1).

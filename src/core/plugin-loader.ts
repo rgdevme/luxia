@@ -1,7 +1,7 @@
-import type { AgentAdapter, Domain, Logger } from "./types/public.js";
+import type { HarnessAdapter, Domain, Logger } from "./types/public.js";
 
-export interface RegisteredAgent {
-  adapter: AgentAdapter;
+export interface RegisteredHarness {
+  adapter: HarnessAdapter;
   packageName: string;
 }
 
@@ -11,10 +11,10 @@ export interface RegisteredDomain {
 }
 
 export interface PluginRegistry {
-  agents: Map<string, RegisteredAgent>;
-  agentsByPackage: Map<string, RegisteredAgent>;
+  harnesses: Map<string, RegisteredHarness>;
+  harnessesByPackage: Map<string, RegisteredHarness>;
   domains: Map<string, RegisteredDomain>;
-  collisions: { type: "agent" | "domain"; id: string; packages: string[] }[];
+  collisions: { type: "harness" | "domain"; id: string; packages: string[] }[];
 }
 
 interface LoaderOptions {
@@ -28,34 +28,34 @@ interface LoaderOptions {
  * with the core barrel.
  */
 export async function loadPlugins(_opts: LoaderOptions): Promise<PluginRegistry> {
-  const { BUILTIN_AGENTS, BUILTIN_DOMAINS } = await import("../registry.js");
+  const { BUILTIN_HARNESSES, BUILTIN_DOMAINS } = await import("../registry.js");
 
-  const agents = new Map<string, RegisteredAgent>();
-  const agentsByPackage = new Map<string, RegisteredAgent>();
+  const harnesses = new Map<string, RegisteredHarness>();
+  const harnessesByPackage = new Map<string, RegisteredHarness>();
   const domains = new Map<string, RegisteredDomain>();
 
-  for (const reg of BUILTIN_AGENTS) {
-    agents.set(reg.adapter.id, reg);
-    agentsByPackage.set(reg.packageName, reg);
+  for (const reg of BUILTIN_HARNESSES) {
+    harnesses.set(reg.adapter.id, reg);
+    harnessesByPackage.set(reg.packageName, reg);
   }
   for (const reg of BUILTIN_DOMAINS) {
     domains.set(reg.domain.id, reg);
   }
 
-  return { agents, agentsByPackage, domains, collisions: [] };
+  return { harnesses, harnessesByPackage, domains, collisions: [] };
 }
 
 /** Look up an agent by id or by synthetic package name. */
-export function resolveAgentByRef(
+export function resolveHarnessByRef(
   registry: PluginRegistry,
   ref: string,
-): RegisteredAgent | undefined {
-  return registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
+): RegisteredHarness | undefined {
+  return registry.harnesses.get(ref) ?? registry.harnessesByPackage.get(ref);
 }
 
-/** Resolve the canonical agent id for a ref; falls back to the ref itself. */
-export function refToId(registry: PluginRegistry, ref: string): string {
-  const reg = registry.agents.get(ref) ?? registry.agentsByPackage.get(ref);
+/** Resolve the canonical harness id for a ref; falls back to the ref itself. */
+export function harnessRefToId(registry: PluginRegistry, ref: string): string {
+  const reg = registry.harnesses.get(ref) ?? registry.harnessesByPackage.get(ref);
   return reg ? reg.adapter.id : ref;
 }
 

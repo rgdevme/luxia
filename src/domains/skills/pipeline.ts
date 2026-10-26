@@ -1,4 +1,5 @@
 import type { Logger } from "../../core/index.js";
+import type { RepositoryRequest } from "../../core/index.js";
 import { runSkillTasks } from "./concurrency.js";
 
 /**
@@ -28,7 +29,7 @@ export interface FetchResult {
  */
 export interface SkillSteps {
   /** Resolve + locate the skill; ok=false → "moved" (source moved/removed). */
-  fetch(name: string, ref: string): Promise<FetchResult>;
+  fetch(name: string, ref: RepositoryRequest): Promise<FetchResult>;
   /**
    * Is the resolved commit still upstream's latest? false → "outdated". Network
    * call — used by the explicit `agnos skills version` diagnostic, not the run.
@@ -36,6 +37,8 @@ export interface SkillSteps {
   version(name: string, src: string): Promise<boolean>;
   /** Does the content hash match the lock? false → "changed". */
   integrity(name: string, src: string): Promise<boolean>;
+  /** Report compatibility findings without changing the installation result. */
+  validate?(name: string, src: string): Promise<void>;
   /** Copy into the canonical dir (copy-if-absent-or-changed); pins/backfills the lock. */
   install(name: string, src: string, ref?: string, commit?: string): Promise<void>;
 }
@@ -71,7 +74,7 @@ interface SkillResult {
  * into one warning pointing at `agnos skills update`.
  */
 export async function runSkillPipeline(
-  sources: Record<string, string>,
+  sources: Record<string, RepositoryRequest>,
   steps: SkillSteps,
   logger: Logger,
 ): Promise<PipelineResult> {
@@ -93,11 +96,14 @@ export async function runSkillPipeline(
       let result: SkillResult;
       if (!fetched.ok || !fetched.src) {
         result = { bucket: "moved" };
-      } else if (!(await steps.integrity(name, fetched.src))) {
-        result = { bucket: "changed" };
       } else {
-        await steps.install(name, fetched.src, fetched.ref, fetched.commit);
-        result = { installed: name };
+        await steps.validate?.(name, fetched.src);
+        if (!(await steps.integrity(name, fetched.src))) {
+          result = { bucket: "changed" };
+        } else {
+          await steps.install(name, fetched.src, fetched.ref, fetched.commit);
+          result = { installed: name };
+        }
       }
       recordSkillProgress(state, fetched.source, progress);
       return result;

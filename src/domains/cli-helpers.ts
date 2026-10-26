@@ -40,7 +40,7 @@ export async function multiSelectExclusive(
 }
 
 /**
- * Interactive multi-select for commands that never honor `-y` (e.g. `agents
+ * Interactive multi-select for commands that never honor `-y` (e.g. `harness
  * add`/`remove`): pass ids to act non-interactively, omit them to pick. Unlike
  * {@link multiSelect}, `-y` is ignored — only a missing TTY refuses (throwing
  * `hint`) so a no-args run can't hang in CI. Uses the themed

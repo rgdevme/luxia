@@ -184,16 +184,30 @@ describe("parseSource", () => {
     expect(r.canonical).not.toBe("file:./elsewhere/foo");
   });
 
-  it("rejects unsupported https host", () => {
-    expect(() => parseSource("https://example.com/owner/repo", { projectRoot })).toThrow(
-      /Unsupported git host/,
-    );
+  it("accepts arbitrary https git hosts and preserves their transport", () => {
+    const result = parseSource("https://example.com/owner/repo", { projectRoot });
+    expect(result).toMatchObject({ kind: "git", remoteUrl: "https://example.com/owner/repo.git" });
   });
 
-  it("rejects unsupported ssh host", () => {
-    expect(() => parseSource("git@example.com:owner/repo.git", { projectRoot })).toThrow(
-      /Unsupported git host/,
-    );
+  it("accepts arbitrary ssh git hosts and preserves their transport", () => {
+    const result = parseSource("git@example.com:owner/repo.git", { projectRoot });
+    expect(result).toMatchObject({ kind: "git", remoteUrl: "git@example.com:owner/repo.git" });
+  });
+
+  it("accepts ssh URL remotes", () => {
+    const result = parseSource("ssh://git@example.com/owner/repo.git", { projectRoot });
+    expect(result).toMatchObject({
+      kind: "git",
+      remoteUrl: "ssh://git@example.com/owner/repo.git",
+    });
+  });
+
+  it("preserves nested namespaces in direct Git remotes", () => {
+    const result = parseSource("https://git.example.com/group/subgroup/repo.git", { projectRoot });
+    expect(result).toMatchObject({
+      kind: "git",
+      remoteUrl: "https://git.example.com/group/subgroup/repo.git",
+    });
   });
 
   it("rejects garbage input with usage guidance", () => {

@@ -1,10 +1,13 @@
 import path from "node:path";
+import os from "node:os";
+import { randomUUID } from "node:crypto";
 import { createLinker } from "./fs/link.js";
 import { createRepoFetcher } from "./resolver.js";
 import { createLogger } from "./logger.js";
-import { buildPaths, ensureDir } from "./paths.js";
+import { buildPaths } from "./paths.js";
 import { readConfigOrDefault } from "./config.js";
 import { resolveGlobalStoreDir } from "./store-path.js";
+import { createRepositoryTracker } from "./repository-tracker.js";
 import type { AgnosConfig, Logger, ResolveContext } from "./types/public.js";
 
 export interface BuildContextOptions {
@@ -21,24 +24,25 @@ export async function buildResolveContext(opts: BuildContextOptions): Promise<Re
     opts.config ?? (await readConfigOrDefault(path.join(opts.projectRoot, "agnos.json")));
   const paths = buildPaths(opts.projectRoot, config);
   const logger = opts.logger ?? createLogger();
-  if (!opts.dryRun) {
-    await ensureDir(paths.agnosRoot);
-    await ensureDir(paths.tempDir);
-  }
+  const operationTempDir = path.join(os.tmpdir(), `agnos-${randomUUID()}`);
   const linker = createLinker({
-    probeDir: path.join(paths.tempDir, "link-probes"),
+    probeDir: path.join(operationTempDir, "link-probes"),
     logger,
     copyFallback: opts.copyFallback,
   });
   const fetcher = createRepoFetcher({
-    stagingDir: path.join(paths.tempDir, "repos"),
+    stagingDir: operationTempDir,
   });
   return {
+    config,
     projectRoot: opts.projectRoot,
     configPath: paths.configPath,
-    statePath: paths.statePath,
     agnosRoot: paths.agnosRoot,
     storeDir: opts.storeDir ?? resolveGlobalStoreDir(),
+    repositoryTracker: createRepositoryTracker({
+      storeDir: opts.storeDir ?? resolveGlobalStoreDir(),
+      logger,
+    }),
     logger,
     fetcher,
     linker,

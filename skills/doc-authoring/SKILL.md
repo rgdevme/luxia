@@ -6,7 +6,7 @@ description: Conventions for writing and maintaining project documentation in an
 # Documentation authoring
 
 Follow these conventions whenever you create or edit documentation under the
-project's docs root (the `docs.root` configured in `agnos.json`, default `.docs`).
+project's docs directory (the `docs.dir` configured in `agnos.json`, default `.agnos/docs`).
 
 ## Mandatory
 
